@@ -4,6 +4,7 @@
 /// the render cache's content identity (the CacheId ported from maya).
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace waya {
