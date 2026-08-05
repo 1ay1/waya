@@ -90,18 +90,24 @@ int live(LiveConfig cfg = {}) {
         Model model;
         vdom::VNode prev;      ///< the last-rendered tree (maya's prev_cells)
         bool have_prev = false;
+        waya::render::MemoCache memo;   ///< subtree cache (survives frames)
         std::mutex mu;
     };
     auto state = std::make_shared<State>();
     state->model = std::move(model0);
 
-    // Build just the VNode for the current model (the Msg path needs only this;
-    // the HTML for the full page is built separately below). The message table
-    // is filled while P::view runs (on_msg pipes).
+    // Build just the VNode for the current model (the Msg path needs only this).
+    // The memo cache is active during the walk so unchanged subtrees (each_keyed
+    // rows) are reused wholesale — their view callbacks never run.
     auto build_vnode = [state](style::StyleSheet& sheet) {
         app::detail::begin_msg_capture<Msg>();
+        waya::render::active_memo = &state->memo;
+        waya::render::memo_builds = 0;
         auto node = P::view(state->model);
-        return waya::render::to_vnode(node, sheet);
+        auto v = waya::render::to_vnode(node, sheet);
+        state->memo.rotate();
+        waya::render::active_memo = nullptr;
+        return v;
     };
 
     ServeConfig sc;

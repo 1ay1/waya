@@ -14,6 +14,7 @@
 /// the live runtime keeps between frames.
 
 #include <cstdint>
+#include <memory>
 #include <string_view>
 #include <string>
 #include <utility>

@@ -8,6 +8,7 @@
 /// Attributes are sorted by name so two VNodes compare deterministically.
 
 #include "vdom.hpp"
+#include "cache_id.hpp"
 #include "escape.hpp"
 #include "../dsl/node.hpp"
 #include "../dsl/dynamic.hpp"
@@ -16,8 +17,38 @@
 #include <algorithm>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 
 namespace waya::render {
+
+// ── Subtree cache (maya's component cache; combinators live in memo.hpp) ────
+
+/// A per-session cache: CacheId → the VNode built last time. Two generations so
+/// entries not touched this frame are evicted (bounded memory, like maya).
+class MemoCache {
+public:
+    const vdom::VNode* get(CacheId id) {
+        if (auto it = cur_.find(id.value); it != cur_.end()) return &it->second;
+        if (auto it = prev_.find(id.value); it != prev_.end()) {
+            auto [ins, _] = cur_.emplace(id.value, it->second);   // promote
+            return &ins->second;
+        }
+        return nullptr;
+    }
+    const vdom::VNode& put(CacheId id, vdom::VNode v) {
+        auto [it, _] = cur_.insert_or_assign(id.value, std::move(v));
+        return it->second;
+    }
+    void rotate() { prev_.swap(cur_); cur_.clear(); }
+    [[nodiscard]] std::size_t size() const { return cur_.size(); }
+private:
+    std::unordered_map<std::uint64_t, vdom::VNode> cur_, prev_;
+};
+
+/// The active cache during a walk (set by the live runtime; null for SSR).
+inline thread_local MemoCache* active_memo = nullptr;
+/// How many memoised callbacks actually ran this frame (tests / debug overlay).
+inline thread_local std::size_t memo_builds = 0;
 
 namespace detail {
 
@@ -101,5 +132,30 @@ template <typename N>
 void vbuild_child(void* parent_vnode, style::StyleSheet& sheet, const N& n) {
     auto* parent = static_cast<waya::vdom::VNode*>(parent_vnode);
     waya::render::detail::vbuild(*parent, sheet, n);
+}
+
+// Memoised child: consult the active per-session cache. On HIT the cached VNode
+// is reused and `make` is never called (the whole point). On MISS `make()`
+// builds the DSL node, we vbuild it, and cache the result under `id`.
+template <typename Make>
+void vbuild_memo_child(void* parent_vnode, style::StyleSheet& sheet,
+                       waya::CacheId id, Make make) {
+    auto* parent = static_cast<waya::vdom::VNode*>(parent_vnode);
+    auto* cache = waya::render::active_memo;
+    if (cache && !id.empty()) {
+        if (const auto* hit = cache->get(id)) {
+            parent->kids.push_back(*hit);   // REUSE — no rebuild, no callback
+            return;
+        }
+    }
+    // Miss: build the row, vbuild it into a temp, cache + splice.
+    ++waya::render::memo_builds;
+    auto node = make();
+    waya::vdom::VNode tmp = waya::vdom::VNode::element("\x01memo");
+    waya::render::detail::vbuild(tmp, sheet, node);
+    if (!tmp.kids.empty()) {
+        if (cache && !id.empty()) parent->kids.push_back(cache->put(id, std::move(tmp.kids[0])));
+        else                      parent->kids.push_back(std::move(tmp.kids[0]));
+    }
 }
 } // namespace waya::dsl::detail
