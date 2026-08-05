@@ -32,29 +32,24 @@ template <html::Tag T, dsl::ElemCfg Cfg, typename... Cs>
 void vbuild(vdom::VNode& parent, style::StyleSheet& sheet, const ElemNode<T, Cfg, Cs...>& e);
 
 inline void vbuild(vdom::VNode& parent, style::StyleSheet&, const TextNode& t) {
-    parent.kids.push_back(vdom::VNode::textnode(t.value));
+    auto n = vdom::VNode::textnode(t.value);
+    vdom::finalize_hash(n);
+    parent.kids.push_back(std::move(n));
 }
 
 inline void vbuild(vdom::VNode& parent, style::StyleSheet&, const dsl::RawHtml& r) {
     // Raw HTML isn't diffable structurally; treat it as an opaque text-ish leaf.
     auto n = vdom::VNode::textnode(r.html);
     n.tag = "\x01raw";   // marker so vnode_to_html emits it unescaped (handled below)
+    vdom::finalize_hash(n);
     parent.kids.push_back(std::move(n));
 }
 
 template <html::Cat C>
 void vbuild(vdom::VNode& parent, style::StyleSheet& sheet, const dsl::Frag<C>& f) {
-    // A fragment splices its produced nodes directly into the parent — but the
-    // type-erased parts render to HTML, so we can't introspect them into VNodes
-    // without a second erased hook. For Phase-3 correctness we wrap the whole
-    // fragment as one opaque node keyed by its rendered HTML; the diff will
-    // replace it if it changes. (A finer per-item diff for `each` is a later
-    // optimisation.)
-    std::string html;
-    for (const auto& part : f.parts) part(html, sheet);
-    auto n = vdom::VNode::textnode(html);
-    n.tag = "\x01raw";
-    parent.kids.push_back(std::move(n));
+    // FAST PATH: splice each produced node as a REAL child VNode (with its own
+    // subtree hash), so a list diffs per-item — change one row, skip the rest.
+    for (const auto& vp : f.vparts) vp(static_cast<void*>(&parent), sheet);
 }
 
 template <html::Tag T, dsl::ElemCfg Cfg, typename... Cs>
@@ -82,6 +77,7 @@ void vbuild(vdom::VNode& parent, style::StyleSheet& sheet, const ElemNode<T, Cfg
     if constexpr (!html::Traits<T>::is_void)
         std::apply([&](const auto&... cs){ (vbuild(v, sheet, cs), ...); }, e.children);
 
+    vdom::finalize_hash(v);   // bottom-up: children are already hashed
     parent.kids.push_back(std::move(v));
 }
 
@@ -97,3 +93,13 @@ template <typename Node>
 }
 
 } // namespace waya::render
+
+// Satisfy the forward declaration in dsl/dynamic.hpp: fragments splice their
+// produced nodes as real child VNodes (with per-subtree hashes) for fine diffs.
+namespace waya::dsl::detail {
+template <typename N>
+void vbuild_child(void* parent_vnode, style::StyleSheet& sheet, const N& n) {
+    auto* parent = static_cast<waya::vdom::VNode*>(parent_vnode);
+    waya::render::detail::vbuild(*parent, sheet, n);
+}
+} // namespace waya::dsl::detail

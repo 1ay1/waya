@@ -21,6 +21,8 @@
 #include "../style/css.hpp"
 
 #include <functional>
+#include <iterator>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,12 +32,20 @@ namespace waya::dsl {
 /// A type-erased, self-rendering fragment. Each part renders one node into the
 /// output string, interning its styles into the shared page StyleSheet. `Cats`
 /// is the content category of the produced content — the content model reads it.
+///
+/// FAST PATH: a fragment carries a SECOND erased hook per part that splices a
+/// real child VNode into a parent (with its own subtree hash), so `each` over
+/// 1000 rows produces 1000 diffable VNodes — change one cell and the diff skips
+/// the other 999 via their hashes. Without this, a list would be one opaque
+/// blob that re-diffs and re-sends wholesale (the un-maya way).
 template <html::Cat Cats>
 struct Frag {
     static constexpr html::Cat Categories = Cats;
     static constexpr bool WayaFragment = true;   ///< enables fragment diagnostics
-    using Part = std::function<void(std::string&, style::StyleSheet&)>;
-    std::vector<Part> parts;
+    using Part  = std::function<void(std::string&, style::StyleSheet&)>;
+    using VPart = std::function<void(void* parent_vnode, style::StyleSheet&)>;
+    std::vector<Part>  parts;    ///< render to HTML
+    std::vector<VPart> vparts;   ///< splice a child VNode into parent
 };
 
 /// The content category a node type belongs to. Every waya node type exposes
@@ -48,6 +58,11 @@ inline constexpr html::Cat node_categories_v = N::Categories;
 namespace detail {
 template <typename N>
 void render_child(std::string& out, style::StyleSheet& sheet, const N& n);
+
+// Splice a real child VNode (with its subtree hash) into `parent_vnode`, which
+// is a `waya::vdom::VNode*` erased to void*. Defined in render/vwalk.hpp.
+template <typename N>
+void vbuild_child(void* parent_vnode, style::StyleSheet& sheet, const N& n);
 } // namespace detail
 
 // ── frag(): build a Frag from an explicit list of homogeneous nodes ─────────
@@ -57,10 +72,15 @@ template <typename N>
 auto frag(std::vector<N> nodes) {
     Frag<node_categories_v<N>> f;
     f.parts.reserve(nodes.size());
-    for (auto& n : nodes)
-        f.parts.emplace_back([n = std::move(n)](std::string& o, style::StyleSheet& s) {
+    f.vparts.reserve(nodes.size());
+    for (auto& n : nodes) {
+        f.parts.emplace_back([n](std::string& o, style::StyleSheet& s) {
             detail::render_child(o, s, n);
         });
+        f.vparts.emplace_back([n](void* p, style::StyleSheet& s) {
+            detail::vbuild_child(p, s, n);
+        });
+    }
     return f;
 }
 
@@ -79,26 +99,37 @@ template <typename Range, typename Fn>
 auto each(const Range& range, Fn fn) {
     using Node = std::decay_t<decltype(fn(*std::begin(range)))>;
     Frag<node_categories_v<Node>> f;
-    for (const auto& item : range) {
-        f.parts.emplace_back([node = fn(item)](std::string& o, style::StyleSheet& s) {
-            detail::render_child(o, s, node);
-        });
-    }
+    // FAST PATH: materialise all nodes into ONE vector and capture it in ONE
+    // part/vpart closure, instead of allocating a std::function per item. For a
+    // 1000-row list that's 2 allocations, not 2000 — the difference between
+    // "slow" and maya-fast.
+    auto nodes = std::make_shared<std::vector<Node>>();
+    nodes->reserve(std::size(range));
+    for (const auto& item : range) nodes->push_back(fn(item));
+    f.parts.emplace_back([nodes](std::string& o, style::StyleSheet& s) {
+        for (const auto& n : *nodes) detail::render_child(o, s, n);
+    });
+    f.vparts.emplace_back([nodes](void* p, style::StyleSheet& s) {
+        for (const auto& n : *nodes) detail::vbuild_child(p, s, n);
+    });
     return f;
 }
 
 /// each with an index: `each(rows, [](const Row& r, std::size_t i){ … })`.
 template <typename Range, typename Fn>
 auto each_indexed(const Range& range, Fn fn) {
-    using It = decltype(std::begin(range));
     using Node = std::decay_t<decltype(fn(*std::begin(range), std::size_t{}))>;
     Frag<node_categories_v<Node>> f;
+    auto nodes = std::make_shared<std::vector<Node>>();
+    nodes->reserve(std::size(range));
     std::size_t i = 0;
-    for (const auto& item : range) {
-        f.parts.emplace_back([node = fn(item, i++)](std::string& o, style::StyleSheet& s) {
-            detail::render_child(o, s, node);
-        });
-    }
+    for (const auto& item : range) nodes->push_back(fn(item, i++));
+    f.parts.emplace_back([nodes](std::string& o, style::StyleSheet& s) {
+        for (const auto& n : *nodes) detail::render_child(o, s, n);
+    });
+    f.vparts.emplace_back([nodes](void* p, style::StyleSheet& s) {
+        for (const auto& n : *nodes) detail::vbuild_child(p, s, n);
+    });
     return f;
 }
 
@@ -114,10 +145,14 @@ auto each_indexed(const Range& range, Fn fn) {
 template <typename Node>
 auto when(bool cond, Node node) {
     Frag<node_categories_v<Node>> f;
-    if (cond)
-        f.parts.emplace_back([node = std::move(node)](std::string& o, style::StyleSheet& s) {
+    if (cond) {
+        f.parts.emplace_back([node](std::string& o, style::StyleSheet& s) {
             detail::render_child(o, s, node);
         });
+        f.vparts.emplace_back([node](void* p, style::StyleSheet& s) {
+            detail::vbuild_child(p, s, node);
+        });
+    }
     return f;
 }
 
@@ -127,14 +162,21 @@ auto when(bool cond, NodeT if_true, NodeF if_false) {
         "waya: both branches of when(cond, a, b) must have the same content "
         "category so the result has a well-defined place in the HTML tree.");
     Frag<node_categories_v<NodeT>> f;
-    if (cond)
-        f.parts.emplace_back([n = std::move(if_true)](std::string& o, style::StyleSheet& s) {
+    if (cond) {
+        f.parts.emplace_back([n = if_true](std::string& o, style::StyleSheet& s) {
             detail::render_child(o, s, n);
         });
-    else
-        f.parts.emplace_back([n = std::move(if_false)](std::string& o, style::StyleSheet& s) {
+        f.vparts.emplace_back([n = if_true](void* p, style::StyleSheet& s) {
+            detail::vbuild_child(p, s, n);
+        });
+    } else {
+        f.parts.emplace_back([n = if_false](std::string& o, style::StyleSheet& s) {
             detail::render_child(o, s, n);
         });
+        f.vparts.emplace_back([n = if_false](void* p, style::StyleSheet& s) {
+            detail::vbuild_child(p, s, n);
+        });
+    }
     return f;
 }
 
@@ -149,8 +191,11 @@ auto when(bool cond, NodeT if_true, NodeF if_false) {
 template <html::Cat Cats, typename Fn>
 auto dyn(Fn fn) {
     Frag<Cats> f;
-    f.parts.emplace_back([fn = std::move(fn)](std::string& o, style::StyleSheet& s) {
+    f.parts.emplace_back([fn](std::string& o, style::StyleSheet& s) {
         detail::render_child(o, s, fn());
+    });
+    f.vparts.emplace_back([fn](void* p, style::StyleSheet& s) {
+        detail::vbuild_child(p, s, fn());
     });
     return f;
 }

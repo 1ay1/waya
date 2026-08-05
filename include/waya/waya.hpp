@@ -29,8 +29,10 @@
 #include "style/tokens.hpp"
 #include "style/length.hpp"
 
-// ── Rendering ───────────────────────────────────────────────────────────────
+// ── Rendering ─────────────────────────────────────────────────────
 #include "render/html.hpp"
+#include "render/vwalk.hpp"   // to_vnode + vbuild_child (diffable snapshot)
+#include "render/diff.hpp"    // diff + patch (the browser-window-as-terminal)
 
 namespace waya {
 // Pull the DSL and style vocabularies into `waya::` for convenience; users may

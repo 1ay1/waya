@@ -95,26 +95,22 @@ int live(LiveConfig cfg = {}) {
     auto state = std::make_shared<State>();
     state->model = std::move(model0);
 
-    // Render the current model to (html, css, vnode). The message registry is
-    // filled as the view is built (see on_msg). Returns the fresh VNode too so
-    // the caller can store it as `prev` for the next diff.
-    auto render_now = [state](style::StyleSheet& sheet) {
-        // Capture messages ONCE, while the view tree is built (on_msg pipes run
-        // during P::view). The subsequent walks only read the finished tree, so
-        // the table must NOT be cleared again — the next POST looks it up.
+    // Build just the VNode for the current model (the Msg path needs only this;
+    // the HTML for the full page is built separately below). The message table
+    // is filled while P::view runs (on_msg pipes).
+    auto build_vnode = [state](style::StyleSheet& sheet) {
         app::detail::begin_msg_capture<Msg>();
         auto node = P::view(state->model);
-        std::string html;
-        waya::render::detail::walk(html, sheet, node);
-        auto vnode = waya::render::to_vnode(node, sheet);
-        return std::pair{std::move(html), std::move(vnode)};
+        return waya::render::to_vnode(node, sheet);
     };
 
     ServeConfig sc;
     sc.port = cfg.port; sc.open = cfg.open; sc.host = cfg.host;
 
-    return serve([state, render_now](const Request& req) -> std::string {
+    return serve([state, build_vnode](const Request& req) -> std::string {
         // Event endpoint: /__waya_msg?id=<n> → update → re-render → DIFF → patch.
+        // No HTML is built here — only the VNode, diffed against the retained
+        // prev. Only the changed nodes go on the wire.
         if (req.path.rfind("/__waya_msg", 0) == 0) {
             std::lock_guard lock(state->mu);
             auto id = app::detail::query_param(req.path, "id");
@@ -123,22 +119,24 @@ int live(LiveConfig cfg = {}) {
                 state->model = std::move(m2);
                 (void)cmd;   // Cmd interpretation lands with the WS runtime
             }
-            style::StyleSheet sheet;
-            auto [html, vnode] = render_now(sheet);
-            // Only the CHANGED nodes go on the wire — the whole point.
+            style::StyleSheet sheet;   // style classes only matter for changed nodes
+            auto vnode = build_vnode(sheet);
             vdom::Patch patch = state->have_prev
                 ? vdom::diff(state->prev, vnode)
                 : vdom::Patch{};
             state->prev = std::move(vnode);
             state->have_prev = true;
-            return vdom::to_json(patch);   // a compact op array, not HTML
+            return vdom::to_json(patch);
         }
 
-        // Full page: render once, remember the VNode as the baseline.
+        // Full page: render HTML once, and remember the VNode as the baseline.
         std::lock_guard lock(state->mu);
+        app::detail::begin_msg_capture<Msg>();
+        auto node = P::view(state->model);
         style::StyleSheet sheet;
-        auto [html, vnode] = render_now(sheet);
-        state->prev = vnode;
+        std::string html;
+        waya::render::detail::walk(html, sheet, node);
+        state->prev = waya::render::to_vnode(node, sheet);
         state->have_prev = true;
         std::string css = sheet.render();
         std::string style = css.empty() ? "" : "<style>" + css + "</style>";

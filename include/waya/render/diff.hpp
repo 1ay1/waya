@@ -104,6 +104,12 @@ inline void diff_attrs(const VNode& a, const VNode& b, const std::string& path, 
 }
 
 inline void diff_node(const VNode& a, const VNode& b, const std::string& path, Patch& out) {
+    // FAST PATH (maya's packed-cell compare): if the subtree hashes match, the
+    // whole subtree is unchanged — one uint64_t compare, no descent, no string
+    // touches. This is what makes diffing a 1000-row table where one cell
+    // changed cost ~one path down, not a full tree walk.
+    if (a.hash == b.hash) return;
+
     // Different KIND or tag → the shape changed here: replace the subtree.
     if (a.is_text != b.is_text || (!a.is_text && a.tag != b.tag)) {
         out.push_back({Op::replace, path, vnode_to_html(b), {}});
