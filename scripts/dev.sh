@@ -31,26 +31,31 @@ log "target: \033[1m$TARGET\033[0m   (pass a target to pick another: scripts/dev
 
 rebuild_and_run() {
     log "building $TARGET…"
-    if cmake --build "$BUILD" --target "$TARGET" -j 2>&1 | grep -Ei 'error|warning:' ; then
-        :  # surface compiler output
+    # Build FIRST, while the old server keeps running. Capture the result; only
+    # swap servers if the build actually succeeded — a failed build must never
+    # leave the browser without a server to reconnect to (that's the "stuck on
+    # loading" bug). cmake's exit code is the source of truth.
+    if ! cmake --build "$BUILD" --target "$TARGET" -j 2>&1 | tee /tmp/waya_build.log | grep -Ei 'error|warning:' ; then
+        : # (grep exit is ignored; we check the build result below)
     fi
-    # Did the build actually produce the binary?
-    BIN="$BUILD/$TARGET"
-    [ -x "$BIN" ] || BIN="$(find "$BUILD" -name "$TARGET" -type f -perm -u+x 2>/dev/null | head -1)"
-    if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-        log "\033[31mbuild failed\033[0m — fix errors above; watching for changes…"
+    if grep -qiE ' error:|Error [0-9]' /tmp/waya_build.log 2>/dev/null; then
+        log "\033[31mbuild failed\033[0m — keeping the last good server up; fix errors above."
         return 1
     fi
 
-    # Restart the server. The old socket drops → the browser's WS client
-    # reconnects to the fresh process and reloads (see live_ws_client), or the
-    # HTTP dev server's live-reload heartbeat fires — either way the page updates.
+    BIN="$BUILD/$TARGET"
+    [ -x "$BIN" ] || BIN="$(find "$BUILD" -name "$TARGET" -type f -perm -u+x 2>/dev/null | head -1)"
+    if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+        log "\033[31mno binary produced\033[0m — keeping the last good server up."
+        return 1
+    fi
+
+    # Build succeeded — now (and only now) swap the server. The old socket drops,
+    # the browser's WS client reconnects to the fresh process and reloads.
     if [ -n "$SERVER_PID" ]; then
         kill "$SERVER_PID" 2>/dev/null
-        # give the port a moment to free (SO_REUSEADDR makes this instant anyway)
-        sleep 0.2
+        wait "$SERVER_PID" 2>/dev/null   # ensure the port is released before rebind
     fi
-    # Only the first launch opens a browser tab; restarts reuse the open one.
     if [ -z "$FIRST_DONE" ]; then
         "$BIN" &
         FIRST_DONE=1

@@ -89,6 +89,21 @@ int main() {
         CHECK(verify_roundtrip<Counter>(seq));
     }
 
+    // RESET-HEAVY: the exact bug that hit the running server — return-to-zero
+    // after climbing must always emit a patch, never an empty one from a stale
+    // ancestor hash. Interleave climbs and resets aggressively.
+    {
+        std::vector<CM> seq;
+        for (int i = 0; i < 50; ++i) {
+            seq.push_back(CM{Counter::Inc{}});
+            seq.push_back(CM{Counter::Inc{}});
+            seq.push_back(CM{Counter::Reset{}});   // back to 0 every 3rd step
+            seq.push_back(CM{Counter::Dec{}});
+            seq.push_back(CM{Counter::Reset{}});
+        }
+        CHECK(verify_roundtrip<Counter>(seq));
+    }
+
     std::cout << "test_live_sound: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

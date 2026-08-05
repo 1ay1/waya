@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -82,6 +83,94 @@ inline std::atomic<int> g_ws_fd{-1};
 inline void ws_sigint(int){ int fd=g_ws_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
 
+/// Handle ONE accepted connection to completion (its own thread). Serves either
+/// a WebSocket streaming session or the initial HTML page. All session state is
+/// local; thread_local msg-table / memo cache keep sessions isolated.
+template <typename P>
+inline void handle_connection(int conn, int port) {
+    using Model = typename P::Model;
+    using Msg   = typename P::Msg;
+
+    char buf[8192];
+    ssize_t n = ::recv(conn, buf, sizeof(buf)-1, 0);
+    if (n <= 0) { ::close(conn); return; }
+    std::string_view req{buf, (size_t)n};
+
+    // WebSocket upgrade → a streaming session.
+    if (auto resp = ws::try_handshake(req)) {
+        ::send(conn, resp->data(), resp->size(), 0);
+
+        Model model = program_init<P>().first;
+        render::MemoCache memo;
+        vdom::VNode prev; bool have_prev = false;
+
+        auto rebuild = [&](style::StyleSheet& sheet) {
+            app::detail::begin_msg_capture<Msg>();
+            render::active_memo = &memo; render::memo_builds = 0;
+            auto node = P::view(model);
+            auto v = render::to_vnode(node, sheet);
+            memo.rotate(); render::active_memo = nullptr;
+            return v;
+        };
+        { style::StyleSheet s; prev = rebuild(s); have_prev = true; }
+
+        std::string acc;
+        for (;;) {
+            char fb[8192];
+            ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
+            if (r <= 0) break;
+            acc.append(fb, r);
+            std::size_t used = 0;
+            auto fr = ws::decode(acc, used);
+            if (!fr.ok) continue;
+            acc.erase(0, used);
+            if (fr.opcode == 0x8) break;                 // close
+            if (fr.opcode == 0x9) { auto p=ws::encode_pong(fr.payload);
+                ::send(conn,p.data(),p.size(),0); continue; }
+            if (fr.opcode != 0x1) continue;
+
+            if (auto msg = app::detail::lookup_msg<Msg>(fr.payload)) {
+                auto [m2, cmd] = P::update(std::move(model), *msg);
+                model = std::move(m2); (void)cmd;
+            }
+            style::StyleSheet sheet;
+            auto next = rebuild(sheet);
+            auto patch = have_prev ? vdom::diff(prev, next) : vdom::Patch{};
+#ifndef NDEBUG
+            {   vdom::VNode check = prev; vdom::apply(check, patch);
+                if (have_prev && vdom::vnode_to_html(check) != vdom::vnode_to_html(next))
+                    std::fprintf(stderr, "waya: BUG — patch/render divergence!\n"); }
+#endif
+            prev = std::move(next); have_prev = true;
+            std::string frame = ws::encode_text(vdom::to_json(patch));
+            ::send(conn, frame.data(), frame.size(), 0);
+        }
+        ::close(conn);
+        return;
+    }
+
+    // Otherwise: the initial HTML page (with the WS client embedded).
+    Model model = program_init<P>().first;
+    render::MemoCache memo; render::active_memo = &memo; render::memo_builds = 0;
+    app::detail::begin_msg_capture<Msg>();
+    auto node = P::view(model);
+    style::StyleSheet sheet; std::string html;
+    render::detail::walk(html, sheet, node);
+    memo.rotate(); render::active_memo = nullptr;
+    std::string css = sheet.render();
+    std::string styleTag = css.empty() ? "" : "<style>"+css+"</style>";
+    std::string doc =
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" + styleTag +
+        "</head><body><div id=\"waya-root\">" + html + "</div>" +
+        live_ws_client(port) + "</body></html>";
+    std::string http =
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: " + std::to_string(doc.size()) + "\r\n"
+        "Connection: close\r\n\r\n" + doc;
+    ::send(conn, http.data(), http.size(), 0);
+    ::close(conn);
+}
+
 } // namespace detail
 
 /// Run `P` as a live WebSocket app. One accept loop; each connection is a
@@ -119,96 +208,14 @@ int live_ws(ServeConfig cfg = {}) {
         int conn = ::accept(lfd, nullptr, nullptr);
         if (conn < 0) { if (detail::g_ws_fd < 0) break; continue; }
 
-        char buf[8192];
-        ssize_t n = ::recv(conn, buf, sizeof(buf)-1, 0);
-        if (n <= 0) { ::close(conn); continue; }
-        std::string_view req{buf, (size_t)n};
-
-        // Is this a WebSocket upgrade? If so, run a streaming session on it.
-        if (auto resp = ws::try_handshake(req)) {
-            ::send(conn, resp->data(), resp->size(), 0);
-
-            // Per-connection session state.
-            Model model = program_init<P>().first;
-            render::MemoCache memo;
-            vdom::VNode prev; bool have_prev = false;
-
-            auto rebuild = [&](style::StyleSheet& sheet) {
-                app::detail::begin_msg_capture<Msg>();
-                render::active_memo = &memo; render::memo_builds = 0;
-                auto node = P::view(model);
-                auto v = render::to_vnode(node, sheet);
-                memo.rotate(); render::active_memo = nullptr;
-                return v;
-            };
-            { style::StyleSheet s; prev = rebuild(s); have_prev = true; }
-
-            // Read frames until the client closes.
-            std::string acc;
-            for (;;) {
-                char fb[8192];
-                ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
-                if (r <= 0) break;
-                acc.append(fb, r);
-                std::size_t used = 0;
-                auto fr = ws::decode(acc, used);
-                if (!fr.ok) continue;
-                acc.erase(0, used);
-                if (fr.opcode == 0x8) break;                 // close
-                if (fr.opcode == 0x9) { auto p=ws::encode_pong(fr.payload);
-                    ::send(conn,p.data(),p.size(),0); continue; }
-                if (fr.opcode != 0x1) continue;               // want text
-
-                // A message id arrived: update → re-render → diff → push patch.
-                if (auto msg = app::detail::lookup_msg<Msg>(fr.payload)) {
-                    auto [m2, cmd] = P::update(std::move(model), *msg);
-                    model = std::move(m2); (void)cmd;
-                }
-                style::StyleSheet sheet;
-                auto next = rebuild(sheet);
-                auto patch = have_prev ? vdom::diff(prev, next) : vdom::Patch{};
-
-                // Keep `prev` = exactly the tree the client now holds, by
-                // applying the SAME patch the client will apply. Server and
-                // client stay in lockstep by construction — the next diff is
-                // therefore always against the client's real state.
-#ifndef NDEBUG
-                {   // self-check: apply(prev,patch) must equal the fresh render
-                    vdom::VNode check = prev; vdom::apply(check, patch);
-                    if (have_prev && vdom::vnode_to_html(check) != vdom::vnode_to_html(next))
-                        std::fprintf(stderr, "waya: BUG — patch/render divergence!\n");
-                }
-#endif
-                if (have_prev) vdom::apply(prev, patch);
-                else { prev = next; have_prev = true; }
-
-                std::string frame = ws::encode_text(vdom::to_json(patch));
-                ::send(conn, frame.data(), frame.size(), 0);   // STREAMED, no new request
-            }
-            ::close(conn);
-            continue;
-        }
-
-        // Otherwise: serve the initial HTML page (with the WS client embedded).
-        Model model = program_init<P>().first;
-        render::MemoCache memo; render::active_memo = &memo; render::memo_builds = 0;
-        app::detail::begin_msg_capture<Msg>();
-        auto node = P::view(model);
-        style::StyleSheet sheet; std::string html;
-        render::detail::walk(html, sheet, node);
-        memo.rotate(); render::active_memo = nullptr;
-        std::string css = sheet.render();
-        std::string style = css.empty() ? "" : "<style>"+css+"</style>";
-        std::string doc =
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" + style +
-            "</head><body><div id=\"waya-root\">" + html + "</div>" +
-            detail::live_ws_client(cfg.port) + "</body></html>";
-        std::string http =
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-            "Content-Length: " + std::to_string(doc.size()) + "\r\n"
-            "Connection: close\r\n\r\n" + doc;
-        ::send(conn, http.data(), http.size(), 0);
-        ::close(conn);
+        // Handle each connection on its OWN thread. This is what stops a single
+        // open WebSocket from blocking the whole server (the "stuck on loading"
+        // bug: the accept loop was trapped inside one long-lived WS read loop,
+        // so new tabs/refreshes never got served). thread_local msg-table and
+        // memo cache make each session naturally isolated — no locks needed.
+        std::thread([conn, port = cfg.port]{
+            detail::handle_connection<P>(conn, port);
+        }).detach();
     }
     return 0;
 }

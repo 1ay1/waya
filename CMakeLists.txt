@@ -15,6 +15,12 @@ target_include_directories(waya INTERFACE
 
 target_compile_features(waya INTERFACE cxx_std_26)
 
+# The live WebSocket runtime (app/live_ws.hpp) uses std::thread — one thread per
+# connection so a single open socket can't block the server. Link Threads for
+# any consumer that pulls it in.
+find_package(Threads REQUIRED)
+target_link_libraries(waya INTERFACE Threads::Threads)
+
 # waya authors its own diagnostics via P2741; the compiler's own instantiation
 # backtrace is noise. Consumers get short, readable errors. (See DESIGN §10.1.)
 target_compile_options(waya INTERFACE

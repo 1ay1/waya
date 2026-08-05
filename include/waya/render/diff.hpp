@@ -226,15 +226,42 @@ inline VNode* parent_and_index(VNode& root, std::string_view path, std::size_t& 
     idx = 0; for (char c : last) idx = idx * 10 + (c - '0');
     return node_at(root, parent);
 }
+
+/// Re-hash the node at `path` and every ancestor up to the root, bottom-up.
+/// After this, the whole tree's hashes are consistent — an applied tree is a
+/// valid diff baseline. O(depth), not O(tree).
+inline void rehash_path(VNode& root, std::string_view path) {
+    // Collect the chain root → target by index.
+    std::vector<VNode*> chain;
+    chain.push_back(&root);
+    VNode* cur = &root;
+    std::size_t i = 0;
+    while (i < path.size() && cur) {
+        std::size_t dot = path.find('.', i);
+        std::size_t end = dot == std::string_view::npos ? path.size() : dot;
+        std::size_t idx = 0;
+        for (std::size_t k = i; k < end; ++k) idx = idx * 10 + (path[k] - '0');
+        if (idx >= cur->kids.size()) break;   // path no longer valid (e.g. after remove)
+        cur = &cur->kids[idx];
+        chain.push_back(cur);
+        if (dot == std::string_view::npos) break;
+        i = dot + 1;
+    }
+    // Re-hash bottom-up so parents see fresh child hashes.
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) finalize_hash(**it);
+}
 } // namespace detail
 
-/// Apply a patch to a tree in place. The server uses this to keep `prev` exactly
-/// what the client's DOM now is — so the next diff is correct by construction.
+/// Apply a patch to a tree in place. The result is byte- AND hash-identical to a
+/// fresh render of the target, so an applied tree is itself a valid diff
+/// baseline (no stale hashes). Every op re-hashes the touched node and all its
+/// ancestors up to the root — that closes the stale-ancestor-hash hazard that
+/// would otherwise make a later diff's fast-path wrongly skip a real change.
 inline void apply(VNode& root, const Patch& p) {
     for (const auto& op : p) {
         switch (op.op) {
             case Op::set_text:
-                if (auto* n = detail::node_at(root, op.path)) { n->text = op.a; finalize_hash(*n); }
+                if (auto* n = detail::node_at(root, op.path)) n->text = op.a;
                 break;
             case Op::set_attr:
                 if (auto* n = detail::node_at(root, op.path)) {
@@ -243,14 +270,11 @@ inline void apply(VNode& root, const Patch& p) {
                     if (!found) n->attrs.emplace_back(op.a, op.b);
                     std::sort(n->attrs.begin(), n->attrs.end(),
                               [](auto& x, auto& y){ return x.first < y.first; });
-                    finalize_hash(*n);
                 }
                 break;
             case Op::remove_attr:
-                if (auto* n = detail::node_at(root, op.path)) {
+                if (auto* n = detail::node_at(root, op.path))
                     std::erase_if(n->attrs, [&](auto& kv){ return kv.first == op.a; });
-                    finalize_hash(*n);
-                }
                 break;
             case Op::replace:
                 if (auto* n = detail::node_at(root, op.path)) *n = op.node;
@@ -265,11 +289,13 @@ inline void apply(VNode& root, const Patch& p) {
                 if (auto* par = detail::node_at(root, op.path)) par->kids.push_back(op.node);
                 break;
         }
+        // Re-hash the touched node and every ancestor, so the tree remains a
+        // valid diff baseline. For structural ops (remove/insert) the parent
+        // path is what changed; for the rest it's the node at `path`. Either
+        // way, rehash from the node's PARENT chain up (node itself already
+        // holds fresh content; ancestors summarise it via child hashes).
+        detail::rehash_path(root, op.path);
     }
-    // Re-hash ancestors touched by structural ops so the tree stays consistent
-    // for the NEXT diff. (set_text/attr already re-hash their node above; the
-    // parent hashes are recomputed lazily by the next full to_vnode, which is
-    // what `prev` is compared against.)
 }
 
 } // namespace waya::vdom

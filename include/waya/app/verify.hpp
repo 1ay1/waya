@@ -32,26 +32,41 @@ template <typename P>
 /// i.e. the client (which runs the same apply) can never drift from the server.
 /// Returns true iff every step round-trips. This is the executable form of
 /// "if it compiles, the live UI is consistent."
+///
+/// IMPORTANT: this models the ACTUAL runtime loop — same memo cache reused
+/// across frames, `prev` replaced by the fresh render each step — so a bug that
+/// only shows up across a sequence (e.g. a stale-hash regression) is caught
+/// here, not only in a live browser.
 template <typename P>
 [[nodiscard]] bool verify_roundtrip(const std::vector<typename P::Msg>& msgs) {
     auto [model, _] = program_init<P>();
-    vdom::VNode prev = view_vnode<P>(model);
+
+    render::MemoCache memo;
+    auto build = [&](const typename P::Model& m) {
+        render::active_memo = &memo; render::memo_builds = 0;
+        style::StyleSheet sheet;
+        auto v = render::to_vnode(P::view(m), sheet);
+        memo.rotate(); render::active_memo = nullptr;
+        return v;
+    };
+
+    vdom::VNode prev = build(model);
 
     for (const auto& msg : msgs) {
         auto [m2, cmd] = P::update(std::move(model), msg);
         model = std::move(m2); (void)cmd;
 
-        vdom::VNode next = view_vnode<P>(model);
+        vdom::VNode next = build(model);
         vdom::Patch patch = vdom::diff(prev, next);
 
-        // Apply the patch to the client's view of the world (== prev) and check
-        // it becomes exactly `next`.
+        // The client (starting from prev == its current DOM) applies the patch;
+        // the result must be exactly `next`.
         vdom::VNode client = prev;
         vdom::apply(client, patch);
         if (vdom::vnode_to_html(client) != vdom::vnode_to_html(next))
             return false;
 
-        prev = std::move(next);
+        prev = std::move(next);   // same baseline strategy as the live runtime
     }
     return true;
 }
