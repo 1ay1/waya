@@ -155,18 +155,31 @@ inline std::string client(int port) {
     "function str(){var n=vi(),o=p;p+=n;return dec.decode(b.subarray(o,o+n));}"
     "var css=str();var nop=vi();var ops=[];"
     "for(var i=0;i<nop;i++){var k=b[p++];var d=vi();var path='';"
-    "for(var j=0;j<d;j++){path+=(j?'.':'')+vi();}var payload=(k===5)?'':str();ops.push([k,path,payload]);}"
+    "for(var j=0;j<d;j++){path+=(j?'.':'')+vi();}"
+    // payload shape depends on op: remove(5) none; move(8) [from,to];
+    // insert_at(9) [to,html]; everything else a single html/text string.
+    "var payload;"
+    "if(k===5){payload='';}"
+    "else if(k===8){payload=[vi(),vi()];}"
+    "else if(k===9){var to=vi();payload=[to,str()];}"
+    "else{payload=str();}"
+    "ops.push([k,path,payload]);}"
     "return{css:css,ops:ops};}"
     "function frag(html){var d=document.createElement('div');d.innerHTML=html;return d.firstChild;}"
     "function at(p){var e=R.firstElementChild;if(p==='')return e;var q=p.split('.');"
     "for(var i=0;i<q.length;i++){e=e.childNodes[+q[i]];if(!e)return null;}return e;}"
+    "function parent(p){var q=p.split('.');q.pop();return at(q.join('.'));}"
     "function apply(op){var k=op[0],p=op[1],e=at(p);"
     "if(k===7){R.innerHTML=op[2];}"
     "else if(k===0){if(e)e.textContent=op[2];}"
     "else if(k===1||k===2||k===4){if(e)e.replaceWith(frag(op[2]));}"
     "else if(k===3){if(e){var f=frag(op[2]);if(e.tagName==='IMG')e.src=f.src;else e.replaceWith(f);}}"
     "else if(k===5){if(e)e.remove();}"
-    "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}}"
+    "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}"
+    // insert_at: op[2]=[to,html]; insert BEFORE the current child at `to`.
+    "else if(k===9){var pa=at(p);if(pa){var nd=frag(op[2][1]);var ref=pa.childNodes[op[2][0]];pa.insertBefore(nd,ref||null);}}"
+    // move: op[2]=[from,to]; detach the child at `from`, reinsert before `to`.
+    "else if(k===8){var pa=at(p);if(pa){var from=op[2][0],to=op[2][1];var nd=pa.childNodes[from];if(nd){nd.remove();var ref=pa.childNodes[to];pa.insertBefore(nd,ref||null);}}}}"
     // — rAF-coalesced paint: queue frames, apply them all in one animation frame —
     "var q=[],raf=0;"
     "function flush(){raf=0;var frames=q;q=[];"
@@ -192,11 +205,14 @@ inline std::string client(int port) {
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
     "if(t&&ws&&ws.readyState===1){ev.preventDefault();ws.send(t.dataset.tap);}});"
-    // input events carry a value: send \"i<msg>|<value>\" (change: \"c<msg>|<value>\")
+    // input/change carry a payload. Checkboxes & radios send their checked
+    // state ("true"/"false"); every other control sends its value. So one path
+    // serves text, textarea, select, checkbox and radio uniformly.
+    "function payload(t){return (t.type==='checkbox'||t.type==='radio')?String(t.checked):t.value;}"
     "document.addEventListener('input',function(ev){var t=ev.target;"
-    "if(t.dataset&&t.dataset.input!=null&&ws&&ws.readyState===1){ws.send('i'+t.dataset.input+'|'+t.value);}});"
+    "if(t.dataset&&t.dataset.input!=null&&ws&&ws.readyState===1){ws.send('i'+t.dataset.input+'|'+payload(t));}});"
     "document.addEventListener('change',function(ev){var t=ev.target;"
-    "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+t.value);}});"
+    "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+payload(t));}});"
     "})();</script>";
 }
 

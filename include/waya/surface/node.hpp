@@ -131,16 +131,32 @@ struct Style {
 };
 
 // ── Primitives ───────────────────────────────────────────────────────────────
-enum class Kind : std::uint8_t { box, text, image, path, input };
+// box/text/image/path are the visual atoms; the rest are real form controls
+// (their value/checked flows up through on_input / on_change to update()).
+enum class Kind : std::uint8_t {
+    box, text, image, path,
+    input, textarea,          // free text (single / multi-line)
+    checkbox, radio,          // boolean / single-choice toggles
+    select,                   // dropdown; children are `option`s
+    button                    // a real <button> (submit-free tap target)
+};
 
 struct Node; using NodeRef = std::shared_ptr<Node>;
 struct Pt { float x, y; bool operator==(const Pt&) const = default; };
 
+/// One option in a `select`. `value` is what rides the wire; `label` is shown.
+struct Opt { std::string value, label; bool operator==(const Opt&) const = default; };
+
 struct Node {
     Kind  kind = Kind::box;
     Style style{};
-    std::string     text, src;         // text: content; image: url; input: value
+    std::string     text, src;         // text: content; image: url; input/area/button: value/label
     std::string     placeholder, input_type;  // input
+    std::string     name;              // radio/checkbox group name; form field name
+    bool            checked=false;     // checkbox / radio state
+    bool            disabled=false;    // control disabled
+    std::vector<Opt> options;          // select: the choices
+    std::string     selected;          // select: the chosen option value
     std::vector<Pt> points; bool closed=false;
     std::string     key;
     int             on_tap=-1;         // click → message
@@ -178,6 +194,8 @@ inline void finalize(Node& n){
     std::uint64_t h=1469598103934665603ull;
     h=mix(h,n.kind); h=hash_style(h,n.style);
     h=mix(h,n.text);h=mix(h,n.src);h=mix(h,n.placeholder);h=mix(h,n.input_type);
+    h=mix(h,n.name);h=mix(h,n.checked);h=mix(h,n.disabled);h=mix(h,n.selected);
+    for(auto&o:n.options){h=mix(h,o.value);h=mix(h,o.label);}
     for(auto&p:n.points){h=mix(h,p.x);h=mix(h,p.y);} h=mix(h,n.closed);
     h=mix(h,n.key); h=mix(h,(std::int64_t)n.on_tap); h=mix(h,(std::int64_t)n.on_input); h=mix(h,(std::int64_t)n.on_change);
     for(auto&k:n.kids) h=mix(h,k->hash);
@@ -201,6 +219,19 @@ inline NodeRef image(std::string src){ auto n=std::make_shared<Node>(); n->kind=
 inline NodeRef path(std::vector<Pt> pts, bool closed=false){ auto n=std::make_shared<Node>(); n->kind=Kind::path; n->points=std::move(pts); n->closed=closed; finalize(*n); return n; }
 /// `input(value)` — a real text field. Style/placeholder/on_input via modifiers.
 inline NodeRef input(std::string value={}){ auto n=std::make_shared<Node>(); n->kind=Kind::input; n->text=std::move(value); n->input_type="text"; finalize(*n); return n; }
+/// `textarea(value)` — a multi-line text field. Same on_input/on_change flow.
+inline NodeRef textarea(std::string value={}){ auto n=std::make_shared<Node>(); n->kind=Kind::textarea; n->text=std::move(value); finalize(*n); return n; }
+/// `checkbox(on)` — a boolean toggle. `on_change` fires with value "true"/"false".
+inline NodeRef checkbox(bool on=false){ auto n=std::make_shared<Node>(); n->kind=Kind::checkbox; n->checked=on; finalize(*n); return n; }
+/// `radio(name, value, on)` — one choice in a named group; `on_change` fires with `value`.
+inline NodeRef radio(std::string group, std::string value, bool on=false){ auto n=std::make_shared<Node>(); n->kind=Kind::radio; n->name=std::move(group); n->text=std::move(value); n->checked=on; finalize(*n); return n; }
+/// One `option` for a `select`. `value` rides the wire; `label` (or value) is shown.
+inline Opt option(std::string value, std::string label={}){ return {std::move(value), label.empty()?value:std::move(label)}; }
+/// `select(options, chosen)` — a dropdown; `on_change` fires with the chosen value.
+inline NodeRef select(std::vector<Opt> options, std::string chosen={}){ auto n=std::make_shared<Node>(); n->kind=Kind::select; n->options=std::move(options); n->selected=std::move(chosen); finalize(*n); return n; }
+/// `button(label)` — a real <button>; pair with `tap(msg)`. Distinct from a
+/// tappable box: it's keyboard-focusable and announced as a button by default.
+inline NodeRef button(std::string label){ auto n=std::make_shared<Node>(); n->kind=Kind::button; n->text=std::move(label); finalize(*n); return n; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ONE uniform modifier. maya's principle: everything is a node, and everything
@@ -353,6 +384,9 @@ inline Mod on_input(int msg){ return {[=](Node& n){ n.on_input=msg; }}; }
 inline Mod on_change(int msg){ return {[=](Node& n){ n.on_change=msg; }}; }
 inline Mod placeholder(std::string p){ return {[=](Node& n){ n.placeholder=p; }}; }
 inline Mod type(std::string t){ return {[=](Node& n){ n.input_type=t; }}; }
+inline Mod name(std::string nm){ return {[=](Node& n){ n.name=nm; }}; }
+inline Mod checked(bool on=true){ return {[=](Node& n){ n.checked=on; }}; }
+inline Mod disabled(bool on=true){ return {[=](Node& n){ n.disabled=on; }}; }
 inline Mod key(std::string k){ return {[=](Node& n){ n.key=k; }}; }
 
 } // namespace waya::surface

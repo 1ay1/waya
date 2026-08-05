@@ -19,6 +19,8 @@
 ///   set_text(0)/set_src(3): [str_len][str]
 ///   set_paint(1)/set_path(2)/replace(4)/insert(6)/paint(7): [html_len][html]
 ///   remove(5): (none)
+///   move(8): [from varint][to varint]
+///   insert_at(9): [to varint][html_len][html]
 
 #include "node.hpp"
 #include "dom.hpp"
@@ -62,15 +64,28 @@ inline std::string encode_delta(const Patch& p) {
     auto add_css = [&](const std::string& c){ if(!c.empty() && css.find(c)==std::string::npos) css += c; };
     for (const auto& op : p) {
         ++n;
-        ops += char((std::uint8_t)op.op);
+        // Keyed inserts carry a target index: encode as insert_at (9). `move`
+        // is wire op 8 (7 is reserved for a full paint on the client).
+        bool insert_at = (op.op == Op::insert && op.to >= 0);
+        std::uint8_t wire = insert_at ? 9 : (op.op == Op::move ? 8 : (std::uint8_t)op.op);
+        ops += char(wire);
         bin::put_path(ops, op.path);
         switch (op.op) {
             case Op::set_text: case Op::set_src:
                 bin::put_str(ops, op.s); break;
-            case Op::set_paint: case Op::set_path: case Op::replace: case Op::insert: {
+            case Op::set_paint: case Op::set_path: case Op::replace: {
                 if (op.node) { auto [html,c] = render_fragment(*op.node); add_css(c); bin::put_str(ops, html); }
                 else bin::put_str(ops, "");
                 break; }
+            case Op::insert: {
+                if (insert_at) bin::put_varint(ops, (std::uint64_t)op.to);
+                if (op.node) { auto [html,c] = render_fragment(*op.node); add_css(c); bin::put_str(ops, html); }
+                else bin::put_str(ops, "");
+                break; }
+            case Op::move:
+                bin::put_varint(ops, (std::uint64_t)op.from);
+                bin::put_varint(ops, (std::uint64_t)op.to);
+                break;
             case Op::remove: break;
         }
     }

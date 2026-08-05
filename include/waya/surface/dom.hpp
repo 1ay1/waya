@@ -75,8 +75,9 @@ private:
         if(s.has_grow){ o+="flex:"; o+=n(s.grow); o+=" 1 auto;"; }
         else if(s.has_shrink){ o+="flex-shrink:"; o+=n(s.shrink); o+=';'; }
         // text
-        // text colour & typography apply to text AND input (both show glyphs).
-        if(kind==Kind::text || kind==Kind::input){
+        // text colour & typography apply to text AND text-bearing controls.
+        if(kind==Kind::text || kind==Kind::input || kind==Kind::textarea ||
+           kind==Kind::button || kind==Kind::select){
             if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
             if(s.font_size.set()){o+="font-size:";len(o,s.font_size);o+=';';}
             if(s.weight!=Weight::none){o+="font-weight:";o+=wt(s.weight);o+=';';}
@@ -140,6 +141,16 @@ private:
         if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
     }
 
+    /// Shared control attributes: class, input/change wiring, disabled, name.
+    void control_attrs(std::string& o, const Node& nd){
+        auto cls = intern(nd.style, nd.kind, false);
+        if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
+        if(!nd.name.empty()){ o+=" name=\""; esc(o,nd.name); o+='"'; }
+        if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
+        if(nd.on_change>=0){ o+=" data-change=\""; o+=std::to_string(nd.on_change); o+='"'; }
+        if(nd.disabled) o+=" disabled";
+    }
+
     void emit(std::string& o, const Node& nd){
         switch(nd.kind){
             case Kind::text: o+="<span"; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</span>"; return;
@@ -148,11 +159,43 @@ private:
                 o+="<input type=\""; esc(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
                 o+=" value=\""; esc(o,nd.text); o+='"';
                 if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc(o,nd.placeholder); o+='"'; }
-                if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
-                if(nd.on_change>=0){ o+=" data-change=\""; o+=std::to_string(nd.on_change); o+='"'; }
-                auto cls = intern(nd.style, nd.kind, false);
-                if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
+                control_attrs(o,nd);
                 o+=">"; return;
+            }
+            case Kind::textarea: {
+                o+="<textarea";
+                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc(o,nd.placeholder); o+='"'; }
+                control_attrs(o,nd);
+                o+='>'; esc(o,nd.text); o+="</textarea>"; return;
+            }
+            case Kind::checkbox: {
+                o+="<input type=\"checkbox\"";
+                if(nd.checked) o+=" checked";
+                control_attrs(o,nd);
+                o+=">"; return;
+            }
+            case Kind::radio: {
+                o+="<input type=\"radio\" value=\""; esc(o,nd.text); o+='"';
+                if(nd.checked) o+=" checked";
+                control_attrs(o,nd);
+                o+=">"; return;
+            }
+            case Kind::select: {
+                o+="<select"; control_attrs(o,nd); o+='>';
+                for(auto&opt:nd.options){
+                    o+="<option value=\""; esc(o,opt.value); o+='"';
+                    if(opt.value==nd.selected) o+=" selected";
+                    o+='>'; esc(o,opt.label); o+="</option>";
+                }
+                o+="</select>"; return;
+            }
+            case Kind::button: {
+                o+="<button type=\"button\"";
+                auto cls = intern(nd.style, nd.kind, true);
+                if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
+                if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
+                if(nd.disabled) o+=" disabled";
+                o+='>'; esc(o,nd.text); o+="</button>"; return;
             }
             case Kind::path: {
                 // Compute the points' bounds → a viewBox, so the SVG SCALES to fit

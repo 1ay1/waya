@@ -41,13 +41,23 @@ inline std::string ops_json(const Patch& p, std::string& css_out){
     for(std::size_t i=0;i<p.size();++i){
         if(i) ops+=',';
         const auto& op=p[i];
-        ops+='['; ops+=std::to_string((int)op.op); ops+=','; detail::jstr(ops,op.path);
+        bool insert_at = (op.op==Op::insert && op.to>=0);
+        int wire = insert_at ? 9 : (op.op==Op::move ? 8 : (int)op.op);
+        ops+='['; ops+=std::to_string(wire); ops+=','; detail::jstr(ops,op.path);
         switch(op.op){
             case Op::set_text: case Op::set_src: ops+=','; detail::jstr(ops, op.s); break;
-            case Op::set_paint: case Op::set_path: case Op::replace: case Op::insert: {
+            case Op::set_paint: case Op::set_path: case Op::replace: {
                 if(op.node){ auto [html,c]=render_fragment(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
                 else ops+=",\"\"";
                 break; }
+            case Op::insert: {
+                if(insert_at){ ops+=','; ops+=std::to_string(op.to); }
+                if(op.node){ auto [html,c]=render_fragment(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
+                else ops+=",\"\"";
+                break; }
+            case Op::move:
+                ops+=','; ops+=std::to_string(op.from);
+                ops+=','; ops+=std::to_string(op.to); break;
             case Op::remove: break;
         }
         ops+=']';
