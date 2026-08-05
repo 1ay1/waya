@@ -35,13 +35,17 @@ namespace waya {
 
 namespace detail {
 
-/// The WS client: open a socket, render is server-pushed. On click send the
-/// msg id; on message apply the patch (same op-applier as the HTTP client).
+/// The WS client. Robust by design: it auto-reconnects with backoff (so a
+/// dropped socket — e.g. a `scripts/dev.sh` rebuild, a network blip — recovers
+/// on its own), and on a successful RECONNECT it reloads the page to pick up any
+/// new markup from a restarted server. First connect just wires up; only
+/// reconnects reload. This is what makes dev.sh + counter "just work".
 inline const char* live_ws_client(int port) {
     static std::string s;
     s =
     "<script>(function(){"
-    "var ws=new WebSocket('ws://'+location.hostname+':" + std::to_string(port) + "');"
+    "var url='ws://'+location.hostname+':" + std::to_string(port) + "';"
+    "var ws,connected=false;"
     "function at(path){var el=document.getElementById('waya-root').firstElementChild;"
     "if(path==='')return el;var p=path.split('.');"
     "for(var i=0;i<p.length;i++){el=el.children[+p[i]];if(!el)return null;}return el;}"
@@ -54,10 +58,18 @@ inline const char* live_ws_client(int port) {
     "else if(k===4){if(el)el.remove();}"
     "else if(k===5){var pa=at(path);if(pa){var d=document.createElement('div');"
     "d.innerHTML=a;pa.appendChild(d.firstElementChild||document.createTextNode(a));}}}"
+    "function connect(){ws=new WebSocket(url);"
+    "ws.onopen=function(){"
+    // A reconnect (the server came back, e.g. after a rebuild): reload to get
+    // the fresh page. The first connect just proceeds.
+    "if(connected){location.reload();}connected=true;};"
     "ws.onmessage=function(e){var ops=JSON.parse(e.data);for(var i=0;i<ops.length;i++)apply(ops[i]);};"
+    "ws.onclose=function(){setTimeout(connect,300);};"
+    "ws.onerror=function(){try{ws.close();}catch(_){}}; }"
+    "connect();"
     "document.addEventListener('click',function(e){"
     "var t=e.target.closest('[data-waya-msg]');"
-    "if(t&&ws.readyState===1){e.preventDefault();"
+    "if(t&&ws&&ws.readyState===1){e.preventDefault();"
     "ws.send(t.getAttribute('data-waya-msg'));}});"
     "})();</script>";
     return s.c_str();

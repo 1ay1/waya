@@ -20,8 +20,11 @@ cd "$ROOT" || exit 1
 
 WATCH="include examples src tests"
 SERVER_PID=""
+FIRST_DONE=""
 
-log() { printf '\033[36mwaya dev\033[0m %s\n' "$*"; }
+log() { printf '\033[36mwaya dev\033[0m %b\n' "$*"; }
+
+log "target: \033[1m$TARGET\033[0m   (pass a target to pick another: scripts/dev.sh counter)"
 
 # Ensure the build dir is configured.
 [ -f "$BUILD/CMakeCache.txt" ] || cmake -S . -B "$BUILD" >/dev/null
@@ -39,16 +42,23 @@ rebuild_and_run() {
         return 1
     fi
 
-    # Restart the server. New process → new live-reload token → browser reloads.
-    [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+    # Restart the server. The old socket drops → the browser's WS client
+    # reconnects to the fresh process and reloads (see live_ws_client), or the
+    # HTTP dev server's live-reload heartbeat fires — either way the page updates.
+    if [ -n "$SERVER_PID" ]; then
+        kill "$SERVER_PID" 2>/dev/null
+        # give the port a moment to free (SO_REUSEADDR makes this instant anyway)
+        sleep 0.2
+    fi
     # Only the first launch opens a browser tab; restarts reuse the open one.
-    if [ -z "$SERVER_PID" ]; then
+    if [ -z "$FIRST_DONE" ]; then
         "$BIN" &
+        FIRST_DONE=1
     else
         WAYA_NO_OPEN=1 "$BIN" &
     fi
     SERVER_PID=$!
-    log "running (pid $SERVER_PID)"
+    log "running \033[1m$TARGET\033[0m (pid $SERVER_PID) — edit & save to reload"
 }
 
 cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; exit 0; }

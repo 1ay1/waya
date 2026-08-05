@@ -296,9 +296,15 @@ and restarts the server — and the page **refreshes itself** a moment later (th
 dev server injects a tiny live-reload client, no browser extension needed):
 
 ```sh
-scripts/dev.sh                 # edit a .cpp/.hpp, save, watch the browser update
-scripts/dev.sh mypage build    # custom target / build dir
+scripts/dev.sh                 # runs the `hello` example by default
+scripts/dev.sh counter         # a specific example (Model/Msg/update/view)
+scripts/dev.sh mypage build    # custom target + build dir
 ```
+
+Edit a `.cpp`/`.hpp`, save, and the browser updates itself — for a `live_ws`
+app the WebSocket client reconnects to the rebuilt server and reloads; for a
+plain SSR page the injected heartbeat refreshes it. Try `scripts/dev.sh counter`
+and click the buttons.
 
 Install `inotify-tools` for instant reloads; otherwise it polls once a second.
 
