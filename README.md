@@ -11,6 +11,12 @@
   <a href="spike/">Spike</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/1ay1/waya/actions/workflows/ci.yml"><img src="https://github.com/1ay1/waya/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/C%2B%2B-26-blue" alt="C++26">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+</p>
+
 ---
 
 > **Status: Phase 0 complete.** The core mechanism is proven and both project
