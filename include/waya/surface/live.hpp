@@ -52,9 +52,14 @@ struct LiveConfig { int port = 8080; const char* host = "127.0.0.1"; bool open =
 /// A Surface Program: Model + Msg + init/update/view(->NodeRef). `update` may
 /// be `update(Model, Msg)` (taps) OR `update(Model, Msg, std::string value)`
 /// (inputs carry a value) — the runtime calls whichever you define.
+///
+/// Surface `Msg` must be an integer or an integer-backed enum: taps travel over
+/// the WebSocket as integers, so the runtime converts Msg <-> int at the wire.
+/// (Use a `std::variant` Msg with the DOM `waya::app` runtime, not this one.)
 template <typename P>
 concept SurfaceProgram =
     requires { typename P::Model; typename P::Msg; }
+    && (std::integral<typename P::Msg> || std::is_enum_v<typename P::Msg>)
     && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; };
 
 namespace detail {
@@ -225,14 +230,25 @@ struct Session {
     }
     void stop() { alive = false; qcv.notify_all(); }
 
+    /// Unblock a reader parked in ::recv and wake the owner loop. Does NOT close
+    /// the fd — the owner loop is the sole closer, after the reader has exited,
+    /// so the fd number can never be recycled under a stale recv()/send().
+    void shutdown_io() {
+        alive = false;
+        ::shutdown(conn, SHUT_RDWR);   // makes the blocking recv return 0/-1
+        qcv.notify_all();
+    }
+
     void send_binary(const std::string& frame) {
+        if (!alive) return;
         std::lock_guard<std::mutex> l(wm);
-        ::send(conn, frame.data(), frame.size(), 0);
+        if (::send(conn, frame.data(), frame.size(), MSG_NOSIGNAL) < 0) alive = false;
     }
     void send_text(const std::string& s) {
+        if (!alive) return;
         auto f = ws::encode_text(s);
         std::lock_guard<std::mutex> l(wm);
-        ::send(conn, f.data(), f.size(), 0);
+        if (::send(conn, f.data(), f.size(), MSG_NOSIGNAL) < 0) alive = false;
     }
 };
 
@@ -343,8 +359,9 @@ void handle(int conn, int port) {
         detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
 
         // Reader thread: decode the WebSocket and funnel messages into the
-        // queue. Runs alongside the effect threads; the main loop below owns
-        // the model and drains everything.
+        // queue. Runs alongside the effect threads; the owner loop below owns
+        // the model and drains everything. We JOIN it before closing the fd, so
+        // the socket is never closed out from under a blocking recv().
         std::thread reader([s, conn]{
             std::string acc;
             for (;;) {
@@ -352,14 +369,17 @@ void handle(int conn, int port) {
                 ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
                 if (r <= 0) break;
                 acc.append(fb, r);
+                // Bound the reassembly buffer: a peer that never completes a
+                // frame can't make us allocate without limit.
+                if (acc.size() > (1u << 20)) { break; }
                 for (;;) {
                     std::size_t used = 0;
                     auto fr = ws::decode(acc, used);
                     if (!fr.ok) break;
                     acc.erase(0, used);
-                    if (fr.opcode == 0x8) { s->stop(); return; }
+                    if (fr.opcode == 0x8) { s->stop(); return; }        // close
                     if (fr.opcode == 0x9) { s->send_binary(ws::encode_pong(fr.payload)); continue; }
-                    if (fr.opcode != 0x1) continue;
+                    if (fr.opcode != 0x1) continue;                     // ignore non-text
 
                     // Upstream messages: taps "<msg>"; inputs "i<msg>|<value>"
                     // / "c<msg>|<value>"; route "@route|<path>" (special msg).
@@ -370,25 +390,32 @@ void handle(int conn, int port) {
                         auto bar = raw.find('|');
                         int m = std::atoi(raw.substr(1, bar-1).c_str());
                         s->push(m, bar != std::string::npos ? raw.substr(bar+1) : std::string{});
-                    } else {
-                        s->push(std::atoi(raw.c_str()));
+                    } else if (!raw.empty()) {
+                        // A bare tap is a signed integer msg id. Reject anything
+                        // non-numeric so a malformed frame can't masquerade as
+                        // msg 0 (atoi's silent failure).
+                        char* end = nullptr;
+                        long m = std::strtol(raw.c_str(), &end, 10);
+                        if (end && *end == '\0') s->push(static_cast<int>(m));
                     }
                 }
             }
-            s->stop();
+            s->stop();   // EOF / error: wake the owner loop so it can exit.
         });
-        reader.detach();
 
         // The single owner loop: drain the queue, dispatch, interpret effects,
-        // repaint the diff, reconcile subscriptions. One thread, one model.
+        // repaint the diff, reconcile subscriptions. One thread, one model — so
+        // update()/view() never need a lock. `subscribe` is evaluated exactly
+        // once per handled message, as in Elm.
         while (auto d = s->pop()) {
             std::pair<Model, Cmd<Msg>> r;
             if (d->msg == kRouteMsg) {
-                // Deliver route changes through the app's on_route subscription.
+                // Route changes flow through the app's on_route subscription,
+                // computed from the CURRENT model (before this message).
                 auto sub = detail::subs_of<P, Model, Msg>(model);
-                if (auto* rt = sub.route())
-                    r = detail::dispatch<P>(std::move(model), rt->route(d->value), std::string{});
-                else { model = std::move(model); continue; }
+                auto* rt = sub.route();
+                if (!rt) continue;   // app doesn't route: drop it
+                r = detail::dispatch<P>(std::move(model), rt->route(d->value), std::string{});
             } else {
                 r = detail::dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value);
             }
@@ -402,9 +429,13 @@ void handle(int conn, int port) {
                 s->send_binary(ws::encode_binary(encode_delta(patch)));
 
             detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
+            if (!s->alive) break;   // Cmd::quit or a dead socket: stop the loop.
         }
-        // Stop all interval threads on the way out.
+        // Orderly teardown: stop interval threads, unblock + join the reader,
+        // then close the fd exactly once (no stale recv/send on a recycled fd).
         for (auto& t : s->timers) *t.run = false;
+        s->shutdown_io();
+        if (reader.joinable()) reader.join();
         ::close(conn);
         return;
     }
