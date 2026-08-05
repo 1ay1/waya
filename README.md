@@ -30,9 +30,12 @@ model, the cascade, the DOM, event handlers, hydration. waya's bet is that
 **surface** with a tiny vocabulary; waya owns *how* it renders — HTML, CSS,
 canvas, whatever fits — and keeps it in sync over the network by streaming only
 what changed. Powerful enough to draw anything, simple enough to learn in a
-minute, and never tied to a substrate. See **[SURFACE.md](SURFACE.md)** (proven
-in `spike/surface/`, 15/15: one `view()`, a DOM backend AND a canvas backend,
-unchanged).
+minute, and never tied to a substrate. See **[SURFACE.md](SURFACE.md)** — it's
+real in the framework now (`include/waya/surface/`, run
+`./build/surface_app`): a live app whose `view()` is pure `box`/`text`/`path`
+(a chart is one node), rendered to the browser and kept in sync by streaming
+only the delta on each tap. Not one line of the app mentions HTML, CSS, a div,
+flex, onclick, or a canvas.
 
 The first shipped layer is the **DOM backend** of that model — and it carries a
 guarantee no JS framework can:

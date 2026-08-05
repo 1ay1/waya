@@ -45,6 +45,9 @@ if(WAYA_BUILD_EXAMPLES)
     add_executable(counter examples/counter.cpp)
     target_link_libraries(counter PRIVATE waya::waya)
 
+    add_executable(surface_app examples/surface_app.cpp)
+    target_link_libraries(surface_app PRIVATE waya::waya)
+
     # A dev-server smoke test: start `hello`, curl it, check the response.
     # Skipped automatically where curl or /bin/sh are unavailable.
     if(WAYA_BUILD_TESTS AND UNIX)
