@@ -23,6 +23,7 @@
 // ── DSL: elements, attributes, the content model ───────────────────────────
 #include "dsl/element.hpp"
 #include "dsl/dynamic.hpp"
+#include "dsl/layout.hpp"
 
 // ── Styling: the vocabulary and its type-state gates ────────────────────────
 #include "style/tokens.hpp"

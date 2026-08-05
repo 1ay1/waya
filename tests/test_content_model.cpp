@@ -31,7 +31,7 @@ int main() {
     (void)ok1; (void)ok2; (void)ok3;
 
     // Styling type-state: gap AFTER a container token is fine.
-    auto styled = div_(text("x")) | row | gap(8_px) | justify(Justify::center);
+    auto styled = div_(text("x")) | hbox | gap(8_px) | justify(Justify::center);
     (void)styled;
 
     std::cout << "test_content_model: all static_asserts passed\n";

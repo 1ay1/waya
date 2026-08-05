@@ -77,16 +77,23 @@ Both are now permanent rules for Phases 1+.
       them guarantees drift
 - [ ] Per-element attribute allowlists + required-attribute checks (`alt`, `name`)
 - [ ] `Node = variant<Elem, Text, Raw, Fragment, NodeRef, Island>`
-- [ ] **Styling (DESIGN.md §5.5)** — promote the styling spike into the framework:
-      the `Sty` vocabulary (colour, box model, flex, grid, typography, radius,
-      shadow, transitions, pseudo-classes, media queries), the `|` pipe with
-      compile-time merge, the flex/grid type-state gates, the interning
-      `StyleSheet` that emits one deduplicated stylesheet, and the
-      `prop<>`/`css_class<>`/`raw_style` escape seam
+- [x] **Styling (DESIGN.md §5.5)** — the `Sty` vocabulary (colour, box model,
+      flex, grid, typography, radius, shadow, transitions, pseudo-classes,
+      media queries), the `|` pipe with merge, the flex/grid type-state gates,
+      the interning `StyleSheet` (one deduplicated stylesheet), and the
+      universal `prop<>`/`var_<>`/`on<>`/`at<>` channel (any CSS, one pipe)
+- [x] **Layout components** — `row`/`col`/`stack`/`cluster`/`center`/`grid`/
+      `grid_auto`/`sidebar`/`spacer`/`divider`: any layout in one call,
+      responsive by default, still fully pipeable (test_layout, 22 assertions)
+- [x] **Runtime-data combinators** — `each`/`each_indexed`/`when`/`dyn`/`raw`,
+      type-erased but content-model-checked (test_dynamic, 17 assertions)
+- [x] **Dev server + live reload** — `waya::serve()`, `scripts/dev.sh`
 - [ ] Escaping-context types (`HtmlText`/`AttrVal`/`UrlVal`/`JsVal`/`CssVal`)
       with `consteval` URL-scheme validation
+- [ ] Generic attributes + events: `attr<"data-x">(v)`, `on_click<Msg>`, ARIA
 - [ ] Attribute interning (maya's `StylePool` pattern → `AttrPool`)
-- [ ] `each()`, `when()`, `key()`, `cls_if()`, `raw_html()`, `unsafe::`
+- [ ] `key()`, `cls_if()` polish; `unsafe::` for content-model bypass
+- [ ] `tools/gen_elements.py` → all ~110 elements + attribute allowlists
 - [ ] Arena allocator for the render path; **zero allocations in steady state**
 - [ ] Fuzz the renderer (output must always be well-formed, always escaped)
 - [ ] `CacheId` ported from maya, subtree memoisation

@@ -62,7 +62,7 @@ int main() {
     // ── grid via prop: a layout the named tokens don't cover ────────────────
     {
         auto r = waya::render::render(
-            div_(text("x")) | grid | prop<"grid-template-columns", "repeat(3, 1fr)">);
+            div_(text("x")) | gridbox | prop<"grid-template-columns", "repeat(3, 1fr)">);
         CHECK(has(r.css, "display:grid"));
         CHECK(has(r.css, "grid-template-columns:repeat(3, 1fr)"));
     }

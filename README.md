@@ -116,6 +116,23 @@ div_(...) | prop<"backdrop-filter", "blur(8px)">
           | at<Md>(pad(16_px))              // @media (min-width:768px)
 ```
 
+### Layout, one call
+
+Common layouts are components, not repeated pipes — responsive by default, and
+still fully composable (keep piping styles onto them):
+
+```cpp
+row(a, b, c)                  // side by side, wraps as it narrows
+col(header, body, footer)     // stacked, each fills the width
+row(logo, spacer(), nav)      // spacer() shoves siblings to opposite ends
+cluster(tag1, tag2, tag3)     // wrapping chips, vertically centred
+grid_auto(240_px, /*cards*/)  // as many columns as fit, re-flows itself
+grid(a, b, c) | cols(3)       // or a fixed N-column grid
+sidebar(nav, main_, 260_px)   // fixed rail + fluid main, stacks when narrow
+center(content)               // centred both axes
+row(a, b) | gap(24_px) | bg(0x111827)   // still pipeable
+```
+
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,
 interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).

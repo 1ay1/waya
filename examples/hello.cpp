@@ -35,21 +35,20 @@ constexpr auto ok       = 0x34d399;
 constexpr auto down     = 0xf87171;
 }
 
-// ── a feature card that lifts on hover ──────────────────────────────────────
+// ── a feature card that lifts on hover ─────────────────────────────────
 static auto feature(std::string_view icon, std::string_view title, std::string_view body) {
-    return div_(
+    return col(
         div_(text(icon)) | size(28_px),
         h3_(text(title)) | size(18_px) | weight(Weight::w600) | fg(c::text),
         p_(text(body))   | fg(c::muted) | leading(1.6_rem) | size(15_px)
     )
-    | col | gap(10_px) | pad(24_px)
+    | gap(10_px) | pad(24_px)
     | bg(c::surface) | rounded(16_px)
     | prop<"border", "1px solid #263156">
     | prop<"transition", "transform .18s ease, box-shadow .18s ease, border-color .18s ease">
     | on<Hover>(prop<"transform", "translateY(-4px)">,
                 prop<"box-shadow", "0 12px 32px rgba(0,0,0,.45)">,
-                prop<"border-color", "#6366f1">)
-    | prop<"flex", "1 1 240px">;   // grow, shrink, 240px basis → responsive wrap
+                prop<"border-color", "#6366f1">);
 }
 
 // ── a status pill ───────────────────────────────────────────────────────────
@@ -108,13 +107,14 @@ static auto page(const std::vector<Service>& svcs) {
         body_(
             main_(
                 // hero
-                header_(
+                col(
                     span_(text("C++26 · type-state · server-rendered"))
                         | prop<"display", "inline-block">
                         | pad_y(6_px) | pad_x(12_px) | rounded(9999_px)
                         | size(13_px) | weight(Weight::w600) | fg(c::brand2)
                         | prop<"background", "rgba(34,211,238,.1)">
-                        | prop<"border", "1px solid rgba(34,211,238,.25)">,
+                        | prop<"border", "1px solid rgba(34,211,238,.25)">
+                        | prop<"align-self", "flex-start">,
                     h1_(text("waya"))
                         | size(64_px) | weight(Weight::w800)
                         | prop<"background", "linear-gradient(90deg,#818cf8,#22d3ee)">
@@ -126,11 +126,10 @@ static auto page(const std::vector<Service>& svcs) {
                             "Render on the server. maya's philosophy, for the web."))
                         | fg(c::muted) | size(19_px) | leading(1.7_rem)
                         | max_w(560_px)
-                ) | col | gap(18_px)
-                  | prop<"align-items", "flex-start">,
+                ) | gap(18_px),
 
-                // features
-                section_(
+                // features — a responsive auto-fit grid, no breakpoints
+                grid_auto(240_px,
                     feature("◆", "Type-safe HTML",
                             "The HTML5 content model is enforced by the compiler. "
                             "A <div> in a <p> is a one-line error, not a 3am bug."),
@@ -140,29 +139,29 @@ static auto page(const std::vector<Service>& svcs) {
                     feature("⟳", "Dynamic & fast",
                             "each / when render runtime data, still type-checked. "
                             "Repeated styles collapse to one atomic class.")
-                ) | row | wrap() | gap(16_px),
+                ),
 
                 // live table
-                section_(
-                    div_(
+                col(
+                    row(
                         h2_(text("Live services")) | size(22_px) | weight(Weight::bold) | fg(c::text),
+                        spacer(),
                         span_(text(std::to_string(svcs.size()) + " monitored"))
                             | fg(c::muted) | size(14_px)
-                    ) | row | justify(Justify::between)
-                      | prop<"align-items", "baseline">,
+                    ) | items(Align::baseline),
                     services_table(svcs)
-                ) | col | gap(14_px),
+                ) | gap(14_px),
 
                 // footer
-                footer_(
+                row(
                     span_(text("Built with waya")) | fg(c::muted) | size(14_px),
+                    spacer(),
                     a_(text("github.com/1ay1/waya")) | href<"https://github.com/1ay1/waya">
                         | fg(c::brand2) | prop<"text-decoration", "none">
                         | on<Hover>(prop<"text-decoration", "underline">)
-                ) | row | justify(Justify::between)
-                  | prop<"border-top", "1px solid #263156"> | pad_y(24_px)
+                ) | prop<"border-top", "1px solid #263156"> | pad_y(24_px)
             )
-            | col | gap(56_px)
+            | vbox | gap(56_px)
             | prop<"max-width", "880px"> | prop<"margin", "0 auto">
             | pad(32_px)
             // responsive: more breathing room on wider screens

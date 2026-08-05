@@ -58,9 +58,12 @@ struct Block{        constexpr Sty apply(Sty s) const { s.display=Display::block
 struct Hidden{       constexpr Sty apply(Sty s) const { s.display=Display::none; return s; } };
 
 constexpr Flex flex(Dir d = Dir::row) { return {d}; }
-inline constexpr Flex  row{Dir::row};   ///< `| row`  — a horizontal flex container
-inline constexpr Flex  col{Dir::col};   ///< `| col`  — a vertical flex container
-inline constexpr Grid  grid{};
+// The bare `row`/`col` NAMES belong to the layout COMPONENTS (dsl::row(...),
+// dsl::col(...)) — the thing you call constantly. As style tokens, use
+// `flex(Dir::row)` / `flex(Dir::col)`, or the `hbox`/`vbox` aliases below.
+inline constexpr Flex  hbox{Dir::row};   ///< `| hbox` — horizontal flex container
+inline constexpr Flex  vbox{Dir::col};   ///< `| vbox` — vertical flex container
+inline constexpr Grid  gridbox{};        ///< `| gridbox` — a CSS grid container
 inline constexpr Block block{};
 inline constexpr Hidden hidden{};
 
@@ -109,6 +112,32 @@ struct Grow   { int n; constexpr Sty apply(Sty s) const { s.has_grow=true; s.gro
 struct Shrink { int n; constexpr Sty apply(Sty s) const { s.has_shrink=true; s.shrink=n; return s; } };
 constexpr Grow   grow(int n = 1)   { return {n}; }
 constexpr Shrink shrink(int n = 1) { return {n}; }
+
+// ── Grid helpers ── (sugar over prop; grid can also be fully hand-driven) ──
+// `cols(3)` → grid-template-columns: repeat(3, 1fr); a fixed N-column grid.
+struct Cols { int n; Sty apply(Sty s) const {
+    if (s.display == Display::unset) s.display = Display::grid;
+    s.extra.emplace_back("grid-template-columns",
+                         "repeat(" + std::to_string(n) + ", minmax(0,1fr))");
+    return s;
+} };
+constexpr Cols cols(int n) { return {n}; }
+
+// `autofit(240_px)` → responsive grid: as many columns as fit at >= min width.
+struct AutoFit { Len minw; Sty apply(Sty s) const {
+    if (s.display == Display::unset) s.display = Display::grid;
+    // inline length -> string (px/rem/etc.)
+    auto lenstr = [](Len l){
+        std::string o; switch(l.unit){
+            case Unit::px: o=std::to_string((int)l.value)+"px"; break;
+            case Unit::rem:o=std::to_string(l.value)+"rem"; break;
+            default:       o=std::to_string((int)l.value)+"px";
+        } return o; };
+    s.extra.emplace_back("grid-template-columns",
+        "repeat(auto-fit, minmax(" + lenstr(minw) + ", 1fr))");
+    return s;
+} };
+constexpr AutoFit autofit(Len min_width) { return {min_width}; }
 
 // ── Typography ──────────────────────────────────────────────────────────────
 struct Wt     { Weight w;    constexpr Sty apply(Sty s) const { s.weight=w; return s; } };
