@@ -1,8 +1,9 @@
 # ── Runtime tests ────────────────────────────────────────────────────────────
 add_executable(test_render        test_render.cpp)
 add_executable(test_content_model test_content_model.cpp)
+add_executable(test_dynamic       test_dynamic.cpp)
 
-foreach(t test_render test_content_model)
+foreach(t test_render test_content_model test_dynamic)
     target_link_libraries(${t} PRIVATE waya::waya)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
@@ -10,7 +11,7 @@ endforeach()
 # ── Compile-fail tests: each case MUST NOT compile ───────────────────────────
 # We compile tests/fail/cases.cpp once per case; ctest treats a failed compile
 # as the expected outcome via WILL_FAIL. This is the golden-error surface.
-set(WAYA_FAIL_CASES 15)
+set(WAYA_FAIL_CASES 17)
 
 foreach(n RANGE 1 ${WAYA_FAIL_CASES})
     add_test(

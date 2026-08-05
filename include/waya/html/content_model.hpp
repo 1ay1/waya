@@ -46,6 +46,18 @@ consteval auto text_msg() {
     return m;
 }
 
+/// A fragment (from each/when/dyn) carries a content category, not a tag. This
+/// message names what the fragment produces so the error is actionable.
+template <Tag Parent, Cat ChildCats>
+consteval auto frag_msg() {
+    diag::Msg<448> m;
+    m += "waya: this fragment produces "; m += describe(ChildCats);
+    m += ", which is not permitted inside <"; m += Traits<Parent>::name;
+    m += ">. <"; m += Traits<Parent>::name;
+    m += "> permits "; m += describe(Traits<Parent>::permits); m += ".";
+    return m;
+}
+
 template <Tag T>
 consteval auto void_msg() {
     diag::Msg<256> m;
@@ -76,22 +88,39 @@ struct TagOf<C> {
     static constexpr Tag  value = C::NodeTag;
 };
 
+/// Distinguishes fragments (each/when/dyn — they carry `Categories` but no
+/// `NodeTag`) from plain text, so their diagnostic can name the category they
+/// produce.
+template <typename C> struct IsFrag { static constexpr bool value = false; };
+template <typename C>
+    requires requires { C::WayaFragment; }
+struct IsFrag<C> { static constexpr bool value = true; };
+
 template <Tag Parent, typename Child,
           bool Ok = PermittedChild<Parent, Child>,
-          bool IsElem = TagOf<Child>::has>
+          bool IsElem = TagOf<Child>::has,
+          bool IsFragment = IsFrag<Child>::value>
 struct CheckChild {
     static_assert(Ok, detail::nesting_msg<Parent, TagOf<Child>::value>());
     static constexpr bool value = true;
 };
 
+// A fragment child that is not permitted: name the category it produces.
 template <Tag Parent, typename Child>
-struct CheckChild<Parent, Child, false, false> {
+struct CheckChild<Parent, Child, false, false, true> {
+    static_assert(sizeof(Child) == 0, detail::frag_msg<Parent, categories_of<Child>>());
+    static constexpr bool value = true;
+};
+
+// Plain text (or other tagless, non-fragment node) that is not permitted.
+template <Tag Parent, typename Child>
+struct CheckChild<Parent, Child, false, false, false> {
     static_assert(sizeof(Child) == 0, detail::text_msg<Parent>());
     static constexpr bool value = true;
 };
 
-template <Tag Parent, typename Child, bool IsElem>
-struct CheckChild<Parent, Child, true, IsElem> {
+template <Tag Parent, typename Child, bool IsElem, bool IsFragment>
+struct CheckChild<Parent, Child, true, IsElem, IsFragment> {
     static constexpr bool value = true;
 };
 

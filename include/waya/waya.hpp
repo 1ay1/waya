@@ -20,8 +20,9 @@
 ///   );
 ///   std::string html = waya::render::render_document(page);
 
-// ── DSL: elements, attributes, the content model ────────────────────────────
+// ── DSL: elements, attributes, the content model ───────────────────────────
 #include "dsl/element.hpp"
+#include "dsl/dynamic.hpp"
 
 // ── Styling: the vocabulary and its type-state gates ────────────────────────
 #include "style/tokens.hpp"

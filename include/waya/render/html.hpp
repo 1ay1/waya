@@ -9,6 +9,7 @@
 
 #include "escape.hpp"
 #include "../dsl/node.hpp"
+#include "../dsl/dynamic.hpp"
 #include "../style/css.hpp"
 
 #include <string>
@@ -29,6 +30,15 @@ using dsl::TextNode;
 
 inline void walk(std::string& out, style::StyleSheet& sheet, const TextNode& t) {
     escape_text(out, t.value);
+}
+
+inline void walk(std::string& out, style::StyleSheet&, const dsl::RawHtml& r) {
+    out += r.html;   // trusted, unescaped by contract
+}
+
+template <html::Cat C>
+void walk(std::string& out, style::StyleSheet& sheet, const dsl::Frag<C>& f) {
+    for (const auto& part : f.parts) part(out, sheet);
 }
 
 template <html::Tag T, dsl::ElemCfg Cfg, typename... Cs>
@@ -59,8 +69,19 @@ void walk(std::string& out, style::StyleSheet& sheet, const ElemNode<T, Cfg, Cs.
 }
 
 } // namespace detail
+} // namespace waya::render
 
-/// Render a subtree to HTML + CSS (no doctype). For fragments / partial updates.
+// Satisfy the forward declaration in dsl/dynamic.hpp: type-erased fragments
+// render their captured nodes by calling back into the renderer's walk.
+namespace waya::dsl::detail {
+template <typename N>
+void render_child(std::string& out, style::StyleSheet& sheet, const N& n) {
+    waya::render::detail::walk(out, sheet, n);
+}
+} // namespace waya::dsl::detail
+
+namespace waya::render {
+
 template <typename Node>
 [[nodiscard]] Rendered render(const Node& node) {
     style::StyleSheet sheet;

@@ -6,6 +6,8 @@
 
 #include <waya/waya.hpp>
 
+#include <vector>
+
 using namespace waya::dsl;
 using namespace waya::style;
 using namespace waya::style::literals;
@@ -41,6 +43,13 @@ int main() {
     auto x = div_(text("x")) | justify(Justify::center); // justify without a container
 #elif WAYA_CASE == 15
     auto x = select_(div_());                         // <div> inside <select>
+#elif WAYA_CASE == 16
+    // each produces <tr>, but <div> permits flow content, not <tr>
+    std::vector<int> v{1};
+    auto x = div_(each(v, [](int){ return tr_(td_(text("c"))); }));
+#elif WAYA_CASE == 17
+    // when's two branches must share a content category
+    auto x = div_(when(true, p_(text("a")), td_(text("b"))));
 #else
 #   error "no WAYA_CASE selected"
 #endif
