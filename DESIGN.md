@@ -391,6 +391,172 @@ property can be verified, and make every consumer demand the proof.
 
 ---
 
+## 5.5 Styling — owned by waya, expressed in the DSL, never CSS
+
+This is the section the terminal heritage matters most for, and the one place a
+naive port would ruin the framework. **The requirement (from the project owner):
+no CSS in the DSL, and "the rendering and everything about style should be
+maya-style too" — waya owns styling the way maya owns it.**
+
+### 5.5.1 Why "just copy maya's `CTStyle`" is a trap
+
+maya's style struct has exactly eight fields — `fg`, `bg`, `bold`, `dim`,
+`italic`, `underline`, `strike`, `inverse` — because **a terminal cell only
+*has* those properties.** maya owns the renderer, so `Fg<100,180,255>` becomes
+an ANSI SGR byte sequence that maya writes itself. There is no CSS, no cascade,
+no layout engine external to maya — maya's `FlexStyle` *is* a flexbox
+reimplementation, because a terminal has none.
+
+A `<div>` has ~400 style properties. If waya hardcodes maya's eight, every real
+user hits the wall on day one (no flex, no grid, no radius, no shadow, no
+media queries, no `:hover`) and reaches for a `raw_css()` escape hatch — and
+now the framework has shipped the worst of both worlds. **"Like maya" cannot
+mean "maya's eight fields." It must mean maya's four *properties of the
+approach*:**
+
+1. Style is a value you pipe with `|` — no separate `.css` file, no selector.
+2. Composed and resolved at **compile time**, zero runtime cost.
+3. **Type-state safe** — nonsensical styles do not compile.
+4. **Deterministic merge** — right operand wins (maya's `Style::merge`).
+
+### 5.5.2 The mechanism: CSS is waya's SGR
+
+Here is the exact structural correspondence, traced from maya's real code
+(`reference/maya/include/maya/element/box.hpp`):
+
+```
+maya:  view() → tree of BoxElement{ FlexStyle layout; Style visual; }
+              → renderer walks tree, runs flex solver, PAINTS CELLS
+              → ANSI/SGR bytes → terminal
+
+waya:  view() → tree of Elem{ Sty style; }
+              → renderer walks tree, INTERNS each Sty
+              → atomic class names + one generated stylesheet → browser
+```
+
+The substitution is at the very last step and only there: a browser's only
+programmable surface is CSS, so waya's renderer serialises each node's `Sty`
+into CSS. **CSS is to waya what ANSI/SGR is to maya: a private output encoding
+the renderer emits, not a language the author touches.** You never write a
+selector, never open a `.css` file, never fight a cascade. Exactly as a maya
+user never hand-writes `\x1b[1;38;2;100;180;255m`.
+
+### 5.5.3 What the author writes
+
+```cpp
+using namespace waya::style;
+
+div_(
+    h1_(text("Dashboard")) | fg<0x3B82F6> | bold | size<28_px>,
+    row_(
+        button_(text("−")) | pad<8_px> | bg<0x1E293B> | rounded<6_px>,
+        button_(text("+")) | pad<8_px> | bg<0x1E293B> | rounded<6_px>
+    ) | gap<12_px>
+)
+| col_ | gap<16_px> | pad<24_px> | bg<0x0F172A> | rounded<12_px>
+```
+
+No CSS. Styles pipe with `|`, merge left-to-right, resolve at compile time —
+maya's ergonomics precisely. The vocabulary spans **every** category (colour,
+full box model, flex, grid, typography, radius, shadow, opacity, transitions,
+pseudo-classes, media queries), not eight fields — so it does not limit you.
+
+### 5.5.4 Type-state: maya's border rule, transposed onto the box model
+
+Because the style is a typed value, waya catches CSS bugs that *no stylesheet
+and no Tailwind can*:
+
+```cpp
+p_(...) | gap<8_px>                 // ERROR: gap requires a flex/grid container
+row_(...) | gap<8_px>              // OK   — row_ makes it a flex container
+span_(...) | width<100_px>         // ERROR: width is ignored on inline elements
+... | justify<Center>              // ERROR without a flex context
+... | size<-4_px>                  // ERROR: negative length
+... | fg<"bleu">                   // ERROR: not a colour
+```
+
+`gap` without a flex/grid container is the single most common real CSS bug, and
+waya makes it a **compile error**. The mechanism is identical to the spike's
+content-model gate and to maya's `requires (Cfg.has_border)` guarding
+border colour: `gap`/`justify`/`align` read `Sty::is_flex_ctx()` in a consteval
+check, and a non-flex style fails a `static_assert` with a waya-authored
+sentence. **Proven working** — see §5.5.6.
+
+### 5.5.5 The renderer owns output — compile-time atomic-CSS interning
+
+The naive translation (inline `style="…"` per element) would bloat HTML and
+break the §4 diff engine. So waya does exactly what maya does with its
+**`StylePool`** (maya interns every `Style` to a `uint16_t` so cells stay 8
+bytes for SIMD diffing): waya interns every unique `Sty` reachable from
+`view()` to a stable, content-hashed class name.
+
+- Identical styles anywhere in the tree collapse to **one class** — `pad<16_px>`
+  used 500 times is *one* rule `.wa-7c2{padding:16px}`, not 500 inline copies.
+- The framework emits **one deduplicated stylesheet** for the whole page.
+- The stylesheet is a compile-time constant (`.rodata`), caches forever behind
+  an `ETag`, and — crucially — class names are **statics**, so the §4
+  static/dynamic split is preserved: changing a value re-points a class and the
+  60-byte patch stays 60 bytes.
+
+This is **atomic CSS generated at compile time** — the Tailwind model, but
+type-checked, with zero build step, zero PostCSS, zero purge pass.
+
+### 5.5.6 Proven, not promised
+
+A second spike (`spike/waya_style.hpp` + `waya_emit.hpp` + `test_style.cpp`,
+run by `./spike/run_style.sh`) demonstrates the whole chain on GCC 16,
+**6/6 green**:
+
+```
+$ ./spike/run_style.sh
+  PASS  compiles, Elm loop runs, all assertions hold
+  PASS  renderer emitted ZERO inline styles (atomic classes only)
+  PASS  identical styles interned to a single class/rule
+  PASS  gap without flex (1 error, 4 lines)
+  PASS  justify without flex (1 error, 4 lines)
+  PASS  gap WITH flex compiles (the gate lets valid styles through)
+  passed: 6   failed: 0
+```
+
+Actual output from the spike's styled counter app (author wrote zero CSS):
+
+```html
+<div class="wa-578439"><h1 class="wa-490593">…</h1>
+  <div class="wa-28d967">
+    <button class="wa-0b325d">−</button>
+    <button class="wa-0b325d">+</button>   <!-- SAME class: interned -->
+  </div></div>
+```
+```css
+.wa-578439{display:flex;flex-direction:column;background:#0f172a;padding:24px;gap:16px;border-radius:12px}
+.wa-490593{color:#3b82f6;font-size:28px;font-weight:700}
+.wa-28d967{display:flex;flex-direction:row;gap:12px}
+.wa-0b325d{background:#1e293b;padding:8px;border-radius:6px}
+```
+
+The two buttons carry structurally-equal `Sty` values and therefore **share one
+class** — the interning is real, and it is the same trick as maya's StylePool.
+
+### 5.5.7 The one honest tradeoff (and the seam that absorbs it)
+
+CSS is a moving target — new properties ship in browsers constantly, so waya's
+typed vocabulary will always trail the spec by a little. maya has the identical
+seam (the raw `Canvas` next to the safe DSL). waya's seam is typed enough to
+intern and diff, loose enough to reach anything:
+
+```cpp
+... | prop<"clip-path", "circle(40%)">   // typed arbitrary property (rare CSS)
+... | css_class<"legacy-thing">          // reuse an existing stylesheet / a Tailwind class
+raw_style("filter: blur(2px)")            // greppable last resort
+```
+
+So the **entire existing CSS ecosystem still transfers** — a design system's
+stylesheet, a third-party widget's classes, Tailwind — but the *default*, the
+thing you reach for first, is the typed pipe that catches your bugs and that
+waya renders itself.
+
+---
+
 ## 6. Interactivity — the three-tier ladder
 
 The biggest strategic error a new web framework can make is forcing one

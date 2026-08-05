@@ -73,6 +73,33 @@ render(p_(text("<script>alert('xss')</script>")))
 // → "<p>&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;</p>"
 ```
 
+## Styling like maya — no CSS in the DSL
+
+maya owns every cell it paints; CSS is nowhere. waya keeps that: **you style in
+the DSL by piping values, never in a `.css` file.** CSS is to waya what ANSI is
+to maya — a private output encoding the renderer emits, not a language you touch.
+
+```cpp
+div_(
+    h1_(text("Dashboard")) | fg<0x3B82F6> | bold | size<28_px>,
+    row_(btn("−"), btn("+")) | gap<12_px>
+)
+| col_ | gap<16_px> | pad<24_px> | bg<0x0F172A> | rounded<12_px>
+```
+
+The renderer **interns** identical styles to one atomic class and ships one
+deduplicated stylesheet — the same trick as maya's `StylePool`. And because the
+style is a typed value, it catches CSS bugs no stylesheet can:
+
+```cpp
+p_(...)   | gap<8_px>       // error: gap requires a flex/grid container
+row_(...) | gap<8_px>       // ok  — row_ is a flex container
+... | size<-4_px>            // error: negative length
+```
+
+Proven working — `./spike/run_style.sh` is 6/6 green, including the interning and
+the flex-gate compile error. Full rationale in [DESIGN.md §5.5](DESIGN.md).
+
 ## Measured, not promised
 
 ```
@@ -85,6 +112,8 @@ $ ./spike/run_spike.sh
 === 4. Error message quality ===              1 error, 5–6 lines      (gate: ≤ 8 lines)
 
  passed: 21   failed: 0
+
+$ ./spike/run_style.sh                        passed: 6   failed: 0
 ```
 
 The two risks that could have killed the project — **compile times** and

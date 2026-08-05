@@ -15,8 +15,10 @@ every subsequent phase.
 **Goal:** answer "does the type-state HTML content model actually work in C++26,
 and what does it cost?" before writing a framework around it.
 
-Delivered in `spike/` — one header, one test file, one runner. No runtime, no
-server. Run it with `./spike/run_spike.sh` (GCC 16, `-std=c++26`).
+Delivered in `spike/` — two spikes now. Run `./spike/run_spike.sh` (content
+model) and `./spike/run_style.sh` (styling + Elm). GCC 16, `-std=c++26`.
+
+**Spike #1 — content model** (`waya_dsl.hpp`, `test_spike.cpp`):
 
 - [x] `Tag` enum + `Traits<T>` for a 29-element subset
 - [x] `Cat` bitmask + `PermittedChild` concept
@@ -26,6 +28,18 @@ server. Run it with `./spike/run_spike.sh` (GCC 16, `-std=c++26`).
 - [x] Golden error tests — 14 invalid-HTML cases, each asserted to fail
 - [x] Compile-time benchmark at 176 / 701 / 1163 elements
 - [x] P2741 computed diagnostics naming both elements + linking the spec
+
+**Spike #2 — styling + Elm architecture** (`waya_style.hpp`, `waya_emit.hpp`,
+`test_style.cpp`) — answers "styling like maya, no CSS in the DSL":
+
+- [x] `Sty` — a complete web style vocabulary as a structural NTTP (the maya
+      `CTStyle`+`FlexStyle` analogue, not limited to 8 terminal fields)
+- [x] Styles piped with `|`, merged compile-time, right-operand-wins
+- [x] Type-state: `gap`/`justify`/`align` require a flex container (compile
+      error otherwise) — maya's border-colour rule, transposed
+- [x] The renderer **owns output**: interns identical `Sty` to one atomic class
+      and emits one deduplicated stylesheet — no inline styles, no `.css` file
+- [x] A full Elm loop (`Model`/`Msg`/`init`/`update`/`view`) drives the tree
 
 **Exit gates — all met:**
 
@@ -63,6 +77,12 @@ Both are now permanent rules for Phases 1+.
       them guarantees drift
 - [ ] Per-element attribute allowlists + required-attribute checks (`alt`, `name`)
 - [ ] `Node = variant<Elem, Text, Raw, Fragment, NodeRef, Island>`
+- [ ] **Styling (DESIGN.md §5.5)** — promote the styling spike into the framework:
+      the `Sty` vocabulary (colour, box model, flex, grid, typography, radius,
+      shadow, transitions, pseudo-classes, media queries), the `|` pipe with
+      compile-time merge, the flex/grid type-state gates, the interning
+      `StyleSheet` that emits one deduplicated stylesheet, and the
+      `prop<>`/`css_class<>`/`raw_style` escape seam
 - [ ] Escaping-context types (`HtmlText`/`AttrVal`/`UrlVal`/`JsVal`/`CssVal`)
       with `consteval` URL-scheme validation
 - [ ] Attribute interning (maya's `StylePool` pattern → `AttrPool`)
