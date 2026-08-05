@@ -14,6 +14,16 @@
 #include <array>
 #include <cstddef>
 #include <string_view>
+#include <version>
+
+// waya's readable diagnostics rely on P2741 (user-generated static_assert
+// messages, __cpp_static_assert >= 202306L). Every C++26 compiler provides it;
+// fail early and clearly if the toolchain is too old rather than emitting a
+// confusing template error deep inside the DSL.
+#if !defined(__cpp_static_assert) || __cpp_static_assert < 202306L
+#  error "waya requires C++26 with P2741 (computed static_assert messages). \
+Use GCC 15+ / a compiler defining __cpp_static_assert >= 202306L, and -std=c++26."
+#endif
 
 namespace waya::diag {
 
