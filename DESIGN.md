@@ -540,20 +540,37 @@ class** — the interning is real, and it is the same trick as maya's StylePool.
 ### 5.5.7 The one honest tradeoff (and the seam that absorbs it)
 
 CSS is a moving target — new properties ship in browsers constantly, so waya's
-typed vocabulary will always trail the spec by a little. maya has the identical
-seam (the raw `Canvas` next to the safe DSL). waya's seam is typed enough to
-intern and diff, loose enough to reach anything:
+*named* vocabulary (`fg`, `pad`, `flex`, …) will always trail the spec by a
+little. That is fine, because the named tokens are only **sugar**: the
+foundation is a **universal channel** that makes *any* CSS a clean pipe, so
+nothing is ever off-limits. This is the "general enough like maya" guarantee —
+maya gives you a complete low-level vocabulary and never picks styles for you;
+waya does the same for the web.
 
 ```cpp
-... | prop<"clip-path", "circle(40%)">   // typed arbitrary property (rare CSS)
-... | css_class<"legacy-thing">          // reuse an existing stylesheet / a Tailwind class
-raw_style("filter: blur(2px)")            // greppable last resort
+// Any property, even ones waya has never heard of — typed, interned, diffed:
+... | prop<"backdrop-filter", "blur(8px)">
+... | prop<"grid-template-columns", "repeat(3, 1fr)">
+... | var_<"--brand", "#3b82f6"> | prop<"color", "var(--brand)">
+... | prop_dyn("width", std::to_string(w) + "px")   // runtime value
+
+// States and responsive are values too — not a separate, weaker API:
+... | on<Hover>(bg(0x2563eb))                       // .wa-x:hover{...}
+... | on<Focus>(prop<"outline", "2px solid #93c5fd">)
+... | at<Md>(pad(16_px))                            // @media (min-width:768px)
+
+// And the existing CSS ecosystem still transfers verbatim:
+... | css_class<"legacy-thing">                     // a Tailwind / design-system class
 ```
 
-So the **entire existing CSS ecosystem still transfers** — a design system's
-stylesheet, a third-party widget's classes, Tailwind — but the *default*, the
-thing you reach for first, is the typed pipe that catches your bugs and that
-waya renders itself.
+Crucially, everything the universal channel produces is **still interned and
+diffed** — two buttons with the same base *and* the same `:hover` share one
+class and one rule set (tested). The named tokens exist only so the common 90%
+reads beautifully; the universal channel guarantees the other 10% is never a
+wall. This mirrors maya exactly: `Bold` is sugar over `Style{.bold=true}`, and
+you can always drop to the raw `Style`. **Proven working** —
+`tests/test_style_general.cpp`, 14/14, covers arbitrary props, custom
+properties, pseudo-classes, media queries, grid, and interning-with-states.
 
 ---
 

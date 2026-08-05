@@ -149,6 +149,8 @@ inline std::string declarations(const Sty& s) {
         case Cursor::not_allowed: o += "cursor:not-allowed;"; break;
         case Cursor::unset: break;
     }
+    // The universal channel: arbitrary CSS declarations, in author order.
+    for (const auto& [k, v] : s.extra) { o += k; o += ':'; o += v; o += ';'; }
     return o;
 }
 
@@ -162,22 +164,43 @@ public:
         if (s.empty()) return {};
         for (std::size_t i = 0; i < styles_.size(); ++i)
             if (styles_[i] == s) return names_[i];
-        std::string decls = declarations(s);
+        std::string base = declarations(s);
+        // The class identity must include state/media rules so that two nodes
+        // differing only in :hover get different classes.
+        std::string key = base;
+        for (const auto& [sel, body] : s.states) { key += sel; key += body; }
         std::string name = "wa-";
-        hex8(name, fnv1a(decls));
+        hex8(name, fnv1a(key));
         styles_.push_back(s);
-        decls_.push_back(std::move(decls));
+        decls_.push_back(std::move(base));
         names_.push_back(std::move(name));
         return names_.back();
     }
 
     /// The single <style> body for the whole page. Deduplicated by construction.
+    /// Emits, per interned style: the base rule, then any pseudo-class rules,
+    /// then any @media rules (grouped after so the cascade is correct).
     [[nodiscard]] std::string render() const {
-        std::string o;
+        std::string o, media;
         for (std::size_t i = 0; i < styles_.size(); ++i) {
-            if (decls_[i].empty()) continue;
-            o += '.'; o += names_[i]; o += '{'; o += decls_[i]; o += '}';
+            const std::string& cls = names_[i];
+            if (!decls_[i].empty()) {
+                o += '.'; o += cls; o += '{'; o += decls_[i]; o += '}';
+            }
+            for (const auto& [sel, body] : styles_[i].states) {
+                if (body.empty()) continue;
+                // A media selector is stored as "@media (...)__MEDIA__".
+                if (auto m = sel.find("__MEDIA__"); m != std::string::npos) {
+                    std::string query = sel.substr(0, m);
+                    media += query; media += '{';
+                    media += '.'; media += cls; media += '{'; media += body; media += "}}";
+                } else {
+                    // A pseudo-class:  .wa-x:hover{...}
+                    o += '.'; o += cls; o += sel; o += '{'; o += body; o += '}';
+                }
+            }
         }
+        o += media;   // media queries last, so they override base rules
         return o;
     }
 
@@ -188,5 +211,11 @@ private:
     std::vector<std::string> decls_;
     std::vector<std::string> names_;
 };
+
+namespace detail {
+/// Definition of the forward declaration in tokens.hpp: a nested style delta
+/// (from on<>/at<>) serialised to a declaration body.
+inline std::string declarations_of(const Sty& s) { return declarations(s); }
+} // namespace detail
 
 } // namespace waya::style

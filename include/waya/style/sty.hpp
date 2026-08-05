@@ -15,6 +15,9 @@
 #include "length.hpp"
 
 #include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace waya::style {
 
@@ -75,15 +78,23 @@ struct Sty {
     bool   has_opacity = false; int opacity_pct = 100;
     Cursor cursor      = Cursor::unset;
 
-    constexpr bool operator==(const Sty&) const = default;
+    // General channel — the "not limiting" guarantee. ANY CSS property/value,
+    // pseudo-classes, and media queries the typed fields don't cover live here
+    // as raw declarations. Populated by `prop<>`, `on<>`, `at<>`. Because this
+    // is a runtime member (not part of the NTTP), it costs nothing in
+    // diagnostics and imposes no ceiling on what you can express.
+    std::vector<std::pair<std::string, std::string>> extra;   ///< (property, value)
+    std::vector<std::pair<std::string, std::string>> states;  ///< (":hover{...}", body) etc.
+
+    bool operator==(const Sty& o) const = default;
 
     /// Is this node a flex or grid container? Gates gap/justify/align.
-    [[nodiscard]] constexpr bool is_container() const {
+    [[nodiscard]] bool is_container() const {
         return display == Display::flex || display == Display::grid
             || direction != Dir::unset;
     }
     /// Is this the default (unstyled) value? Then we emit no class at all.
-    [[nodiscard]] constexpr bool empty() const { return *this == Sty{}; }
+    [[nodiscard]] bool empty() const { return *this == Sty{}; }
 };
 
 /// Merge: `b` overlays `a`, field by field. Right operand wins. Deterministic —
@@ -120,6 +131,8 @@ constexpr Sty merge(Sty a, const Sty& b) {
     if (b.has_shadow)   a.has_shadow = true;
     if (b.has_opacity)  { a.has_opacity = true;  a.opacity_pct = b.opacity_pct; }
     if (b.cursor != Cursor::unset)     a.cursor = b.cursor;
+    for (const auto& e : b.extra)  a.extra.push_back(e);
+    for (const auto& s : b.states) a.states.push_back(s);
     return a;
 }
 

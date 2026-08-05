@@ -2,8 +2,9 @@
 add_executable(test_render        test_render.cpp)
 add_executable(test_content_model test_content_model.cpp)
 add_executable(test_dynamic       test_dynamic.cpp)
+add_executable(test_style_general test_style_general.cpp)
 
-foreach(t test_render test_content_model test_dynamic)
+foreach(t test_render test_content_model test_dynamic test_style_general)
     target_link_libraries(${t} PRIVATE waya::waya)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()

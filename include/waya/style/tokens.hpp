@@ -9,6 +9,12 @@
 
 #include "sty.hpp"
 #include "../core/diagnostic.hpp"
+#include "../core/str.hpp"
+
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
 
 namespace waya::style {
 
@@ -122,12 +128,129 @@ inline constexpr ItalicT italic{};
 inline constexpr UnderT  underline{};
 constexpr TAlign  text(TextAlign a){ return {a}; }
 
-// ── Effects ─────────────────────────────────────────────────────────────────
+// ── Effects ──────────────────────────────────────────────────────────
 struct Shadow  {          constexpr Sty apply(Sty s) const { s.has_shadow=true; return s; } };
 struct Opacity { int pct; constexpr Sty apply(Sty s) const { s.has_opacity=true; s.opacity_pct=pct; return s; } };
 struct CursorT { Cursor c;constexpr Sty apply(Sty s) const { s.cursor=c; return s; } };
 inline constexpr Shadow shadow{};
 constexpr Opacity opacity(int pct) { return {pct}; }
 inline constexpr CursorT pointer{Cursor::pointer};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  The universal channel — "general enough like maya": ANY CSS is one pipe.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The named tokens above are SUGAR. Everything CSS can express — including
+// properties waya has never heard of, vendor prefixes, calc(), custom
+// properties, grid templates — is reachable with the same clean pipe:
+//
+//   div_(...) | prop<"backdrop-filter", "blur(8px)">
+//             | prop<"grid-template-columns", "repeat(3, 1fr)">
+//             | prop<"transition", "all .2s ease">
+//             | var_<"--brand", "#3b82f6">
+//
+// This is maya's escape hatch (raw Canvas next to the safe DSL), but it stays
+// first-class: prop values are still interned and diffed like any other style.
+
+template <Str Name, Str Value>
+struct Prop {
+    Sty apply(Sty s) const {
+        s.extra.emplace_back(std::string(Name.view()), std::string(Value.view()));
+        return s;
+    }
+};
+/// Any CSS property/value, typed at compile time:  | prop<"filter", "blur(2px)">
+template <Str Name, Str Value> inline constexpr Prop<Name, Value> prop{};
+
+/// A CSS custom property (variable):  | var_<"--gap", "12px">
+template <Str Name, Str Value> inline constexpr Prop<Name, Value> var_{};
+
+/// Runtime property value, when the value isn't known at compile time:
+///   | prop_dyn("width", std::to_string(w) + "px")
+struct PropDyn {
+    std::string name, value;
+    Sty apply(Sty s) const { s.extra.emplace_back(name, value); return s; }
+};
+inline PropDyn prop_dyn(std::string name, std::string value) {
+    return {std::move(name), std::move(value)};
+}
+
+// ── States & responsive — pseudo-classes and media queries as values ────────
+//
+//   button(...) | on<Hover>(bg(0x2563eb))          // :hover { background:... }
+//               | on<Focus>(prop<"outline", "2px solid">)
+//   card(...)   | at<Md>(width(50_pct))            // @media (min-width:768px)
+//
+// A state/breakpoint wraps ANOTHER style delta, so anything expressible in the
+// base style is expressible in a state too — no separate, weaker API.
+
+enum class Pseudo : std::uint8_t { Hover, Focus, Active, Disabled, FocusVisible,
+                                   FirstChild, LastChild, Checked };
+enum class Break  : std::uint8_t { Sm, Md, Lg, Xl, X2l };
+
+namespace detail {
+consteval std::string_view pseudo_sel(Pseudo p) {
+    switch (p) {
+        case Pseudo::Hover:        return ":hover";
+        case Pseudo::Focus:        return ":focus";
+        case Pseudo::Active:       return ":active";
+        case Pseudo::Disabled:     return ":disabled";
+        case Pseudo::FocusVisible: return ":focus-visible";
+        case Pseudo::FirstChild:   return ":first-child";
+        case Pseudo::LastChild:    return ":last-child";
+        case Pseudo::Checked:      return ":checked";
+    }
+    return "";
+}
+consteval std::string_view break_query(Break b) {
+    switch (b) {
+        case Break::Sm:  return "@media (min-width:640px)";
+        case Break::Md:  return "@media (min-width:768px)";
+        case Break::Lg:  return "@media (min-width:1024px)";
+        case Break::Xl:  return "@media (min-width:1280px)";
+        case Break::X2l: return "@media (min-width:1536px)";
+    }
+    return "";
+}
+// Serialise a nested style delta to a CSS body (declarations only). Declared
+// here, defined in css.hpp where the serialiser lives.
+std::string declarations_of(const Sty& s);
+} // namespace detail
+
+/// `on<Hover>(...)` — apply a style delta in a pseudo-class state.
+template <Pseudo P, StyleToken... Toks>
+struct OnState {
+    std::tuple<Toks...> toks;
+    Sty apply(Sty s) const {
+        Sty delta{};
+        std::apply([&](const auto&... t){ ((delta = t.apply(delta)), ...); }, toks);
+        s.states.emplace_back(std::string(detail::pseudo_sel(P)),
+                              detail::declarations_of(delta));
+        return s;
+    }
+};
+template <Pseudo P, StyleToken... Toks>
+OnState<P, Toks...> on(Toks... toks) { return {std::make_tuple(std::move(toks)...)}; }
+
+/// `at<Md>(...)` — apply a style delta at a responsive breakpoint.
+template <Break B, StyleToken... Toks>
+struct AtBreak {
+    std::tuple<Toks...> toks;
+    Sty apply(Sty s) const {
+        Sty delta{};
+        std::apply([&](const auto&... t){ ((delta = t.apply(delta)), ...); }, toks);
+        s.states.emplace_back(std::string(detail::break_query(B)) + "__MEDIA__",
+                              detail::declarations_of(delta));
+        return s;
+    }
+};
+template <Break B, StyleToken... Toks>
+AtBreak<B, Toks...> at(Toks... toks) { return {std::make_tuple(std::move(toks)...)}; }
+
+// Convenience aliases so `on<Hover>` reads naturally.
+inline constexpr Pseudo Hover = Pseudo::Hover;
+inline constexpr Pseudo Focus = Pseudo::Focus;
+inline constexpr Pseudo Active = Pseudo::Active;
+inline constexpr Break  Sm = Break::Sm, Md = Break::Md, Lg = Break::Lg, Xl = Break::Xl;
 
 } // namespace waya::style

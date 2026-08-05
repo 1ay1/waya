@@ -103,8 +103,22 @@ row_(...) | gap<8_px>       // ok  — row_ is a flex container
 ... | size<-4_px>            // error: negative length
 ```
 
-Proven working — `./spike/run_style.sh` is 6/6 green, including the interning and
-the flex-gate compile error. Full rationale in [DESIGN.md §5.5](DESIGN.md).
+**Not limiting — *any* CSS is one clean pipe.** The named tokens (`fg`, `pad`,
+`flex`, …) are just sugar. Anything CSS can do — including properties waya has
+never heard of, pseudo-classes, and media queries — is the same clean pipe, and
+is still interned and diffed:
+
+```cpp
+div_(...) | prop<"backdrop-filter", "blur(8px)">
+          | prop<"grid-template-columns", "repeat(3, 1fr)">
+          | var_<"--brand", "#3b82f6">
+          | on<Hover>(bg(0x2563eb))         // .wa-x:hover { … }
+          | at<Md>(pad(16_px))              // @media (min-width:768px)
+```
+
+Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
+arbitrary props, custom properties, pseudo-classes, media queries, grid,
+interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).
 
 ## Measured, not promised
 
