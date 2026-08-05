@@ -106,10 +106,39 @@ Three payoffs, and waya gets all three from the same design:
 The surface is **retained** — waya keeps last frame's surface. Each frame it
 diffs the new surface against the old and sends only the changed nodes. That
 minimal delta is the entire payload over the wire: change a counter and the
-message is `[["set_text","1.1","43"]]` — one op, a couple dozen bytes, not a
-re-render. The connection is a dumb byte pipe; waya is the smart end. (This is
-the same delta engine described in DESIGN.md §4, generalised from DOM nodes to
-surface primitives.)
+message is `[[set_text,"1.1","43"]]` — one op, a couple dozen bytes, not a
+re-render. The connection is a dumb byte pipe; waya is the smart end.
+
+### The architecture, precisely
+
+Think of it the way maya thinks of a terminal:
+
+| maya | waya |
+|---|---|
+| **the framework** owns the cell grid, diffs it, decides the frame | **the framework** owns the surface, diffs it, decides the frame |
+| writes a **byte stream** (ANSI) to the **TTY** | writes a **byte stream** (frames) to the **WebSocket** |
+| the **terminal emulator** paints the cells — dumb, no app logic | the **client** paints the frame — dumb, no app logic, no app state |
+
+The client is a *terminal*: it holds **zero application state and zero
+application logic**. It receives frames and paints them as fast as the browser
+can, using the browser's own native rendering (real DOM, CSS, fonts, GPU
+compositing — all the nice web things). It is smarter than a VT100 only in that
+it paints with the browser's engine; it is exactly as dumb in that it just
+applies what the bytes say.
+
+**One frame shape, always.** Everything the client ever receives is
+`{css, ops}`. A *delta* is the changed ops. A *full paint* is the same shape
+with a single `paint` op carrying the whole root — the "all cells changed"
+case. The client does not distinguish them; it has exactly one code path:
+inject css, apply ops. This means the terminal is **trivially resyncable** —
+hand it a full paint at any moment (first load, reconnect, drift) and it is
+correct, with no negotiation and nothing to reconcile, because it never held a
+truth the server didn't. This is SSR in the truest sense: the server *decides*
+every frame; the browser never runs your app, it only displays it.
+
+(The wire is JSON HTML-fragments today — readable and correct. A compact binary
+frame protocol, the framework's private "ANSI," is a later optimisation and
+changes nothing about the model or your code.)
 
 ## 6. Proven
 

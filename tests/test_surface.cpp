@@ -106,11 +106,23 @@ int main() {
         CHECK(has(j, "\"ops\":[[0,\"1\",\"2\"]]"));
     }
 
-    // ── "anything": a 5000-point chart is ONE node ──────────────────────────
+    // ── "anything": a 5000-point chart is ONE node ──────────────────────
     {
         std::vector<Pt> big; for (int i=0;i<5000;++i) big.push_back({(float)i,(float)(i%100)});
         auto huge = path(big);
         CHECK(huge->points.size() == 5000 && huge->kids.empty());
+    }
+
+    // ── ONE protocol: a full paint and a delta are the same frame shape ─────
+    // The client (terminal) has one code path; a full paint is just a `paint`
+    // op (7) repainting the root. This is what makes it resyncable.
+    {
+        auto full  = full_frame(*view(0));
+        auto delta = delta_frame(diff(view(0), view(1)));
+        CHECK(has(full,  "\"css\":"));   CHECK(has(full,  "\"ops\":"));
+        CHECK(has(delta, "\"css\":"));   CHECK(has(delta, "\"ops\":"));
+        CHECK(has(full,  "[7,\"\","));   // the paint op carries the root html
+        CHECK(has(delta, "[0,\"1\",\"1\"]")); // the delta is a set_text
     }
 
     std::cout << "test_surface: " << g_pass << " passed, " << g_fail << " failed\n";

@@ -26,19 +26,24 @@ inline std::pair<std::string,std::string> render_fragment(const Node& n){
     DomBackend b; auto out = b.render(n); return { out.html, out.css };
 }
 
-/// A patch → JSON: [[op, path, html?], …] plus a css blob of any new rules the
-/// changed fragments need. Shape: {"css": "...", "ops": [...]}.
-inline std::string patch_json(const Patch& p){
-    // Render every changed/inserted/replaced subtree once, collect css.
-    std::string ops="["; std::string css;
-    auto add_css=[&](const std::string& c){ if(!c.empty() && css.find(c)==std::string::npos) css+=c; };
+/// A patch/frame → JSON. ONE shape for everything the terminal ever receives:
+///
+///   {"css": "<rules>", "ops": [ [op, path, payload?], ... ]}
+///
+/// A DELTA is the changed ops. A FULL PAINT is the same shape with a single
+/// `paint` op (opcode 7) carrying the whole root HTML — "repaint everything",
+/// the maya "all cells changed" case. The terminal has exactly ONE code path:
+/// inject css, apply ops. It holds no app state and is repaintable from any
+/// full frame at any moment (reconnect, drift) with no negotiation.
+inline std::string ops_json(const Patch& p, std::string& css_out){
+    std::string ops="[";
+    auto add_css=[&](const std::string& c){ if(!c.empty() && css_out.find(c)==std::string::npos) css_out+=c; };
     for(std::size_t i=0;i<p.size();++i){
         if(i) ops+=',';
         const auto& op=p[i];
         ops+='['; ops+=std::to_string((int)op.op); ops+=','; detail::jstr(ops,op.path);
         switch(op.op){
-            case Op::set_text: ops+=','; detail::jstr(ops, op.s); break;
-            case Op::set_src:  ops+=','; detail::jstr(ops, op.s); break;
+            case Op::set_text: case Op::set_src: ops+=','; detail::jstr(ops, op.s); break;
             case Op::set_paint: case Op::set_path: case Op::replace: case Op::insert: {
                 if(op.node){ auto [html,c]=render_fragment(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
                 else ops+=",\"\"";
@@ -48,8 +53,29 @@ inline std::string patch_json(const Patch& p){
         ops+=']';
     }
     ops+=']';
+    return ops;
+}
+
+/// A delta frame (only what changed).
+inline std::string delta_frame(const Patch& p){
+    std::string css; std::string ops = ops_json(p, css);
     std::string o="{\"css\":"; detail::jstr(o, css); o+=",\"ops\":"; o+=ops; o+="}";
     return o;
 }
+
+/// A full-paint frame: repaint the whole surface. Same shape as a delta — one
+/// `paint` op (7) carrying the root HTML. This is what makes the terminal
+/// trivially resyncable: hand it a full frame and it's correct, no matter what
+/// state it was in.
+static constexpr int OP_PAINT = 7;
+inline std::string full_frame(const Node& root){
+    auto [html, css] = render_fragment(root);
+    std::string o="{\"css\":"; detail::jstr(o, css);
+    o+=",\"ops\":[["; o+=std::to_string(OP_PAINT); o+=",\"\","; detail::jstr(o, html); o+="]]}";
+    return o;
+}
+
+// Back-compat name used elsewhere.
+inline std::string patch_json(const Patch& p){ return delta_frame(p); }
 
 } // namespace waya::surface

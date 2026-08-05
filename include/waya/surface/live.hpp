@@ -57,33 +57,34 @@ inline std::atomic<int> g_fd{-1};
 inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
 
-/// The client: opens a WS, injects the app's stylesheet, builds the initial
-/// HTML into #root, then applies HTML-fragment patches by path. Dumb by design
-/// — no style logic in JS; the server's DOM backend did it all. Reconnects on
-/// drop (and reloads after a rebuild).
+/// The terminal. It holds NO app state and NO app logic — it receives frames
+/// and paints them, as fast as the browser can. Every frame has ONE shape
+/// ({css, ops}); a full paint is just an op that repaints the root, a delta is
+/// smaller ops. One code path: inject css, apply ops. Repaintable from any full
+/// frame at any time (reconnect, drift) with no negotiation — like a terminal
+/// that can always be handed a fresh screen.
 inline std::string client(int port) {
     return
     "<script>(function(){"
     "var R=document.getElementById('root'),S=document.getElementById('wsheet');"
-    "function css(c){if(c)S.textContent=c;}"
+    "function frag(html){var d=document.createElement('div');d.innerHTML=html;return d.firstChild;}"
     // resolve a dotted path to a node under #root's single child (all childNodes)
     "function at(p){var e=R.firstElementChild;if(p==='')return e;var q=p.split('.');"
     "for(var i=0;i<q.length;i++){e=e.childNodes[+q[i]];if(!e)return null;}return e;}"
-    "function frag(html){var d=document.createElement('div');d.innerHTML=html;return d.firstChild;}"
     "function apply(op){var k=op[0],p=op[1],e=at(p);"
-    "if(k===0){if(e)e.textContent=op[2];}"                        // set_text
-    "else if(k===1){if(e)e.replaceWith(frag(op[2]));}"           // set_paint→replace subtree
-    "else if(k===2){if(e)e.replaceWith(frag(op[2]));}"           // set_path
+    "if(k===7){R.innerHTML=op[2];}"                              // PAINT: repaint root
+    "else if(k===0){if(e)e.textContent=op[2];}"                  // set_text
+    "else if(k===1||k===2||k===4){if(e)e.replaceWith(frag(op[2]));}" // set_paint/set_path/replace
     "else if(k===3){if(e){var f=frag(op[2]);if(e.tagName==='IMG')e.src=f.src;else e.replaceWith(f);}}" // set_src
-    "else if(k===4){if(e)e.replaceWith(frag(op[2]));}"           // replace
     "else if(k===5){if(e)e.remove();}"                           // remove
     "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}}" // insert
+    // ONE frame handler: merge css, apply every op. Full paint and delta look
+    // identical here — the terminal doesn't distinguish them.
+    "function frame(m){if(m.css)S.textContent+=m.css;for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}"
     "var ws,started=false;"
     "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"');"
-    "ws.onopen=function(){if(started)location.reload();started=true;};"
-    "ws.onmessage=function(ev){var m=JSON.parse(ev.data);"
-    "if(m.init!==undefined){css(m.css);R.innerHTML=m.init;}"     // first frame: css + html
-    "else{css(S.textContent+(m.css||''));for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}};" // deltas
+    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;};" // resync: clear, server repaints
+    "ws.onmessage=function(ev){frame(JSON.parse(ev.data));};"
     "ws.onclose=function(){setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
@@ -107,13 +108,11 @@ void handle(int conn, int port) {
         Model model = P::init();
         NodeRef prev = P::view(model);
 
-        // First frame: render the whole surface with the DOM backend and send
-        // {"init": html, "css": stylesheet}.
+        // First frame: a full paint. Same shape as any later frame — the
+        // terminal doesn't know it's "first". This also means a reconnecting
+        // client is resynced simply by sending it another full paint.
         {
-            DomBackend dom; auto out = dom.render(*prev);
-            std::string msg = "{\"init\":"; detail::jstr(msg, out.html);
-            msg += ",\"css\":"; detail::jstr(msg, out.css); msg += "}";
-            auto f = ws::encode_text(msg);
+            auto f = ws::encode_text(full_frame(*prev));
             ::send(conn, f.data(), f.size(), 0);
         }
 
