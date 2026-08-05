@@ -24,6 +24,19 @@
 
 ## The idea
 
+Every web stack forces you to think in the browser's primitives — the box
+model, the cascade, the DOM, event handlers, hydration. waya's bet is that
+**those should be an implementation detail you never touch.** You describe a
+**surface** with a tiny vocabulary; waya owns *how* it renders — HTML, CSS,
+canvas, whatever fits — and keeps it in sync over the network by streaming only
+what changed. Powerful enough to draw anything, simple enough to learn in a
+minute, and never tied to a substrate. See **[SURFACE.md](SURFACE.md)** (proven
+in `spike/surface/`, 15/15: one `view()`, a DOM backend AND a canvas backend,
+unchanged).
+
+The first shipped layer is the **DOM backend** of that model — and it carries a
+guarantee no JS framework can:
+
 [maya](https://github.com/1ay1/maya) is a C++26 TUI framework that renders a **cell grid** to
 a terminal, and whose headline guarantee is that *impossible states don't
 compile* — you cannot set a border colour without first declaring a border.
