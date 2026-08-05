@@ -168,12 +168,19 @@ Both are now permanent rules for Phases 1+.
       minimal ops by node path + compact JSON wire format), `render/vwalk.hpp`
       (DSL→VNode). Live runtime keeps the VNode and sends PATCHES not HTML — a
       counter click is 15 bytes, not 2.6 KB. Soundness tested: apply(diff)=next
-      (test_diff, 18)
-- [ ] WebSocket (RFC 6455) + SSE fallback (replace the HTTP-swap loop)
+      (test_diff, 18). Packed per-subtree hash → O(1) skip of unchanged subtrees
+      (test_diff_perf, 11).
+- [x] **Subtree memoisation** — `render/cache_id.hpp` (maya's CacheId) +
+      `render/memo.hpp` (`memo`, `each_keyed`): unchanged rows reuse their
+      cached VNode, view callback never runs (test_memo, 10).
+- [x] **WebSocket (RFC 6455)** — `net/ws.hpp` handshake + frame codec (tested vs
+      spec vectors, test_ws, 17). `app/live_ws.hpp`: `live_ws<P>()` streams
+      patches over a persistent socket, PER-SESSION state (own Model + memo +
+      prev per connection). Verified end-to-end with a real WS client.
+- [ ] SSE fallback for environments without WebSocket
 - [ ] `Session`: `Model` + arena + signal graph, thread-pinned, coroutine-driven
 - [ ] Elm loop with the §4 diff: `Msg` → `update` → `view` → diff → patch
 - [ ] Interpret `Cmd` effects in the runtime; `Sub` reconciliation
-- [ ] Signals ported from maya (batching, reentrancy-safe notify frames)
 - [ ] `waya.js` client (~6 KB, no build step): patch application, DOM morphing,
       event forwarding, focus/scroll/IME preservation, reconnect with backoff
 - [ ] Pub/sub for multi-session broadcast; presence tracking

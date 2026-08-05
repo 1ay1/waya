@@ -8,7 +8,7 @@
 /// event, and swaps the fresh HTML into the page.
 
 #include <waya/waya.hpp>
-#include <waya/app/live.hpp>
+#include <waya/app/live_ws.hpp>
 
 #include <variant>
 
@@ -61,7 +61,6 @@ struct Counter {
 
 int main() {
     static_assert(Program<Counter>);
-    // Centre the counter card on a dark page via a wrapping component would be
-    // nicer, but keep the example focused on the live loop.
-    return waya::live<Counter>({.port = 8080});
+    // Persistent WebSocket: patches STREAM to the browser, no request per click.
+    return waya::live_ws<Counter>({.port = 8080});
 }

@@ -198,6 +198,27 @@ lockstep and emits the minimal op set (`set_text`/`set_attr`/`remove_attr`/
 to the node and mutates it. Diff soundness — `apply(diff(a,b), a) == b` — is
 tested in [`tests/test_diff.cpp`](tests/test_diff.cpp).
 
+**Persistent WebSocket + per-session state.** `waya::live_ws<P>()` keeps the
+connection open: the browser opens a WebSocket, sends a message id on click, and
+the server pushes the JSON patch straight back — no request per click. Each
+browser gets its own `Model` + memo cache + prev-tree, so clients are
+independent. RFC 6455 handshake + frame codec live in
+[`include/waya/net/ws.hpp`](include/waya/net/ws.hpp) (dependency-free, tested
+against the spec's reference vectors).
+
+**Subtree memoisation — unchanged rows aren't rebuilt.** maya caches components
+by a content-hash `CacheId`; waya does the same. `each_keyed(rows, key_fn,
+view_fn)` runs a row's `view_fn` only when its key changes:
+
+```cpp
+tbody_(each_keyed(rows,
+    [](const Row& r){ return cache_id("row", r.id, r.ms, r.up); },   // key
+    [](const Row& r){ return tr_(td_(text(r.name)), …); }))           // view
+```
+
+On a frame where nothing changed, **zero** row callbacks run; change one row and
+**one** runs (tested: [`tests/test_memo.cpp`](tests/test_memo.cpp)).
+
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,
 interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).
