@@ -138,6 +138,43 @@ Plus islands, streaming SSR, typed routing, reflection-driven form decoding, and
 a Witness-Chain approach to escaping soundness. Full architecture in
 [DESIGN.md](DESIGN.md); sequencing in [PLAN.md](PLAN.md).
 
+## See it in the browser
+
+The examples ship with a tiny built-in dev server, so you can view a page
+without writing any HTTP glue:
+
+```sh
+cmake -S . -B build && cmake --build build -j
+./build/hello                 # serves http://localhost:8080 and opens your browser
+```
+
+That's it — the `hello` example renders a styled page with a live, dynamically
+generated services table. Pass `--print` instead to dump the HTML to stdout
+(for piping or diffing):
+
+```sh
+./build/hello --print > page.html
+```
+
+Serving your own page is one call:
+
+```cpp
+#include <waya/waya.hpp>
+#include <waya/net/serve.hpp>
+using namespace waya::dsl;
+
+int main() {
+    return waya::serve([] {
+        return html_(head_(title_(text("hi"))),
+                     body_(h1_(text("Hello from waya"))));
+    });
+}
+```
+
+> The dev server is a minimal blocking HTTP/1.1 loop (POSIX) meant for preview.
+> The production reactor — io_uring/epoll, keep-alive, HTTP/2, routing — is the
+> `net/` layer scheduled for [Phase 2](PLAN.md).
+
 ## Repository
 
 - `DESIGN.md` — architecture, philosophy, risk assessment
@@ -147,10 +184,11 @@ a Witness-Chain approach to escaping soundness. Full architecture in
 
 ## Requirements
 
-GCC 16+ with `-std=c++26` (uses P2741 computed `static_assert` messages).
+GCC 15+ with `-std=c++26` (uses P2741 computed `static_assert` messages). The
+dev server (`waya/net/serve.hpp`) is POSIX-only for now.
 
 ```sh
-./spike/run_spike.sh
+cmake -S . -B build && cmake --build build -j && ctest --test-dir build
 ```
 
 ## License

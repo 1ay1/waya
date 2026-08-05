@@ -6,6 +6,8 @@
 /// escaping. Styles are piped in the DSL; waya emits the stylesheet itself.
 
 #include <waya/waya.hpp>
+#include <waya/net/serve.hpp>
+#include <cstring>
 #include <iostream>
 #include <vector>
 
@@ -40,33 +42,40 @@ static auto services_table(const std::vector<Service>& svcs) {
     ) | width(100_pct);
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::vector<Service> svcs = {
         {"api-gateway", 12, true},
         {"postgres",    40, false},
         {"redis",        3, true},
     };
 
-    auto page = html_(
-        head_(meta_(), title_(text("waya"))),
-        body_(
-            header_(
-                h1_(text("waya")) | size(36_px) | bold | fg(0x3b82f6),
-                p_(text("A C++26 web framework where invalid HTML doesn't compile."))
-                    | fg(0x94a3b8)
-            ) | col | gap(4_px),
-            div_(
-                card("Type-safe", "The HTML5 content model is enforced by the compiler."),
-                card("maya-style", "Style in the DSL; waya owns the rendering, no CSS files."),
-                card("Dynamic",   "each / when / dyn render runtime data, still type-checked.")
-            ) | row | wrap() | gap(16_px),
-            section_(
-                h2_(text("Live services")) | size(24_px) | semibold | fg(0xf1f5f9),
-                services_table(svcs)
-            ) | col | gap(12_px)
-        ) | col | gap(32_px) | pad(48_px) | bg(0x0f172a) | min_w(100_vw)
-    );
+    auto view = [&] {
+        return html_(
+            head_(meta_(), title_(text("waya"))),
+            body_(
+                header_(
+                    h1_(text("waya")) | size(36_px) | bold | fg(0x3b82f6),
+                    p_(text("A C++26 web framework where invalid HTML doesn't compile."))
+                        | fg(0x94a3b8)
+                ) | col | gap(4_px),
+                div_(
+                    card("Type-safe", "The HTML5 content model is enforced by the compiler."),
+                    card("maya-style", "Style in the DSL; waya owns the rendering, no CSS files."),
+                    card("Dynamic",   "each / when / dyn render runtime data, still type-checked.")
+                ) | row | wrap() | gap(16_px),
+                section_(
+                    h2_(text("Live services")) | size(24_px) | semibold | fg(0xf1f5f9),
+                    services_table(svcs)
+                ) | col | gap(12_px)
+            ) | col | gap(32_px) | pad(48_px) | bg(0x0f172a) | min_w(100_vw)
+        );
+    };
 
-    std::cout << waya::render::render_document(page) << '\n';
-    return 0;
+    // `--print` dumps the HTML to stdout (for piping/tests); default serves it
+    // in the browser at http://localhost:8080.
+    if (argc > 1 && std::strcmp(argv[1], "--print") == 0) {
+        std::cout << waya::render::render_document(view()) << '\n';
+        return 0;
+    }
+    return waya::serve(view);
 }

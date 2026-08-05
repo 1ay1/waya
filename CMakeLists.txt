@@ -32,6 +32,18 @@ option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     add_executable(hello examples/hello.cpp)
     target_link_libraries(hello PRIVATE waya::waya)
+
+    # A dev-server smoke test: start `hello`, curl it, check the response.
+    # Skipped automatically where curl or /bin/sh are unavailable.
+    if(WAYA_BUILD_TESTS AND UNIX)
+        find_program(WAYA_CURL curl)
+        if(WAYA_CURL)
+            add_test(
+                NAME serve_smoke
+                COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/serve_smoke.sh
+                        $<TARGET_FILE:hello> 8137)
+        endif()
+    endif()
 endif()
 
 # ── Install ─────────────────────────────────────────────────────────────────
