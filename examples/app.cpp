@@ -52,10 +52,10 @@ struct App {
 
         std::string greeting = m.name.empty() ? "there" : m.name;
 
-        return col(
+        return center_col(
             // hero
             col(
-                text("waya") | font(52) | weight(Weight::black)
+                text("waya") | fluid_font(40, 64) | weight(Weight::black)
                     | gradient_text(0x818cf8, brand2),
                 text("Everything is a node. Everything composes.") | fg(muted) | font(18)
             ) | gap(sp(1)),
@@ -65,33 +65,32 @@ struct App {
                 text("What's your name?") | fg(muted) | font(13) | tracking(0.5f),
                 input(m.name) | placeholder("type here…") | on_input(NameChanged)
                     | pad(sp(3)) | round(10) | bg(bg0) | fg(ink) | font(16)
-                    | border(1, line) | css("outline","none")
+                    | border(1, line)
                     | on(Focus, css("border-color","#6366f1")),
                 text("Hi, " + greeting + " 👋") | fg(ink) | font(20) | semibold
             ) | gap(sp(2))),
 
-            // stats: side by side, wraps narrow. grow lives HERE (horizontal).
-            row(
+            // stats — a responsive grid: as many columns as fit, no breakpoints
+            grid(px(220),
                 card(col(
                     text("Likes") | fg(muted) | font(13),
                     text(m.likes) | fg(ink) | font(44) | bold
-                ) | gap(sp(1))) | grow(1),
+                ) | gap(sp(1))),
                 card(col(
                     text("Traffic") | fg(muted) | font(13),
                     path(chart) | stroke(brand2, 2) | h(90)
-                ) | gap(sp(2))) | grow(1)
-            ) | gap(sp(4)) | wrap | at(Md, css("flex-wrap","nowrap")),
+                ) | gap(sp(2)))
+            ),
 
-            // actions
-            row(
+            // actions — a cluster wraps by itself when narrow
+            cluster(
                 text("♥ like") | fg(white) | pad_x(sp(5)) | pad_y(sp(3)) | bg(brand)
                     | round(10) | font(15) | semibold | tap(Like)
                     | transition() | on(Hover, bg(0x4f46e5)) | on(Active, scale(0.97f)),
                 text("reset") | fg(ink) | pad_x(sp(5)) | pad_y(sp(3)) | bg(bg2)
                     | round(10) | font(15) | tap(Reset)
-            ) | gap(sp(3))
-        ) | gap(sp(7)) | pad(sp(10)) | bg(bg0)
-          | max_w(px(720)) | css("margin","0 auto");
+            )
+        ) | gap(sp(7)) | pad(sp(8)) | bg(bg0);
     }
 };
 

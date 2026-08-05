@@ -17,6 +17,7 @@
 /// wiring in the app code.
 
 #include "node.hpp"
+#include "layout.hpp"
 #include "dom.hpp"
 #include "diff.hpp"
 #include "wire.hpp"

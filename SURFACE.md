@@ -113,6 +113,32 @@ static Model update(Model m, Msg msg, std::string value) {
 }
 ```
 
+### Layout — powerful, correct, intrinsically responsive
+
+Layout isn't a separate system; it's more nodes. The primitives are drawn from
+SwiftUI (sizing intent) and Every Layout (intrinsic responsiveness — they adapt
+to available space *by themselves*, with **no media-query breakpoints**):
+
+```cpp
+row(a, spacer(), b)          // spacer pushes a and b to opposite ends (SwiftUI)
+box(...) | flexible          // take the remaining main-axis space
+
+cluster(chip1, chip2, chip3) // wraps onto new lines as room runs out
+grid(px(220), cards…)        // as many equal columns as fit; re-flows itself
+sidebar(nav, main)           // fixed rail + fluid main; stacks when narrow
+switcher(px(400), a, b)      // a row that flips to a column below 400px
+center_col(content)          // centred column with a comfortable max width
+hero(splash)                 // full-viewport-height, vertically centred
+
+text("Title") | fluid_font(28, 56)   // font that scales with the viewport, clamped
+```
+
+Every one is responsive with zero breakpoints — `grid` uses
+`repeat(auto-fit,minmax(min(220px,100%),1fr))`, `switcher` uses the
+`calc((400px - 100%) * 999)` flex-basis flip, `sidebar` uses flex-wrap. And the
+framework fixes the classic flexbox footgun for you: every flex container gets
+`min-width:0` so children can shrink instead of overflowing. Layouts just behave.
+
 ## 3. Not limiting — `path` is the "do anything" escape
 
 The vocabulary is tiny, but `path` makes it complete: any 2-D shape is a list of

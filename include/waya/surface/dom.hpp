@@ -59,6 +59,11 @@ private:
         switch(s.flow){ case Flow::row:o+="display:flex;flex-direction:row;";break;
             case Flow::col:o+="display:flex;flex-direction:column;";break;
             case Flow::stack:o+="display:grid;";break; case Flow::none:break; }
+        // Flex correctness: min-width:0 lets a flex CHILD shrink below its
+        // content size. CSS defaults flex items to min-width:auto, which causes
+        // overflow and breaks truncation/sidebars/wrapping — the classic flexbox
+        // footgun. waya defaults it right so layouts just behave.
+        if(s.flow==Flow::row||s.flow==Flow::col) o+="min-width:0;";
         if(s.justify!=Justify::none){ o+="justify-content:"; o+=just(s.justify); o+=';'; }
         if(s.align!=Align::none){ o+="align-items:"; o+=ali(s.align); o+=';'; }
         if(s.wrap==Wrap::wrap) o+="flex-wrap:wrap;"; else if(s.wrap==Wrap::nowrap) o+="flex-wrap:nowrap;";
@@ -69,7 +74,9 @@ private:
         if(s.has_grow){ o+="flex:"; o+=n(s.grow); o+=" 1 auto;"; }
         else if(s.has_shrink){ o+="flex-shrink:"; o+=n(s.shrink); o+=';'; }
         // text
-        if(kind==Kind::text){ if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
+        // text colour & typography apply to text AND input (both show glyphs).
+        if(kind==Kind::text || kind==Kind::input){
+            if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
             if(s.font_size.set()){o+="font-size:";len(o,s.font_size);o+=';';}
             if(s.weight!=Weight::none){o+="font-weight:";o+=wt(s.weight);o+=';';}
             if(s.italic)o+="font-style:italic;"; if(s.underline)o+="text-decoration:underline;"; if(s.strike)o+="text-decoration:line-through;";
