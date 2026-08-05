@@ -197,7 +197,8 @@ void handle(int conn, int port) {
         "body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}"
         "*,input,button,textarea,select{font-family:inherit;font-size:inherit;line-height:inherit;color:inherit}"
         "input,button,textarea,select{border:0;background:none;outline:none}"
-        "svg{display:block;overflow:visible}"
+        "svg{display:block;max-width:100%}"
+        "img{max-width:100%;height:auto}"
         // #root is the page surface: full viewport height. The app's own root
         // fills it (so its background covers the page) but its CHILDREN size to
         // their content — a `grow` card no longer absorbs the whole viewport.

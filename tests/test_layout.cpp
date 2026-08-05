@@ -89,6 +89,17 @@ int main() {
         CHECK(has(c, "font-size:16px"));
     }
 
+    // ── path (chart) SCALES to its container — has a viewBox + width:100%, so
+    //    it can't overflow its card (the chart-spill bug is fixed) ───────────
+    {
+        auto html = DomBackend{}.render(*(path({{0,50},{100,10},{520,25}}) | stroke(0x22d3ee,2))).html;
+        CHECK(has(html, "<svg"));
+        CHECK(has(html, "viewBox=\""));                 // scales from a coordinate box
+        CHECK(has(html, "preserveAspectRatio=\"none\""));
+        CHECK(has(html, "width:100%"));                 // fills the container
+        CHECK(has(html, "non-scaling-stroke"));         // line stays crisp
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

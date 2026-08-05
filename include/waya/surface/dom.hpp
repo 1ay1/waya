@@ -9,6 +9,7 @@
 #include "node.hpp"
 #include "../core/hash.hpp"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -154,12 +155,29 @@ private:
                 o+=">"; return;
             }
             case Kind::path: {
-                o+="<svg"; open_attrs(o,nd); o+="><polyline points=\"";
+                // Compute the points' bounds → a viewBox, so the SVG SCALES to fit
+                // its container instead of drawing at raw pixel coordinates that
+                // overflow. width/height:100% + preserveAspectRatio=none stretch
+                // it to the box waya laid out. (Without a viewBox the polyline
+                // spilled outside its card.)
+                float minx=1e9f,miny=1e9f,maxx=-1e9f,maxy=-1e9f;
+                for(auto&p:nd.points){ minx=std::min(minx,p.x); maxx=std::max(maxx,p.x);
+                                       miny=std::min(miny,p.y); maxy=std::max(maxy,p.y); }
+                if(nd.points.empty()){ minx=miny=0; maxx=maxy=1; }
+                float pw = std::max(1.f, maxx-minx), ph = std::max(1.f, maxy-miny);
+                float sw = nd.style.has_stroke_w?nd.style.stroke_w:2;
+                // pad the viewBox by half the stroke so the line isn't clipped
+                o+="<svg"; open_attrs(o,nd);
+                o+=" viewBox=\""; o+=n(minx-sw); o+=' '; o+=n(miny-sw); o+=' ';
+                o+=n(pw+2*sw); o+=' '; o+=n(ph+2*sw); o+='"';
+                o+=" preserveAspectRatio=\"none\" style=\"width:100%;height:100%;display:block\">";
+                o+="<polyline points=\"";
                 for(auto&p:nd.points){ o+=n(p.x); o+=','; o+=n(p.y); o+=' '; }
                 o+="\" fill=\""; if(nd.closed&&nd.style.has_bg) hex(o,nd.style.bg); else o+="none";
                 o+="\" stroke=\""; hex(o, nd.style.has_fg?nd.style.fg:0xffffff);
-                o+="\" stroke-width=\""; o+=n(nd.style.has_stroke_w?nd.style.stroke_w:2);
-                o+="\" fill-opacity=\".15\"/></svg>"; return; }
+                o+="\" stroke-width=\""; o+=n(sw);
+                o+="\" stroke-linejoin=\"round\" stroke-linecap=\"round\"";
+                o+=" vector-effect=\"non-scaling-stroke\" fill-opacity=\".15\"/></svg>"; return; }
             case Kind::box: o+="<div"; open_attrs(o,nd); o+='>';
                 for(auto&k:nd.kids) emit(o,*k); o+="</div>"; return;
         }
