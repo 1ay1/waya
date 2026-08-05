@@ -18,7 +18,7 @@
 
 ## The idea
 
-[maya](reference/maya) is a C++26 TUI framework that renders a **cell grid** to
+[maya](https://github.com/1ay1/maya) is a C++26 TUI framework that renders a **cell grid** to
 a terminal, and whose headline guarantee is that *impossible states don't
 compile* — you cannot set a border colour without first declaring a border.
 
@@ -137,7 +137,7 @@ a Witness-Chain approach to escaping soundness. Full architecture in
 - `DESIGN.md` — architecture, philosophy, risk assessment
 - `PLAN.md` — phased build plan with gates
 - `spike/` — the Phase 0 proof: DSL, tests, runner
-- `reference/maya/` — the TUI framework being ported from
+- `reference/maya/` — the TUI framework being ported from (git-ignored; clone [1ay1/maya](https://github.com/1ay1/maya) here to follow the source citations)
 
 ## Requirements
 
