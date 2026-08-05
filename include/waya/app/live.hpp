@@ -48,7 +48,8 @@ inline const char* live_client() {
     // resolve a dotted path (\"0.3.1\") to a DOM node under #waya-root's child
     "function at(path){var el=document.getElementById('waya-root').firstElementChild;"
     "if(path==='')return el;var p=path.split('.');"
-    "for(var i=0;i<p.length;i++){el=el.children[+p[i]];if(!el)return null;}return el;}"
+    // Walk childNodes (all nodes) to match the server's child indexing.
+    "for(var i=0;i<p.length;i++){el=el.childNodes[+p[i]];if(!el)return null;}return el;}"
     // apply one op: [op,path,a,b]
     "function apply(op){var k=op[0],path=op[1],a=op[2],b=op[3];var el=at(path);"
     "if(k===0){if(el)el.textContent=a;}"                       // set_text

@@ -48,7 +48,10 @@ inline const char* live_ws_client(int port) {
     "var ws,connected=false;"
     "function at(path){var el=document.getElementById('waya-root').firstElementChild;"
     "if(path==='')return el;var p=path.split('.');"
-    "for(var i=0;i<p.length;i++){el=el.children[+p[i]];if(!el)return null;}return el;}"
+    // Server indexes ALL children (text + elements); the DOM's `children` skips
+    // text nodes, so we must walk `childNodes` to stay in sync. waya emits no
+    // whitespace between nodes, so childNodes matches the server's `kids` 1:1.
+    "for(var i=0;i<p.length;i++){el=el.childNodes[+p[i]];if(!el)return null;}return el;}"
     "function apply(op){var k=op[0],path=op[1],a=op[2],b=op[3];var el=at(path);"
     "if(k===0){if(el)el.textContent=a;}"
     "else if(k===1){if(el)el.setAttribute(a,b);}"

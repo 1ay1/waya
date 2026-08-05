@@ -17,6 +17,16 @@ foreach(t test_render test_content_model test_dynamic test_style_general test_la
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
+# ── Browser-client applier test (jsdom) ──────────────────────────────────────
+# Verifies the JS patch applier against a real DOM so the "path indexes text
+# nodes but the client used element-only children" bug can't come back. Skips
+# cleanly when node/jsdom aren't available (the .js exits 0 with SKIP).
+find_program(WAYA_NODE node)
+if(WAYA_NODE)
+    add_test(NAME client_apply
+        COMMAND ${WAYA_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/client_apply.test.js)
+endif()
+
 # ── Compile-fail tests: each case MUST NOT compile ───────────────────────────
 # We compile tests/fail/cases.cpp once per case; ctest treats a failed compile
 # as the expected outcome via WILL_FAIL. This is the golden-error surface.
