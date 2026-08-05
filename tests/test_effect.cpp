@@ -152,6 +152,31 @@ int main() {
     // ── http_get parses the URL without crashing on garbage ──────────────────
     CHECK(detail::http_get("not-a-url").empty());           // graceful, non-crashing
 
+    // ── ROUTING: on_route maps a path to a Msg, and the runtime feeds the SAME
+    //    path to update() as its value. (Regression: the value used to be
+    //    dropped, so route-driven screens never changed.) We reproduce the
+    //    runtime's route branch: pick the Msg via on_route, dispatch with the
+    //    path as value.
+    {
+        struct R {
+            struct Model { std::string route = "/"; };
+            using Msg = int;
+            static Model init() { return {}; }
+            static std::pair<Model, Cmd<Msg>> update(Model m, Msg, std::string path) {
+                m.route = path; return { m, Cmd<Msg>::none() };
+            }
+            static Sub<Msg> subscribe(const Model&) {
+                return Sub<Msg>::on_route([](std::string){ return 9; });
+            }
+        };
+        auto sub = detail::subs_of<R, R::Model, R::Msg>(R::Model{});
+        auto* rt = sub.route();
+        CHECK(rt != nullptr);
+        std::string path = "/about";
+        auto [m1, c1] = detail::dispatch<R>(R::Model{}, rt->route(path), path);
+        CHECK(m1.route == "/about");   // the path reached update as the value
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;

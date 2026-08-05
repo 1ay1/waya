@@ -427,11 +427,14 @@ void handle(int conn, int port) {
             std::pair<Model, Cmd<Msg>> r;
             if (d->msg == kRouteMsg) {
                 // Route changes flow through the app's on_route subscription,
-                // computed from the CURRENT model (before this message).
+                // computed from the CURRENT model (before this message). The
+                // path is delivered BOTH ways: on_route maps it to the app's
+                // Msg, and it rides along as the update `value` so a
+                // 3-arg update(Model, Msg, path) can read it directly.
                 auto sub = detail::subs_of<P, Model, Msg>(model);
                 auto* rt = sub.route();
                 if (!rt) continue;   // app doesn't route: drop it
-                r = detail::dispatch<P>(std::move(model), rt->route(d->value), std::string{});
+                r = detail::dispatch<P>(std::move(model), rt->route(d->value), d->value);
             } else {
                 r = detail::dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value);
             }
