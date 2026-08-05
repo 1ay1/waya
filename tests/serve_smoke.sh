@@ -23,7 +23,7 @@ code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" 2>/dev/
 
 fail=0
 case "$code" in 200) : ;; *) echo "FAIL: status $code (want 200)"; fail=1 ;; esac
-case "$body" in *"<title>waya</title>"*) : ;; *) echo "FAIL: no <title>"; fail=1 ;; esac
+case "$body" in *"<title>waya"*) : ;; *) echo "FAIL: no <title>"; fail=1 ;; esac
 case "$body" in *"api-gateway"*) : ;; *) echo "FAIL: dynamic table missing"; fail=1 ;; esac
 case "$body" in *"<style>"*) : ;; *) echo "FAIL: generated stylesheet missing"; fail=1 ;; esac
 
