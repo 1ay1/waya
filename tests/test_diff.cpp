@@ -20,46 +20,9 @@ static int g_fail = 0, g_pass = 0;
 #define CHECK(cond) do { if (cond) ++g_pass; else { ++g_fail; \
     std::cerr << "FAIL " << __FILE__ << ':' << __LINE__ << "  " #cond "\n"; } } while (0)
 
-// Apply a patch to a VNode tree (server-side mirror of the JS client) so we can
-// assert soundness: apply(diff(a,b), a) == b.
-static VNode* at(VNode& root, const std::string& path) {
-    if (path.empty()) return &root;
-    VNode* cur = &root;
-    std::size_t i = 0;
-    while (i < path.size()) {
-        std::size_t dot = path.find('.', i);
-        int idx = std::stoi(path.substr(i, dot == std::string::npos ? dot : dot - i));
-        if (idx < 0 || (std::size_t)idx >= cur->kids.size()) return nullptr;
-        cur = &cur->kids[idx];
-        if (dot == std::string::npos) break;
-        i = dot + 1;
-    }
-    return cur;
-}
-
-static void apply(VNode& root, const Patch& p) {
-    for (const auto& op : p) {
-        if (op.op == Op::set_text) { if (auto* n = at(root, op.path)) n->text = op.a; }
-        else if (op.op == Op::set_attr) {
-            if (auto* n = at(root, op.path)) {
-                bool found = false;
-                for (auto& a : n->attrs) if (a.first == op.a) { a.second = op.b; found = true; }
-                if (!found) n->attrs.emplace_back(op.a, op.b);
-                std::sort(n->attrs.begin(), n->attrs.end(),
-                          [](auto& x, auto& y){ return x.first < y.first; });
-            }
-        }
-        else if (op.op == Op::remove_attr) {
-            if (auto* n = at(root, op.path))
-                std::erase_if(n->attrs, [&](auto& a){ return a.first == op.a; });
-        }
-        // replace/insert/remove operate on HTML strings; for the soundness test
-        // we compare rendered HTML, so re-render below handles them via the
-        // path-addressed parent. Simplest: rebuild by rendering `next` — but we
-        // want a real check, so we handle the structural ops on the tree too.
-        else if (op.op == Op::remove) { /* handled by structural cases below */ }
-    }
-}
+// Soundness is checked with the framework's canonical `waya::vdom::apply` — the
+// SAME implementation the live runtime and the JS client mirror. No private
+// re-implementation here: one applier, one source of truth.
 
 template <typename V>
 static VNode vn(const V& node) { StyleSheet s; return to_vnode(node, s); }

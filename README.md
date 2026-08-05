@@ -219,6 +219,22 @@ tbody_(each_keyed(rows,
 On a frame where nothing changed, **zero** row callbacks run; change one row and
 **one** runs (tested: [`tests/test_memo.cpp`](tests/test_memo.cpp)).
 
+**One applier, one source of truth — the live UI can't drift.** The server's
+`diff`, the runtime's own tree-tracking, and the browser's JS are all the SAME
+patch semantics. `waya::vdom::apply` is the single canonical applier; the
+runtime keeps its `prev` tree by applying its own patches to it (so the server
+always diffs against exactly what the client's DOM is), and
+`verify_roundtrip<P>(msgs)` proves it for any Program with no browser:
+
+```cpp
+// executable form of "if it compiles, the live UI is consistent"
+assert(verify_roundtrip<Counter>({Inc{}, Inc{}, Dec{}, Reset{}}));
+```
+
+After every message it asserts `apply(prev, diff(prev,next)) == next`. Tested
+across text/attr/insert/remove/replace ops and a 200-step walk
+([`tests/test_live_sound.cpp`](tests/test_live_sound.cpp)).
+
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,
 interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).

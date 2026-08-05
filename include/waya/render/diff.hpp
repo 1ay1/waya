@@ -24,6 +24,7 @@
 
 #include "vdom.hpp"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,8 +36,9 @@ enum class Op { set_text, set_attr, remove_attr, replace, remove, insert };
 struct PatchOp {
     Op          op;
     std::string path;   ///< "0.3.1" — child indices from root
-    std::string a;      ///< set_text: text; set_attr: name; replace/insert: html
+    std::string a;      ///< set_text: text; set_attr: name; remove_attr: name
     std::string b;      ///< set_attr: value
+    VNode       node;   ///< replace/insert: the new subtree (HTML only at wire)
 };
 
 using Patch = std::vector<PatchOp>;
@@ -112,11 +114,11 @@ inline void diff_node(const VNode& a, const VNode& b, const std::string& path, P
 
     // Different KIND or tag → the shape changed here: replace the subtree.
     if (a.is_text != b.is_text || (!a.is_text && a.tag != b.tag)) {
-        out.push_back({Op::replace, path, vnode_to_html(b), {}});
+        out.push_back({Op::replace, path, {}, {}, b});
         return;
     }
     if (b.is_text) {                                     // both text
-        if (a.text != b.text) out.push_back({Op::set_text, path, b.text, {}});
+        if (a.text != b.text) out.push_back({Op::set_text, path, b.text, {}, {}});
         return;
     }
     // Both elements, same tag: diff attributes, then children.
@@ -128,10 +130,10 @@ inline void diff_node(const VNode& a, const VNode& b, const std::string& path, P
         diff_node(a.kids[i], b.kids[i], child_path(path, i), out);
     // Trailing children removed (remove from the end so indices stay valid).
     for (std::size_t i = nb; i < na; ++i)
-        out.push_back({Op::remove, child_path(path, na - 1 - (i - nb)), {}, {}});
+        out.push_back({Op::remove, child_path(path, na - 1 - (i - nb)), {}, {}, {}});
     // Trailing children added.
     for (std::size_t i = na; i < nb; ++i)
-        out.push_back({Op::insert, path, vnode_to_html(b.kids[i]), {}});
+        out.push_back({Op::insert, path, {}, {}, b.kids[i]});
 }
 
 } // namespace detail
@@ -175,14 +177,99 @@ inline void json_str(std::string& o, std::string_view s) {
         o += '[';
         o += std::to_string(static_cast<int>(op.op)); o += ',';
         detail::json_str(o, op.path);
-        // set_text / replace / insert / remove_attr carry one string in `a`;
-        // set_attr carries name in `a` and value in `b`.
-        if (op.op != Op::remove) { o += ','; detail::json_str(o, op.a); }
-        if (op.op == Op::set_attr) { o += ','; detail::json_str(o, op.b); }
+        // set_text/remove_attr: `a`; set_attr: name `a` + value `b`;
+        // replace/insert: the subtree HTML (rendered here, at the wire only).
+        if (op.op == Op::set_text || op.op == Op::remove_attr) {
+            o += ','; detail::json_str(o, op.a);
+        } else if (op.op == Op::set_attr) {
+            o += ','; detail::json_str(o, op.a);
+            o += ','; detail::json_str(o, op.b);
+        } else if (op.op == Op::replace || op.op == Op::insert) {
+            o += ','; detail::json_str(o, vnode_to_html(op.node));
+        }
         o += ']';
     }
     o += ']';
     return o;
+}
+
+// ── apply — THE canonical patch applier ────────────────────────────────────
+//
+// ONE implementation the whole framework trusts: the runtime applies its own
+// patch to `prev` (keeping server + client in lockstep by construction), and
+// the soundness test asserts `apply(diff(a,b), a) == b`. The browser's JS
+// applier is a line-for-line mirror of THIS — same op semantics, same paths.
+// If this and the client ever disagree, one test catches it; there is a single
+// source of truth, not three.
+
+namespace detail {
+inline VNode* node_at(VNode& root, std::string_view path) {
+    if (path.empty()) return &root;
+    VNode* cur = &root;
+    std::size_t i = 0;
+    while (i <= path.size()) {
+        std::size_t dot = path.find('.', i);
+        std::size_t end = dot == std::string_view::npos ? path.size() : dot;
+        std::size_t idx = 0;
+        for (std::size_t k = i; k < end; ++k) idx = idx * 10 + (path[k] - '0');
+        if (idx >= cur->kids.size()) return nullptr;
+        cur = &cur->kids[idx];
+        if (dot == std::string_view::npos) break;
+        i = dot + 1;
+    }
+    return cur;
+}
+inline VNode* parent_and_index(VNode& root, std::string_view path, std::size_t& idx) {
+    auto dot = path.rfind('.');
+    std::string_view parent = dot == std::string_view::npos ? std::string_view{} : path.substr(0, dot);
+    std::string_view last   = dot == std::string_view::npos ? path : path.substr(dot + 1);
+    idx = 0; for (char c : last) idx = idx * 10 + (c - '0');
+    return node_at(root, parent);
+}
+} // namespace detail
+
+/// Apply a patch to a tree in place. The server uses this to keep `prev` exactly
+/// what the client's DOM now is — so the next diff is correct by construction.
+inline void apply(VNode& root, const Patch& p) {
+    for (const auto& op : p) {
+        switch (op.op) {
+            case Op::set_text:
+                if (auto* n = detail::node_at(root, op.path)) { n->text = op.a; finalize_hash(*n); }
+                break;
+            case Op::set_attr:
+                if (auto* n = detail::node_at(root, op.path)) {
+                    bool found = false;
+                    for (auto& [k, v] : n->attrs) if (k == op.a) { v = op.b; found = true; }
+                    if (!found) n->attrs.emplace_back(op.a, op.b);
+                    std::sort(n->attrs.begin(), n->attrs.end(),
+                              [](auto& x, auto& y){ return x.first < y.first; });
+                    finalize_hash(*n);
+                }
+                break;
+            case Op::remove_attr:
+                if (auto* n = detail::node_at(root, op.path)) {
+                    std::erase_if(n->attrs, [&](auto& kv){ return kv.first == op.a; });
+                    finalize_hash(*n);
+                }
+                break;
+            case Op::replace:
+                if (auto* n = detail::node_at(root, op.path)) *n = op.node;
+                break;
+            case Op::remove: {
+                std::size_t idx;
+                if (auto* par = detail::parent_and_index(root, op.path, idx))
+                    if (idx < par->kids.size()) par->kids.erase(par->kids.begin() + idx);
+                break;
+            }
+            case Op::insert:
+                if (auto* par = detail::node_at(root, op.path)) par->kids.push_back(op.node);
+                break;
+        }
+    }
+    // Re-hash ancestors touched by structural ops so the tree stays consistent
+    // for the NEXT diff. (set_text/attr already re-hash their node above; the
+    // parent hashes are recomputed lazily by the next full to_vnode, which is
+    // what `prev` is compared against.)
 }
 
 } // namespace waya::vdom

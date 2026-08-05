@@ -152,7 +152,21 @@ int live_ws(ServeConfig cfg = {}) {
                 style::StyleSheet sheet;
                 auto next = rebuild(sheet);
                 auto patch = have_prev ? vdom::diff(prev, next) : vdom::Patch{};
-                prev = std::move(next);
+
+                // Keep `prev` = exactly the tree the client now holds, by
+                // applying the SAME patch the client will apply. Server and
+                // client stay in lockstep by construction — the next diff is
+                // therefore always against the client's real state.
+#ifndef NDEBUG
+                {   // self-check: apply(prev,patch) must equal the fresh render
+                    vdom::VNode check = prev; vdom::apply(check, patch);
+                    if (have_prev && vdom::vnode_to_html(check) != vdom::vnode_to_html(next))
+                        std::fprintf(stderr, "waya: BUG — patch/render divergence!\n");
+                }
+#endif
+                if (have_prev) vdom::apply(prev, patch);
+                else { prev = next; have_prev = true; }
+
                 std::string frame = ws::encode_text(vdom::to_json(patch));
                 ::send(conn, frame.data(), frame.size(), 0);   // STREAMED, no new request
             }

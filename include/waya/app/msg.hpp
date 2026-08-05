@@ -103,8 +103,10 @@ inline std::string query_param(std::string_view path, std::string_view name) {
 
 namespace waya::dsl {
 
-/// `on_msg(m)` — deliver `m` to `update` when this element is clicked. Returns a
-/// pipe token that stamps `data-waya-msg="<id>"`.
+/// `on_msg(m)` — deliver `m` to `update` when this element is clicked. `m` must
+/// be the Program's `Msg` (the variant), so wrap an alternative: `on_msg(Msg{Inc{}})`.
+/// This mirrors Elm/Leptos exactly: an event carries a message, not a bare
+/// alternative. The runtime maps the click back to this exact `Msg` value.
 template <typename Msg>
 struct OnMsg { Msg msg; };
 template <typename Msg> OnMsg<Msg> on_msg(Msg m) { return {std::move(m)}; }
