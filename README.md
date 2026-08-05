@@ -133,6 +133,22 @@ center(content)               // centred both axes
 row(a, b) | gap(24_px) | bg(0x111827)   // still pipeable
 ```
 
+### Attributes & events — also one clean pipe
+
+The same idea as styling: `id`/`class`/`href` are fast paths, but **any**
+attribute, boolean attribute, `data-*`, ARIA, or DOM event is the same pipe —
+and values are auto-escaped:
+
+```cpp
+input_() | attr<"type", "email"> | attr<"name", "email"> | flag<"required">
+button_(text("Go")) | on_click<"submit()"> | flag_if("disabled", !valid)
+div_(...) | attr<"data-id", "42"> | attr<"role", "tabpanel"> | attr<"aria-label", "Details">
+input_() | attr_dyn("value", model.query)   // runtime value
+```
+
+A whole sign-up form is a handful of pipes — see [`examples/form.cpp`](examples/form.cpp)
+(`./build/form`).
+
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,
 interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).

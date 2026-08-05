@@ -61,6 +61,14 @@ void walk(std::string& out, style::StyleSheet& sheet, const ElemNode<T, Cfg, Cs.
 
     if constexpr (Cfg.has_href) { out += " href=\""; escape_attr(out, e.attrs.href); out += '"'; }
 
+    // General attribute channel: any attribute/event, and boolean flags.
+    if constexpr (Cfg.has_attrs) {
+        for (const auto& [k, v] : e.attrs.extra) {
+            out += ' '; out += k; out += "=\""; escape_attr(out, v); out += '"';
+        }
+        for (const auto& f : e.attrs.flags) { out += ' '; out += f; }
+    }
+
     out += '>';
     if constexpr (!html::Traits<T>::is_void) {
         std::apply([&](const auto&... cs) { (walk(out, sheet, cs), ...); }, e.children);

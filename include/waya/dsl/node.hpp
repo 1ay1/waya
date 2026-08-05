@@ -15,6 +15,7 @@
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace waya::dsl {
 
@@ -29,15 +30,31 @@ struct ElemCfg {
     bool has_cls      = false;
     bool has_href     = false;
     bool has_style    = false;
+    bool has_attrs    = false;   ///< any general attribute/event present
     bool is_container = false;   ///< set by `| row`/`| col`/`| flex`/`| grid`
     constexpr bool operator==(const ElemCfg&) const = default;
 };
 
-/// Runtime attribute values (string_views into static storage; free to copy).
+/// Attribute values carried on a node.
+///
+/// The typed id/cls/href stay as fast fields (common, and href is type-gated).
+/// Everything else — ANY attribute, boolean attributes, data-*, ARIA, and
+/// event handlers — lives in the general `extra` channel, exactly like the
+/// style `extra` channel. This is the "not limiting" guarantee for attributes:
+/// nothing is off-limits, and it's the same clean pipe.
 struct Attrs {
     std::string_view id{};
     std::string_view cls{};
     std::string_view href{};
+
+    /// (name, value) — rendered as name="value" (value escaped).
+    std::vector<std::pair<std::string, std::string>> extra;
+    /// boolean attributes (disabled, checked, required, …) — rendered bare.
+    std::vector<std::string> flags;
+
+    [[nodiscard]] bool any() const {
+        return !extra.empty() || !flags.empty();
+    }
 };
 
 // ── Leaf: text ──────────────────────────────────────────────────────────────

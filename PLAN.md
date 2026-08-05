@@ -88,9 +88,11 @@ Both are now permanent rules for Phases 1+.
 - [x] **Runtime-data combinators** — `each`/`each_indexed`/`when`/`dyn`/`raw`,
       type-erased but content-model-checked (test_dynamic, 17 assertions)
 - [x] **Dev server + live reload** — `waya::serve()`, `scripts/dev.sh`
+- [x] **Generic attributes + events** — `attr<"name","value">`, `flag<>`,
+      `attr_dyn`/`flag_if`, `on_<>`/`on_click<>`/`on_input<>` — any attribute,
+      boolean attr, data-*, ARIA, DOM event; values escaped (test_attrs, 23)
 - [ ] Escaping-context types (`HtmlText`/`AttrVal`/`UrlVal`/`JsVal`/`CssVal`)
       with `consteval` URL-scheme validation
-- [ ] Generic attributes + events: `attr<"data-x">(v)`, `on_click<Msg>`, ARIA
 - [ ] Attribute interning (maya's `StylePool` pattern → `AttrPool`)
 - [ ] `key()`, `cls_if()` polish; `unsafe::` for content-model bypass
 - [ ] `tools/gen_elements.py` → all ~110 elements + attribute allowlists

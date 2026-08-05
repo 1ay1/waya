@@ -33,6 +33,9 @@ if(WAYA_BUILD_EXAMPLES)
     add_executable(hello examples/hello.cpp)
     target_link_libraries(hello PRIVATE waya::waya)
 
+    add_executable(form examples/form.cpp)
+    target_link_libraries(form PRIVATE waya::waya)
+
     # A dev-server smoke test: start `hello`, curl it, check the response.
     # Skipped automatically where curl or /bin/sh are unavailable.
     if(WAYA_BUILD_TESTS AND UNIX)

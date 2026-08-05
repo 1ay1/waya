@@ -131,6 +131,88 @@ constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, HrefTag<S>) {
     return ElemNode<T, detail::set_href(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
 }
 
+// ── General attribute channel — ANY attribute/event, one clean pipe ─────────
+//
+// The typed id/cls/href above are fast paths. Everything else — name/value
+// attributes, boolean attributes, data-*, ARIA, and DOM event handlers — goes
+// through here. This mirrors the style `prop<>` channel: nothing is off-limits.
+//
+//   input_() | attr<"name", "email"> | attr<"type", "email"> | flag<"required">
+//   button_(text("Go")) | on_<"click", "count++">
+//   div_(...) | attr<"data-id", "42"> | attr<"role", "tabpanel">
+//   input_() | attr_dyn("value", model.query)          // runtime value
+
+namespace detail {
+consteval ElemCfg set_attrs(ElemCfg c) { c.has_attrs = true; return c; }
+} // namespace detail
+
+/// `attr<"name", "value">` — any attribute with a compile-time value.
+template <Str Name, Str Value> struct AttrTag {};
+template <Str Name, Str Value> inline constexpr AttrTag<Name, Value> attr{};
+
+template <Tag T, ElemCfg Cfg, typename... Cs, Str Name, Str Value>
+constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, AttrTag<Name, Value>) {
+    n.attrs.extra.emplace_back(std::string(Name.view()), std::string(Value.view()));
+    return ElemNode<T, detail::set_attrs(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
+}
+
+/// `flag<"disabled">` — a boolean attribute (rendered bare, no value).
+template <Str Name> struct FlagTag {};
+template <Str Name> inline constexpr FlagTag<Name> flag{};
+
+template <Tag T, ElemCfg Cfg, typename... Cs, Str Name>
+constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, FlagTag<Name>) {
+    n.attrs.flags.emplace_back(std::string(Name.view()));
+    return ElemNode<T, detail::set_attrs(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
+}
+
+/// `on_<"click", "handler()">` — a DOM event handler attribute (onclick, …).
+/// The Tier-2 live runtime will later bind these to `Msg`s; for Tier-0/1 they
+/// emit an inline handler so the DSL is useful today.
+template <Str Event, Str Handler> struct OnTag {};
+template <Str Event, Str Handler> inline constexpr OnTag<Event, Handler> on_{};
+
+template <Tag T, ElemCfg Cfg, typename... Cs, Str Event, Str Handler>
+constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, OnTag<Event, Handler>) {
+    n.attrs.extra.emplace_back("on" + std::string(Event.view()),
+                               std::string(Handler.view()));
+    return ElemNode<T, detail::set_attrs(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
+}
+
+/// Runtime-valued attribute, when the value isn't known at compile time:
+///   input_() | attr_dyn("value", std::to_string(n))
+struct AttrDyn { std::string name, value; };
+inline AttrDyn attr_dyn(std::string name, std::string value) {
+    return {std::move(name), std::move(value)};
+}
+template <Tag T, ElemCfg Cfg, typename... Cs>
+constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, AttrDyn a) {
+    n.attrs.extra.emplace_back(std::move(a.name), std::move(a.value));
+    return ElemNode<T, detail::set_attrs(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
+}
+
+/// Runtime id (parallel to `attr_dyn`), when a component receives its id at
+/// runtime:  input_() | id_dyn(field_name)
+inline AttrDyn id_dyn(std::string value) { return {"id", std::move(value)}; }
+
+/// Runtime boolean flag (present only when `on` is true):
+///   button_(...) | flag_if("disabled", !form.valid)
+struct FlagIf { std::string name; bool on; };
+inline FlagIf flag_if(std::string name, bool on) { return {std::move(name), on}; }
+template <Tag T, ElemCfg Cfg, typename... Cs>
+constexpr auto operator|(ElemNode<T, Cfg, Cs...> n, FlagIf f) {
+    if (f.on) n.attrs.flags.emplace_back(std::move(f.name));
+    return ElemNode<T, detail::set_attrs(Cfg), Cs...>{n.attrs, n.style, std::move(n.children)};
+}
+
+// Terse aliases for the most common DOM events — `| on_click<"…">` reads better
+// than `| on_<"click", "…">`. Same underlying channel.
+template <Str H> inline constexpr OnTag<"click",  H> on_click{};
+template <Str H> inline constexpr OnTag<"input",  H> on_input{};
+template <Str H> inline constexpr OnTag<"change", H> on_change{};
+template <Str H> inline constexpr OnTag<"submit", H> on_submit{};
+template <Str H> inline constexpr OnTag<"keydown",H> on_keydown{};
+
 // ── Style pipes ──────────────────────────────────────────────────────────────
 //
 // Any StyleToken merges into the node's style. Two type-state facts live in
