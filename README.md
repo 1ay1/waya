@@ -181,8 +181,22 @@ int main() { return waya::live<Counter>(); }   // ./build/counter
 
 `update` is a **pure function** — test it with `==`, no server (see
 [`tests/test_program.cpp`](tests/test_program.cpp)). Effects are data (`Cmd`);
-the runtime performs them. Today the live loop swaps HTML over the dev server;
-the persistent-WebSocket + diff-patch runtime is [Phase 4](PLAN.md).
+the runtime performs them.
+
+**The browser window is the terminal.** maya keeps the previous cell grid and
+sends only the cells that changed; waya keeps the previous DOM tree and sends
+only the nodes that changed. Clicking `+` on the counter sends a **15-byte
+patch** — `[[0,"0.0","1"]]`, one `set_text` op — not the 2.6 KB page:
+
+```
+click +  →  [[0,"0.0","1"]]        (15 bytes on the wire, ~175× smaller)
+```
+
+The diff (`include/waya/render/diff.hpp`) walks the old and new render in
+lockstep and emits the minimal op set (`set_text`/`set_attr`/`remove_attr`/
+`replace`/`insert`/`remove`) addressed by node path; the ~30-line client walks
+to the node and mutates it. Diff soundness — `apply(diff(a,b), a) == b` — is
+tested in [`tests/test_diff.cpp`](tests/test_diff.cpp).
 
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,

@@ -163,6 +163,12 @@ Both are now permanent rules for Phases 1+.
 - [x] `Sub<Msg>` (every/topic/batch) — source list; reconciliation TODO
 - [x] `Program` concept + `on_msg` wiring + minimal `live<P>()` HTML-swap loop
 - [x] `examples/counter.cpp` — the Elm loop live in the browser
+- [x] **DOM diff engine** (Phase 3 core, done early) — `render/vdom.hpp` (VNode
+      snapshot = maya's prev_cells), `render/diff.hpp` (lockstep tree diff →
+      minimal ops by node path + compact JSON wire format), `render/vwalk.hpp`
+      (DSL→VNode). Live runtime keeps the VNode and sends PATCHES not HTML — a
+      counter click is 15 bytes, not 2.6 KB. Soundness tested: apply(diff)=next
+      (test_diff, 18)
 - [ ] WebSocket (RFC 6455) + SSE fallback (replace the HTTP-swap loop)
 - [ ] `Session`: `Model` + arena + signal graph, thread-pinned, coroutine-driven
 - [ ] Elm loop with the §4 diff: `Msg` → `update` → `view` → diff → patch

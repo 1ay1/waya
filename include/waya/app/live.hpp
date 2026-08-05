@@ -19,6 +19,8 @@
 #include "msg.hpp"
 #include "../net/serve.hpp"
 #include "../render/html.hpp"
+#include "../render/vwalk.hpp"
+#include "../render/diff.hpp"
 
 #include <memory>
 #include <mutex>
@@ -36,19 +38,32 @@ struct LiveConfig {
 
 namespace detail {
 
-/// The client shim: intercept clicks on [data-waya-msg], POST the id to
-/// /__waya_msg, and replace the app root with the returned HTML. ~25 lines,
-/// no dependencies. (Phase 4 upgrades this to a WebSocket + diff patches.)
+/// The client shim: maintain a WebSocket-like channel (here: long-poll over the
+/// dev server), forward clicks, and APPLY PATCH OPS to the DOM by path — the
+/// browser-window-as-terminal client. It never re-parses the page; it walks to
+/// the addressed node and mutates it, exactly like maya writing changed cells.
 inline const char* live_client() {
     return
     "<script>(function(){"
-    "function send(id){"
-    "fetch('/__waya_msg?id='+encodeURIComponent(id),{method:'POST'})"
-    ".then(function(r){return r.text()}).then(function(html){"
-    "var root=document.getElementById('waya-root');"
-    "if(root){var d=document.createElement('div');d.innerHTML=html;"
-    "root.replaceWith(d.firstElementChild||d);}"
-    "});}"
+    // resolve a dotted path (\"0.3.1\") to a DOM node under #waya-root's child
+    "function at(path){var el=document.getElementById('waya-root').firstElementChild;"
+    "if(path==='')return el;var p=path.split('.');"
+    "for(var i=0;i<p.length;i++){el=el.children[+p[i]];if(!el)return null;}return el;}"
+    // apply one op: [op,path,a,b]
+    "function apply(op){var k=op[0],path=op[1],a=op[2],b=op[3];var el=at(path);"
+    "if(k===0){if(el)el.textContent=a;}"                       // set_text
+    "else if(k===1){if(el)el.setAttribute(a,b);}"              // set_attr
+    "else if(k===2){if(el)el.removeAttribute(a);}"            // remove_attr
+    "else if(k===3){if(el){var d=document.createElement('div');d.innerHTML=a;"
+    "el.replaceWith(d.firstElementChild||document.createTextNode(a));}}" // replace
+    "else if(k===4){if(el)el.remove();}"                       // remove (path=child)
+    "else if(k===5){var pa=at(path);if(pa){var d=document.createElement('div');"
+    "d.innerHTML=a;pa.appendChild(d.firstElementChild||document.createTextNode(a));}}" // insert
+    "}"
+    "function applyPatch(ops){for(var i=0;i<ops.length;i++)apply(ops[i]);}"
+    // send a Msg id; receive a JSON patch; apply it. No reload, no re-render.
+    "function send(id){fetch('/__waya_msg?id='+encodeURIComponent(id),{method:'POST'})"
+    ".then(function(r){return r.json()}).then(applyPatch).catch(function(){});}"
     "document.addEventListener('click',function(e){"
     "var t=e.target.closest('[data-waya-msg]');"
     "if(t){e.preventDefault();send(t.getAttribute('data-waya-msg'));}"
@@ -73,48 +88,63 @@ int live(LiveConfig cfg = {}) {
 
     struct State {
         Model model;
+        vdom::VNode prev;      ///< the last-rendered tree (maya's prev_cells)
+        bool have_prev = false;
         std::mutex mu;
     };
     auto state = std::make_shared<State>();
     state->model = std::move(model0);
 
-    // Render the app wrapped in <div id="waya-root">, with the message table
-    // exposed so the client can address handlers by index.
-    auto render_app = [state] {
-        std::lock_guard lock(state->mu);
-        // The message registry is filled as the view is built (see on_msg).
+    // Render the current model to (html, css, vnode). The message registry is
+    // filled as the view is built (see on_msg). Returns the fresh VNode too so
+    // the caller can store it as `prev` for the next diff.
+    auto render_now = [state](style::StyleSheet& sheet) {
+        // Capture messages ONCE, while the view tree is built (on_msg pipes run
+        // during P::view). The subsequent walks only read the finished tree, so
+        // the table must NOT be cleared again — the next POST looks it up.
         app::detail::begin_msg_capture<Msg>();
         auto node = P::view(state->model);
-        auto body = waya::render::render(node);   // html + css
-        std::string root =
-            "<div id=\"waya-root\">" + body.html + "</div>";
-        std::string style = body.css.empty() ? "" : "<style>" + body.css + "</style>";
-        return std::pair{root, style};
+        std::string html;
+        waya::render::detail::walk(html, sheet, node);
+        auto vnode = waya::render::to_vnode(node, sheet);
+        return std::pair{std::move(html), std::move(vnode)};
     };
 
     ServeConfig sc;
     sc.port = cfg.port; sc.open = cfg.open; sc.host = cfg.host;
 
-    return serve([state, render_app](const Request& req) -> std::string {
-        // Event endpoint: /__waya_msg?id=<n> → run update, return fresh root.
+    return serve([state, render_now](const Request& req) -> std::string {
+        // Event endpoint: /__waya_msg?id=<n> → update → re-render → DIFF → patch.
         if (req.path.rfind("/__waya_msg", 0) == 0) {
+            std::lock_guard lock(state->mu);
             auto id = app::detail::query_param(req.path, "id");
             if (auto msg = app::detail::lookup_msg<Msg>(id)) {
-                std::lock_guard lock(state->mu);
                 auto [m2, cmd] = P::update(std::move(state->model), *msg);
                 state->model = std::move(m2);
-                (void)cmd;   // Cmd interpretation lands with Phase 4 WS runtime
+                (void)cmd;   // Cmd interpretation lands with the WS runtime
             }
-            auto [root, style] = render_app();
-            return style + root;   // client swaps #waya-root; style is idempotent
+            style::StyleSheet sheet;
+            auto [html, vnode] = render_now(sheet);
+            // Only the CHANGED nodes go on the wire — the whole point.
+            vdom::Patch patch = state->have_prev
+                ? vdom::diff(state->prev, vnode)
+                : vdom::Patch{};
+            state->prev = std::move(vnode);
+            state->have_prev = true;
+            return vdom::to_json(patch);   // a compact op array, not HTML
         }
 
-        // Full page.
-        auto [root, style] = render_app();
-        std::string doc =
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" + style +
-            "</head><body>" + root + detail::live_client() + "</body></html>";
-        return doc;
+        // Full page: render once, remember the VNode as the baseline.
+        std::lock_guard lock(state->mu);
+        style::StyleSheet sheet;
+        auto [html, vnode] = render_now(sheet);
+        state->prev = vnode;
+        state->have_prev = true;
+        std::string css = sheet.render();
+        std::string style = css.empty() ? "" : "<style>" + css + "</style>";
+        return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" + style +
+               "</head><body><div id=\"waya-root\">" + html + "</div>" +
+               detail::live_client() + "</body></html>";
     }, sc);
 }
 

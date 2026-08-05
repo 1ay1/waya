@@ -185,6 +185,11 @@ inline int serve(std::function<std::string(const Request&)> handler,
             // Live-reload heartbeat: the token is constant for one process and
             // changes on restart, so the client reloads after a rebuild.
             body = detail::start_token(); ctype = "text/plain";
+        } else if (path.rfind("/__waya_msg", 0) == 0) {
+            // A live-runtime patch response: JSON, and NEVER wrapped with the
+            // live-reload script (that would corrupt the payload).
+            body = handler(Request{method, path});
+            ctype = "application/json";
         } else {
             body = handler(Request{method, path});
             if (cfg.live) detail::inject_live_reload(body);
