@@ -150,11 +150,23 @@ Both are now permanent rules for Phases 1+.
 
 **Goal:** LiveView-class interactivity.
 
-- [ ] WebSocket (RFC 6455) + SSE fallback
+> **Started early.** The Elm architecture landed in Phase 1 as a working
+> minimal runtime (`include/waya/app/`): `Program` concept, `Cmd<Msg>`,
+> `Sub<Msg>`, `on_msg`, and `waya::live<P>()` — click → Msg → update →
+> re-render over the dev server. `update` is pure and `==`-testable
+> (test_program, 15). `examples/counter.cpp` runs it live. What remains below is
+> the *production* runtime: persistent sockets and diff patches instead of
+> HTML-swap-over-HTTP.
+
+- [x] `Cmd<Msg>` (none/quit/batch/after/task + navigate/push_state/set_cookie/
+      broadcast/fetch), `==`-comparable so effects are testable
+- [x] `Sub<Msg>` (every/topic/batch) — source list; reconciliation TODO
+- [x] `Program` concept + `on_msg` wiring + minimal `live<P>()` HTML-swap loop
+- [x] `examples/counter.cpp` — the Elm loop live in the browser
+- [ ] WebSocket (RFC 6455) + SSE fallback (replace the HTTP-swap loop)
 - [ ] `Session`: `Model` + arena + signal graph, thread-pinned, coroutine-driven
-- [ ] Elm loop: `Msg` → `update` → `view` → diff → patch
-- [ ] `Cmd<Msg>` ported + web effects (`navigate`, `push_state`, `set_cookie`,
-      `broadcast`, `fetch`); `Sub<Msg>` with reconciliation
+- [ ] Elm loop with the §4 diff: `Msg` → `update` → `view` → diff → patch
+- [ ] Interpret `Cmd` effects in the runtime; `Sub` reconciliation
 - [ ] Signals ported from maya (batching, reentrancy-safe notify frames)
 - [ ] `waya.js` client (~6 KB, no build step): patch application, DOM morphing,
       event forwarding, focus/scroll/IME preservation, reconnect with backoff

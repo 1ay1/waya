@@ -149,6 +149,41 @@ input_() | attr_dyn("value", model.query)   // runtime value
 A whole sign-up form is a handful of pipes — see [`examples/form.cpp`](examples/form.cpp)
 (`./build/form`).
 
+### Live apps — the Elm architecture
+
+For stateful UI, waya ports maya's `Program`: a pure `Model` + `Msg` + `update`
++ `view`. Click a button → `Msg` → `update` runs on the server → the page
+re-renders. No reload, no hand-written JS.
+
+```cpp
+struct Counter {
+    struct Model { int n = 0; };
+    struct Inc {}; struct Dec {};
+    using Msg = std::variant<Inc, Dec>;
+
+    static Model init() { return {}; }
+    static std::pair<Model, Cmd<Msg>> update(Model m, Msg msg) {
+        return std::visit(overload{
+            [&](Inc){ return std::pair{Model{m.n+1}, Cmd<Msg>::none()}; },
+            [&](Dec){ return std::pair{Model{m.n-1}, Cmd<Msg>::none()}; },
+        }, msg);
+    }
+    static auto view(const Model& m) {
+        return col(
+            h1_(text(std::to_string(m.n))),
+            row(button_(text("−")) | on_msg(Msg{Dec{}}),
+                button_(text("+")) | on_msg(Msg{Inc{}}))
+        );
+    }
+};
+int main() { return waya::live<Counter>(); }   // ./build/counter
+```
+
+`update` is a **pure function** — test it with `==`, no server (see
+[`tests/test_program.cpp`](tests/test_program.cpp)). Effects are data (`Cmd`);
+the runtime performs them. Today the live loop swaps HTML over the dev server;
+the persistent-WebSocket + diff-patch runtime is [Phase 4](PLAN.md).
+
 Proven working — `./spike/run_style.sh` (6/6) plus `test_style_general` (14/14,
 arbitrary props, custom properties, pseudo-classes, media queries, grid,
 interning-with-states). Full rationale in [DESIGN.md §5.5](DESIGN.md).
