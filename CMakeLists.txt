@@ -36,27 +36,20 @@ endif()
 # ── Examples ────────────────────────────────────────────────────────────────
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
-    add_executable(hello examples/hello.cpp)
-    target_link_libraries(hello PRIVATE waya::waya)
+    # Every example is a waya app: a surface Program run with waya::surface::live.
+    foreach(ex hello counter app)
+        add_executable(${ex} examples/${ex}.cpp)
+        target_link_libraries(${ex} PRIVATE waya::waya)
+    endforeach()
 
-    add_executable(form examples/form.cpp)
-    target_link_libraries(form PRIVATE waya::waya)
-
-    add_executable(counter examples/counter.cpp)
-    target_link_libraries(counter PRIVATE waya::waya)
-
-    add_executable(surface_app examples/surface_app.cpp)
-    target_link_libraries(surface_app PRIVATE waya::waya)
-
-    # A dev-server smoke test: start `hello`, curl it, check the response.
-    # Skipped automatically where curl or /bin/sh are unavailable.
+    # Dev-server smoke test: start an app, confirm it serves the shell + client.
     if(WAYA_BUILD_TESTS AND UNIX)
         find_program(WAYA_CURL curl)
         if(WAYA_CURL)
             add_test(
                 NAME serve_smoke
                 COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/serve_smoke.sh
-                        $<TARGET_FILE:hello> 8137)
+                        $<TARGET_FILE:app> 8137)
         endif()
     endif()
 endif()

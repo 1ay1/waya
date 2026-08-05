@@ -1,10 +1,12 @@
-/// examples/surface_app.cpp — a live app written purely in the Surface Model.
+/// examples/app.cpp — a waya app.
 ///
-///   cmake --build build -j && ./build/surface_app     # http://localhost:8080
+///   cmake --build build -j && ./build/app        # http://localhost:8080
 ///
-/// Look at view(): not one line mentions HTML, CSS, a div, flex, onclick, or a
-/// canvas. Just box/text/path + chaining attrs + tap(msg). waya renders it,
-/// streams only the diff on each tap, and keeps the browser in sync.
+/// This is how you build a waya app. You describe a surface with a tiny
+/// vocabulary — box / text / image / path + chaining attrs + tap(msg) — and
+/// waya renders it, streams only the delta on each tap, and keeps the browser
+/// in sync. Not one line mentions HTML, CSS, a div, flex, onclick, or a canvas;
+/// those are waya's business, not yours.
 
 #include <waya/surface/live.hpp>
 

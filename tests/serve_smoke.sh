@@ -1,18 +1,16 @@
 #!/bin/sh
-# tests/serve_smoke.sh — verify the dev server binds and serves a page.
-# Used by ctest. Starts `hello`, curls it, checks the response, tears down.
+# tests/serve_smoke.sh — verify a waya app serves its shell + client.
+# A waya app's page is a bare shell (#root) plus the client that streams the
+# surface over a WebSocket; the UI itself never appears in the initial HTML.
 
 set -u
-HELLO="${1:?path to hello binary}"
+APP="${1:?path to app binary}"
 PORT="${2:-8137}"
 
-# Start the server. WAYA_NO_OPEN keeps it from spawning a browser in CI;
-# WAYA_NO_LIVE keeps the injected live-reload script out of the checked HTML.
-WAYA_PORT="$PORT" WAYA_NO_OPEN=1 WAYA_NO_LIVE=1 "$HELLO" >/tmp/waya_serve.log 2>&1 &
+WAYA_PORT="$PORT" WAYA_NO_OPEN=1 "$APP" >/tmp/waya_serve.log 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null' EXIT
 
-# Wait for it to come up (up to ~3s).
 i=0
 while [ "$i" -lt 30 ]; do
     if curl -s -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null; then break; fi
@@ -24,9 +22,8 @@ code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" 2>/dev/
 
 fail=0
 case "$code" in 200) : ;; *) echo "FAIL: status $code (want 200)"; fail=1 ;; esac
-case "$body" in *"<title>waya"*) : ;; *) echo "FAIL: no <title>"; fail=1 ;; esac
-case "$body" in *"api-gateway"*) : ;; *) echo "FAIL: dynamic table missing"; fail=1 ;; esac
-case "$body" in *"<style>"*) : ;; *) echo "FAIL: generated stylesheet missing"; fail=1 ;; esac
+case "$body" in *'id="root"'*) : ;; *) echo "FAIL: no #root shell"; fail=1 ;; esac
+case "$body" in *"new WebSocket"*) : ;; *) echo "FAIL: no client runtime"; fail=1 ;; esac
 
-if [ "$fail" -eq 0 ]; then echo "serve_smoke: OK (200, page rendered, styles present)"; fi
+if [ "$fail" -eq 0 ]; then echo "serve_smoke: OK (200, shell + client present)"; fi
 exit "$fail"

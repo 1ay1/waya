@@ -1,66 +1,46 @@
-/// examples/counter.cpp — a live counter. The Elm architecture, running on the
-/// server: click a button → Msg → update → re-render, no page reload.
+/// examples/counter.cpp — the smallest waya app.
 ///
 ///   cmake --build build -j && ./build/counter    # http://localhost:8080
 ///
-/// Model/Msg/update are pure (see tests/test_program.cpp). view() wires clicks
-/// to messages with `on_msg`. The runtime holds the Model, runs update on each
-/// event, and swaps the fresh HTML into the page.
+/// The Elm shape: Model + Msg + init/update/view. `view` returns a surface you
+/// describe with box/text + tap(msg). waya renders it and streams only what
+/// changed on each tap. No HTML, no CSS, no event wiring in your code.
 
-#include <waya/waya.hpp>
-#include <waya/app/live_ws.hpp>
+#include <waya/surface/live.hpp>
 
-#include <variant>
-
-using namespace waya;
-using namespace waya::dsl;
-using namespace waya::style;
-using namespace waya::style::literals;
+using namespace waya::surface;
 
 struct Counter {
     struct Model { int n = 0; };
-    struct Inc {}; struct Dec {}; struct Reset {};
-    using Msg = std::variant<Inc, Dec, Reset>;
+    using Msg = int;
+    enum { Inc, Dec, Reset };
 
     static Model init() { return {}; }
 
-    static std::pair<Model, Cmd<Msg>> update(Model m, Msg msg) {
-        return std::visit(overload{
-            [&](Inc)   { return std::pair{Model{m.n + 1}, Cmd<Msg>::none()}; },
-            [&](Dec)   { return std::pair{Model{m.n - 1}, Cmd<Msg>::none()}; },
-            [&](Reset) { return std::pair{Model{0},       Cmd<Msg>::none()}; },
-        }, msg);
+    static Model update(Model m, Msg msg) {
+        if (msg == Inc)   m.n++;
+        if (msg == Dec)   m.n--;
+        if (msg == Reset) m.n = 0;
+        return m;
     }
 
-    static auto view(const Model& m) {
-        auto btn = [](std::string_view label) {
-            return button_(text(label))
-                | width(52_px) | pad_y(10_px) | rounded(10_px)
-                | size(20_px) | weight(Weight::w600)
-                | prop<"border", "1px solid #334155"> | pointer
-                | bg(0x1e293b) | fg(0xe2e8f0)
-                | prop<"transition", "background .12s ease">
-                | on<Hover>(bg(0x334155));
+    static NodeRef view(const Model& m) {
+        auto btn = [](std::string label, int msg, std::uint32_t color) {
+            return text(std::move(label)) | fg(0xffffff) | size(22)
+                 | pad(12) | bg(color) | round_(12) | tap(msg);
         };
-        return div_(
-            div_(text(std::to_string(m.n)))
-                | size(72_px) | weight(Weight::w800) | fg(0x818cf8)
-                | prop<"font-variant-numeric", "tabular-nums">,
-            div_(
-                btn("−") | on_msg(Msg{Dec{}}),
-                btn("↺") | on_msg(Msg{Reset{}}) | size(16_px),
-                btn("+") | on_msg(Msg{Inc{}})
-            ) | flex(Dir::row) | gap(10_px)
-        )
-        | flex(Dir::col) | items(Align::center) | gap(24_px)
-        | pad(48_px) | rounded(20_px) | bg(0x0f172a)
-        | prop<"border", "1px solid #1e293b">
-        | prop<"box-shadow", "0 20px 60px rgba(0,0,0,.5)">;
+        return col({
+            text(m.n) | fg(0x818cf8) | size(72) | bold,
+            row({
+                btn("-", Dec, 0x334155),
+                btn("reset", Reset, 0x1e293b),
+                btn("+", Inc, 0x6366f1),
+            }) | gap(10),
+        }) | gap(24) | pad(48) | bg(0x0b1020);
     }
 };
 
 int main() {
-    static_assert(Program<Counter>);
-    // Persistent WebSocket: patches STREAM to the browser, no request per click.
-    return waya::live_ws<Counter>({.port = 8080});
+    static_assert(SurfaceProgram<Counter>);
+    return live<Counter>({.port = 8080});
 }
