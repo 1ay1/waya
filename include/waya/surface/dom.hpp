@@ -133,6 +133,16 @@ private:
         switch(nd.kind){
             case Kind::text: o+="<span"; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</span>"; return;
             case Kind::image: o+="<img src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+='>'; return;
+            case Kind::input: {
+                o+="<input type=\""; esc(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
+                o+=" value=\""; esc(o,nd.text); o+='"';
+                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc(o,nd.placeholder); o+='"'; }
+                if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
+                if(nd.on_change>=0){ o+=" data-change=\""; o+=std::to_string(nd.on_change); o+='"'; }
+                auto cls = intern(nd.style, nd.kind, false);
+                if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
+                o+=">"; return;
+            }
             case Kind::path: {
                 o+="<svg"; open_attrs(o,nd); o+="><polyline points=\"";
                 for(auto&p:nd.points){ o+=n(p.x); o+=','; o+=n(p.y); o+=' '; }

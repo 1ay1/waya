@@ -131,7 +131,7 @@ struct Style {
 };
 
 // ── Primitives ───────────────────────────────────────────────────────────────
-enum class Kind : std::uint8_t { box, text, image, path };
+enum class Kind : std::uint8_t { box, text, image, path, input };
 
 struct Node; using NodeRef = std::shared_ptr<Node>;
 struct Pt { float x, y; bool operator==(const Pt&) const = default; };
@@ -139,10 +139,13 @@ struct Pt { float x, y; bool operator==(const Pt&) const = default; };
 struct Node {
     Kind  kind = Kind::box;
     Style style{};
-    std::string     text, src;
+    std::string     text, src;         // text: content; image: url; input: value
+    std::string     placeholder, input_type;  // input
     std::vector<Pt> points; bool closed=false;
     std::string     key;
-    int             on_tap=-1;
+    int             on_tap=-1;         // click → message
+    int             on_input=-1;       // input event → message (value sent up)
+    int             on_change=-1;      // change event → message
     std::vector<NodeRef> kids;
     std::uint64_t   hash=0;
 };
@@ -174,9 +177,9 @@ inline std::uint64_t hash_style(std::uint64_t h, const Style& s){
 inline void finalize(Node& n){
     std::uint64_t h=1469598103934665603ull;
     h=mix(h,n.kind); h=hash_style(h,n.style);
-    h=mix(h,n.text);h=mix(h,n.src);
+    h=mix(h,n.text);h=mix(h,n.src);h=mix(h,n.placeholder);h=mix(h,n.input_type);
     for(auto&p:n.points){h=mix(h,p.x);h=mix(h,p.y);} h=mix(h,n.closed);
-    h=mix(h,n.key); h=mix(h,(std::int64_t)n.on_tap);
+    h=mix(h,n.key); h=mix(h,(std::int64_t)n.on_tap); h=mix(h,(std::int64_t)n.on_input); h=mix(h,(std::int64_t)n.on_change);
     for(auto&k:n.kids) h=mix(h,k->hash);
     n.hash=h;
 }
@@ -196,80 +199,129 @@ inline NodeRef text(long long v){ return text(std::to_string(v)); }
 inline NodeRef text(int v){ return text(std::to_string(v)); }
 inline NodeRef image(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::image; n->src=std::move(src); finalize(*n); return n; }
 inline NodeRef path(std::vector<Pt> pts, bool closed=false){ auto n=std::make_shared<Node>(); n->kind=Kind::path; n->points=std::move(pts); n->closed=closed; finalize(*n); return n; }
+/// `input(value)` — a real text field. Style/placeholder/on_input via modifiers.
+inline NodeRef input(std::string value={}){ auto n=std::make_shared<Node>(); n->kind=Kind::input; n->text=std::move(value); n->input_type="text"; finalize(*n); return n; }
 
-// ── Attributes — every one is a uniform Style mutator ───────────────────────
-/// An Attr is a function that mutates a Style. `node | attr` applies it and
-/// re-hashes. This uniformity is what makes the whole API compose cleanly.
-struct Attr { std::function<void(Style&)> apply; };
-inline NodeRef operator|(NodeRef n, const Attr& a){ a.apply(n->style); finalize(*n); return n; }
+// ═══════════════════════════════════════════════════════════════════════════
+//  ONE uniform modifier. maya's principle: everything is a node, and everything
+//  you do to a node is the SAME kind of thing — a `Mod`, a function Node→Node.
+//  Style attrs, tap, key, on(state), at(breakpoint): all Mods, all `node | mod`.
+//  Compose freely; they read like one clean sentence.
+// ═══════════════════════════════════════════════════════════════════════════
 
+struct Mod { std::function<void(Node&)> apply; };
+inline NodeRef operator|(NodeRef n, const Mod& m){ m.apply(*n); finalize(*n); return n; }
+/// Mods compose: `a | b` is a Mod that applies a then b (so you can name bundles).
+inline Mod operator|(Mod a, Mod b){ return {[=](Node& n){ a.apply(n); b.apply(n); }}; }
 
-// colour & text
-inline Attr fg(std::uint32_t c){ return {[=](Style& s){ s.has_fg=true; s.fg=c; }}; }
-inline Attr bg(std::uint32_t c){ return {[=](Style& s){ s.has_bg=true; s.bg=c; }}; }
-inline Attr font(Len sz){ return {[=](Style& s){ s.font_size=sz; }}; }
-inline Attr font(float px_){ return font(px(px_)); }
-inline Attr weight(Weight w){ return {[=](Style& s){ s.weight=w; }}; }
-inline const Attr bold      { [](Style& s){ s.weight=Weight::bold; } };
-inline const Attr semibold  { [](Style& s){ s.weight=Weight::semibold; } };
-inline const Attr italic    { [](Style& s){ s.italic=true; } };
-inline const Attr underline { [](Style& s){ s.underline=true; } };
-inline Attr text_align(Justify j){ return {[=](Style& s){ s.text_align=j; }}; }
-inline Attr leading(float lh){ return {[=](Style& s){ s.has_lh=true; s.line_height=lh; }}; }
-inline Attr tracking(float ls){ return {[=](Style& s){ s.has_ls=true; s.letter_spacing=ls; }}; }
+// A style-only mod — the common case. `sfn` takes a Style& mutator.
+inline Mod sty(std::function<void(Style&)> f){ return {[f=std::move(f)](Node& n){ f(n.style); }}; }
 
-// box model
-inline Attr pad(Len l){ return {[=](Style& s){ s.pad=l; }}; }
-inline Attr pad(float p){ return pad(px(p)); }
-inline Attr pad_x(Len l){ return {[=](Style& s){ s.pad_x=l; }}; }
-inline Attr pad_x(float p){ return pad_x(px(p)); }
-inline Attr pad_y(Len l){ return {[=](Style& s){ s.pad_y=l; }}; }
-inline Attr pad_y(float p){ return pad_y(px(p)); }
-inline Attr margin(Len l){ return {[=](Style& s){ s.margin=l; }}; }
-inline Attr margin(float m){ return margin(px(m)); }
-inline Attr w(Len l){ return {[=](Style& s){ s.w=l; }}; }
-inline Attr w(float v){ return w(px(v)); }
-inline Attr h(Len l){ return {[=](Style& s){ s.h=l; }}; }
-inline Attr h(float v){ return h(px(v)); }
-inline Attr max_w(Len l){ return {[=](Style& s){ s.max_w=l; }}; }
-inline Attr min_w(Len l){ return {[=](Style& s){ s.min_w=l; }}; }
-inline Attr round(Len l){ return {[=](Style& s){ s.radius=l; }}; }
-inline Attr round(float r){ return round(px(r)); }
-inline const Attr pill { [](Style& s){ s.radius=px(9999); } };
-inline Attr border(float width_, std::uint32_t color){ return {[=](Style& s){ s.has_border=true; s.border_w=px(width_); s.border_c=color; }}; }
+// ── colour & text ──────────────────────────────────────────────────────────────
+inline Mod fg(std::uint32_t c){ return sty([=](Style& s){ s.has_fg=true; s.fg=c; }); }
+inline Mod bg(std::uint32_t c){ return sty([=](Style& s){ s.has_bg=true; s.bg=c; }); }
+inline Mod font(Len sz){ return sty([=](Style& s){ s.font_size=sz; }); }
+inline Mod font(float px_){ return font(px(px_)); }
+inline Mod weight(Weight w){ return sty([=](Style& s){ s.weight=w; }); }
+inline const Mod bold      = sty([](Style& s){ s.weight=Weight::bold; });
+inline const Mod semibold  = sty([](Style& s){ s.weight=Weight::semibold; });
+inline const Mod medium    = sty([](Style& s){ s.weight=Weight::medium; });
+inline const Mod italic    = sty([](Style& s){ s.italic=true; });
+inline const Mod underline = sty([](Style& s){ s.underline=true; });
+inline const Mod strike    = sty([](Style& s){ s.strike=true; });
+inline Mod text_align(Justify j){ return sty([=](Style& s){ s.text_align=j; }); }
+inline Mod leading(float lh){ return sty([=](Style& s){ s.has_lh=true; s.line_height=lh; }); }
+inline Mod tracking(float ls){ return sty([=](Style& s){ s.has_ls=true; s.letter_spacing=ls; }); }
+inline const Mod nowrap_text = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); });
+inline const Mod truncate = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); s.extra.emplace_back("overflow","hidden"); s.extra.emplace_back("text-overflow","ellipsis"); });
 
-// layout
-inline const Attr wrap { [](Style& s){ s.wrap=Wrap::wrap; } };
-inline Attr justify(Justify j){ return {[=](Style& s){ s.justify=j; }}; }
-inline Attr align(Align a){ return {[=](Style& s){ s.align=a; }}; }
-inline Attr gap(Len l){ return {[=](Style& s){ s.gap=l; }}; }
-inline Attr gap(float g){ return gap(px(g)); }
-inline Attr grow(float g=1){ return {[=](Style& s){ s.has_grow=true; s.grow=g; }}; }
-inline Attr shrink(float g=1){ return {[=](Style& s){ s.has_shrink=true; s.shrink=g; }}; }
-/// `center` — centre children both axes. The single most common layout, one word.
-inline const Attr center { [](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; } };
+// ── box model ────────────────────────────────────────────────────────────────
+inline Mod pad(Len l){ return sty([=](Style& s){ s.pad=l; }); }
+inline Mod pad(float p){ return pad(px(p)); }
+inline Mod pad_x(Len l){ return sty([=](Style& s){ s.pad_x=l; }); }
+inline Mod pad_x(float p){ return pad_x(px(p)); }
+inline Mod pad_y(Len l){ return sty([=](Style& s){ s.pad_y=l; }); }
+inline Mod pad_y(float p){ return pad_y(px(p)); }
+inline Mod margin(Len l){ return sty([=](Style& s){ s.margin=l; }); }
+inline Mod margin(float m){ return margin(px(m)); }
+inline Mod w(Len l){ return sty([=](Style& s){ s.w=l; }); }
+inline Mod w(float v){ return w(px(v)); }
+inline Mod h(Len l){ return sty([=](Style& s){ s.h=l; }); }
+inline Mod h(float v){ return h(px(v)); }
+inline Mod size(Len side){ return sty([=](Style& s){ s.w=side; s.h=side; }); }   // square
+inline Mod size(float side){ return size(px(side)); }
+inline Mod max_w(Len l){ return sty([=](Style& s){ s.max_w=l; }); }
+inline Mod min_w(Len l){ return sty([=](Style& s){ s.min_w=l; }); }
+inline Mod max_h(Len l){ return sty([=](Style& s){ s.max_h=l; }); }
+inline Mod min_h(Len l){ return sty([=](Style& s){ s.min_h=l; }); }
+inline Mod round(Len l){ return sty([=](Style& s){ s.radius=l; }); }
+inline Mod round(float r){ return round(px(r)); }
+inline const Mod pill = sty([](Style& s){ s.radius=px(9999); });
+inline Mod border(float width_, std::uint32_t color){ return sty([=](Style& s){ s.has_border=true; s.border_w=px(width_); s.border_c=color; }); }
+inline Mod aspect(float ratio){ return sty([=](Style& s){ s.extra.emplace_back("aspect-ratio", std::to_string(ratio)); }); }
 
-// position
-inline Attr absolute(Len top_={}, Len left_={}){ return {[=](Style& s){ s.pos=Pos::absolute; s.top=top_; s.left=left_; }}; }
-inline Attr fixed(){ return {[](Style& s){ s.pos=Pos::fixed; }}; }
-inline Attr sticky(){ return {[](Style& s){ s.pos=Pos::sticky; }}; }
-inline Attr z(int zi){ return {[=](Style& s){ s.has_z=true; s.z=zi; }}; }
+// ── layout ────────────────────────────────────────────────────────────────
+inline const Mod wrap = sty([](Style& s){ s.wrap=Wrap::wrap; });
+inline const Mod nowrap = sty([](Style& s){ s.wrap=Wrap::nowrap; });
+inline Mod justify(Justify j){ return sty([=](Style& s){ s.justify=j; }); }
+inline Mod align(Align a){ return sty([=](Style& s){ s.align=a; }); }
+inline Mod gap(Len l){ return sty([=](Style& s){ s.gap=l; }); }
+inline Mod gap(float g){ return gap(px(g)); }
+inline Mod grow(float g=1){ return sty([=](Style& s){ s.has_grow=true; s.grow=g; }); }
+inline Mod shrink(float g=1){ return sty([=](Style& s){ s.has_shrink=true; s.shrink=g; }); }
+/// `center` — centre children both axes; the single most common layout, one word.
+inline const Mod center = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; });
+/// `between` — push children to opposite ends.
+inline const Mod between = sty([](Style& s){ s.justify=Justify::between; });
+inline Mod overflow(std::string v){ return sty([=](Style& s){ s.extra.emplace_back("overflow", v); }); }
+inline const Mod scroll = sty([](Style& s){ s.extra.emplace_back("overflow","auto"); });
+inline const Mod clip   = sty([](Style& s){ s.extra.emplace_back("overflow","hidden"); });
 
-// effects
-inline Attr shadow(std::string spec=""){ return {[=](Style& s){ s.has_shadow=true; s.shadow_spec=spec; }}; }
-inline Attr opacity(float o){ return {[=](Style& s){ s.has_opacity=true; s.opacity=o; }}; }
-inline const Attr pointer { [](Style& s){ s.cursor=Cursor::pointer; } };
-inline Attr transition(std::string spec="all .15s ease"){ return {[=](Style& s){ s.has_transition=true; s.transition_spec=spec; }}; }
-inline Attr stroke(std::uint32_t color, float width_=2){ return {[=](Style& s){ s.has_fg=true; s.fg=color; s.has_stroke_w=true; s.stroke_w=width_; }}; }
+// ── position ──────────────────────────────────────────────────────────────
+inline Mod absolute(Len top_={}, Len left_={}){ return sty([=](Style& s){ s.pos=Pos::absolute; s.top=top_; s.left=left_; }); }
+inline const Mod fixed  = sty([](Style& s){ s.pos=Pos::fixed; });
+inline const Mod sticky = sty([](Style& s){ s.pos=Pos::sticky; });
+inline const Mod relative = sty([](Style& s){ s.pos=Pos::relative; });
+inline Mod inset(Len t, Len r, Len b, Len l){ return sty([=](Style& s){ s.top=t; s.right=r; s.bottom=b; s.left=l; }); }
+inline Mod z(int zi){ return sty([=](Style& s){ s.has_z=true; s.z=zi; }); }
 
-// ── The universal channel — reach ANY css, so nothing is off-limits ─────────
-inline Attr css(std::string prop, std::string value){ return {[=](Style& s){ s.extra.emplace_back(prop, value); }}; }
-inline Attr var(std::string name, std::string value){ return {[=](Style& s){ s.extra.emplace_back("--"+name, value); }}; }
+// ── effects ──────────────────────────────────────────────────────────────
+inline Mod shadow(std::string spec=""){ return sty([=](Style& s){ s.has_shadow=true; s.shadow_spec=spec; }); }
+inline Mod opacity(float o){ return sty([=](Style& s){ s.has_opacity=true; s.opacity=o; }); }
+inline const Mod pointer = sty([](Style& s){ s.cursor=Cursor::pointer; });
+inline Mod cursor(Cursor c){ return sty([=](Style& s){ s.cursor=c; }); }
+inline Mod transition(std::string spec="all .15s ease"){ return sty([=](Style& s){ s.has_transition=true; s.transition_spec=spec; }); }
+inline Mod blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("filter","blur("+std::to_string((int)px_)+"px)"); }); }
+inline Mod backdrop_blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("backdrop-filter","blur("+std::to_string((int)px_)+"px)"); }); }
+inline Mod scale(float f){ return sty([=](Style& s){ s.extra.emplace_back("transform","scale("+std::to_string(f)+")"); }); }
+inline Mod rotate(float deg){ return sty([=](Style& s){ s.extra.emplace_back("transform","rotate("+std::to_string((int)deg)+"deg)"); }); }
+inline Mod stroke(std::uint32_t color, float width_=2){ return sty([=](Style& s){ s.has_fg=true; s.fg=color; s.has_stroke_w=true; s.stroke_w=width_; }); }
 
-// ── States & responsive — hover/focus/etc. and breakpoints as values ────────
+// ── image fit ───────────────────────────────────────────────────────────
+inline const Mod cover   = sty([](Style& s){ s.extra.emplace_back("object-fit","cover"); });
+inline const Mod contain = sty([](Style& s){ s.extra.emplace_back("object-fit","contain"); });
+
+// ── gradients (delightful sugar over the universal channel) ──────────────
+namespace detail { inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; } }
+inline Mod gradient(std::uint32_t a, std::uint32_t b, int deg=90){
+    return sty([=](Style& s){ s.extra.emplace_back("background",
+        "linear-gradient("+std::to_string(deg)+"deg,"+detail::hexstr(a)+","+detail::hexstr(b)+")"); }); }
+/// gradient text: paint the gradient and clip it to the glyphs.
+inline Mod gradient_text(std::uint32_t a, std::uint32_t b, int deg=90){
+    return sty([=](Style& s){
+        s.extra.emplace_back("background","linear-gradient("+std::to_string(deg)+"deg,"+detail::hexstr(a)+","+detail::hexstr(b)+")");
+        s.extra.emplace_back("-webkit-background-clip","text");
+        s.extra.emplace_back("background-clip","text");
+        s.extra.emplace_back("color","transparent"); }); }
+
+// ── the universal channel — reach ANY css, nothing off-limits ────────────
+inline Mod css(std::string prop, std::string value){ return sty([=](Style& s){ s.extra.emplace_back(prop, value); }); }
+inline Mod var(std::string name, std::string value){ return sty([=](Style& s){ s.extra.emplace_back("--"+name, value); }); }
+
+// ── states & responsive — hover/focus/etc. and breakpoints, also Mods ─────
 enum class State : std::uint8_t { Hover, Focus, Active, Disabled };
 enum class Break : std::uint8_t { Sm, Md, Lg, Xl };
-inline constexpr State Hover=State::Hover, Focus=State::Focus, Active=State::Active;
+inline constexpr State Hover=State::Hover, Focus=State::Focus, Active=State::Active, Disabled=State::Disabled;
 inline constexpr Break Sm=Break::Sm, Md=Break::Md, Lg=Break::Lg, Xl=Break::Xl;
 
 namespace detail {
@@ -277,29 +329,27 @@ inline std::string state_sel(State st){ switch(st){ case State::Hover:return ":h
     case State::Active:return ":active"; case State::Disabled:return ":disabled"; } return ""; }
 inline std::string break_q(Break b){ switch(b){ case Break::Sm:return "@media(min-width:640px)"; case Break::Md:return "@media(min-width:768px)";
     case Break::Lg:return "@media(min-width:1024px)"; case Break::Xl:return "@media(min-width:1280px)"; } return ""; }
-template <typename... A> std::shared_ptr<Style> build_style(A... attrs){ auto s=std::make_shared<Style>(); (attrs.apply(*s), ...); return s; }
+/// Build a sub-Style by applying style-only Mods to a fresh node's style.
+template <typename... M> std::shared_ptr<Style> sub_style(M... mods){
+    Node tmp; (mods.apply(tmp), ...); return std::make_shared<Style>(tmp.style); }
 }
-/// `on(Hover, bg(...), fg(...))` — a style overlay for a state.
-template <typename... A> Attr on(State st, A... attrs){
-    auto sub = detail::build_style(attrs...);
-    return {[=](Style& s){ s.states.emplace_back(detail::state_sel(st), sub); }};
+/// `on(Hover, bg(...), scale(1.02f))` — a style overlay for a state. A Mod.
+template <typename... M> Mod on(State st, M... mods){
+    auto sub = detail::sub_style(mods...);
+    return sty([=](Style& s){ s.states.emplace_back(detail::state_sel(st), sub); });
 }
-/// `at(Md, w(fill), pad(24))` — a style overlay at a breakpoint.
-template <typename... A> Attr at(Break b, A... attrs){
-    auto sub = detail::build_style(attrs...);
-    return {[=](Style& s){ s.states.emplace_back(detail::break_q(b), sub); }};
+/// `at(Md, w(fill), pad(24))` — a style overlay at a breakpoint. A Mod.
+template <typename... M> Mod at(Break b, M... mods){
+    auto sub = detail::sub_style(mods...);
+    return sty([=](Style& s){ s.states.emplace_back(detail::break_q(b), sub); });
 }
 
-// interactivity & identity — these need the NODE, not just the Style, so they
-// have their own pipe overloads.
-struct TapTag { int msg; };
-/// `tap(Msg)` — this node responds with a message when clicked/tapped.
-inline TapTag tap(int msg){ return {msg}; }
-inline NodeRef operator|(NodeRef n, TapTag t){ n->on_tap=t.msg; finalize(*n); return n; }
-
-struct KeyTag { std::string k; };
-/// `key("id")` — stable identity for keyed diffing of lists.
-inline KeyTag key(std::string k){ return {std::move(k)}; }
-inline NodeRef operator|(NodeRef n, KeyTag t){ n->key=std::move(t.k); finalize(*n); return n; }
+// ── interactivity & identity — Mods that touch the node, not just its style ─
+inline Mod tap(int msg){ return {[=](Node& n){ n.on_tap=msg; }}; }
+inline Mod on_input(int msg){ return {[=](Node& n){ n.on_input=msg; }}; }
+inline Mod on_change(int msg){ return {[=](Node& n){ n.on_change=msg; }}; }
+inline Mod placeholder(std::string p){ return {[=](Node& n){ n.placeholder=p; }}; }
+inline Mod type(std::string t){ return {[=](Node& n){ n.input_type=t; }}; }
+inline Mod key(std::string k){ return {[=](Node& n){ n.key=k; }}; }
 
 } // namespace waya::surface

@@ -43,20 +43,33 @@ namespace waya::surface {
 
 struct LiveConfig { int port = 8080; const char* host = "127.0.0.1"; bool open = true; };
 
-/// A Surface Program: Model + Msg + init/update/view(->NodeRef).
+/// A Surface Program: Model + Msg + init/update/view(->NodeRef). `update` may
+/// be `update(Model, Msg)` (taps) OR `update(Model, Msg, std::string value)`
+/// (inputs carry a value) — the runtime calls whichever you define.
 template <typename P>
-concept SurfaceProgram = requires(typename P::Model m, typename P::Msg msg) {
-    typename P::Model; typename P::Msg;
-    { P::init() } -> std::convertible_to<typename P::Model>;
-    { P::update(m, msg) } -> std::convertible_to<typename P::Model>;
-    { P::view(std::as_const(m)) } -> std::convertible_to<NodeRef>;
-};
+concept SurfaceProgram =
+    requires { typename P::Model; typename P::Msg; }
+    && requires(typename P::Model m) { { P::init() } -> std::convertible_to<typename P::Model>; }
+    && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; }
+    && ( requires(typename P::Model m, typename P::Msg msg) { { P::update(m, msg) } -> std::convertible_to<typename P::Model>; }
+      || requires(typename P::Model m, typename P::Msg msg, std::string v) { { P::update(m, msg, v) } -> std::convertible_to<typename P::Model>; } );
 
 namespace detail {
 
 inline std::atomic<int> g_fd{-1};
 inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
+
+/// Call P::update with a value when the Program supports it, else without.
+/// This lets `update(Model, Msg)` and `update(Model, Msg, std::string value)`
+/// both work — taps use the 2-arg form, inputs the 3-arg form.
+template <typename P, typename Model, typename Msg>
+Model dispatch(Model m, Msg msg, const std::string& value){
+    if constexpr (requires(Model mm, Msg mg, std::string v){ P::update(mm, mg, v); })
+        return P::update(std::move(m), msg, value);
+    else
+        return P::update(std::move(m), msg);
+}
 
 /// The terminal. Holds NO app state and NO app logic — it decodes packed binary
 /// frames and paints them, coalescing all ops of a frame into a single
@@ -101,6 +114,11 @@ inline std::string client(int port) {
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
     "if(t&&ws&&ws.readyState===1){ev.preventDefault();ws.send(t.dataset.tap);}});"
+    // input events carry a value: send \"i<msg>|<value>\" (change: \"c<msg>|<value>\")
+    "document.addEventListener('input',function(ev){var t=ev.target;"
+    "if(t.dataset&&t.dataset.input!=null&&ws&&ws.readyState===1){ws.send('i'+t.dataset.input+'|'+t.value);}});"
+    "document.addEventListener('change',function(ev){var t=ev.target;"
+    "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+t.value);}});"
     "})();</script>";
 }
 
@@ -142,9 +160,18 @@ void handle(int conn, int port) {
             if (fr.opcode == 0x9) { auto p=ws::encode_pong(fr.payload); ::send(conn,p.data(),p.size(),0); continue; }
             if (fr.opcode != 0x1) continue;
 
-            // The payload is a tap message index.
-            Msg msg = static_cast<Msg>(std::atoi(fr.payload.c_str()));
-            model = P::update(std::move(model), msg);
+            // Parse the upstream message. Taps: "<msg>". Input/change events:
+            // "i<msg>|<value>" / "c<msg>|<value>" — the value rides along.
+            const std::string& raw = fr.payload;
+            Msg msg{}; std::string value;
+            if (!raw.empty() && (raw[0]=='i' || raw[0]=='c')) {
+                auto bar = raw.find('|');
+                msg = static_cast<Msg>(std::atoi(raw.substr(1, bar-1).c_str()));
+                if (bar != std::string::npos) value = raw.substr(bar+1);
+            } else {
+                msg = static_cast<Msg>(std::atoi(raw.c_str()));
+            }
+            model = detail::dispatch<P>(std::move(model), msg, value);
             NodeRef next = P::view(model);
             Patch patch = diff(prev, next);
             prev = next;

@@ -2,85 +2,100 @@
 ///
 ///   cmake --build build -j && ./build/app        # http://localhost:8080
 ///
-/// Describe a surface with a tiny vocabulary — box / text / image / path +
-/// chaining attrs + tap(msg). waya renders it (as HTML here), streams only the
-/// delta on each tap, and keeps the browser in sync. Not one line mentions
-/// HTML, CSS, a div, flex, onclick, or a canvas; those are waya's business.
+/// Everything is a node; everything you do to a node is a `Mod` you pipe with
+/// `|`. Style, layout, state, interactivity — one uniform, composable API. Not
+/// a line of HTML, CSS, div, flex, onclick, or canvas. A delight to write.
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
+#include <string>
 #include <vector>
 
 using namespace waya::surface;
+using namespace waya::surface::color;
 
-struct Dashboard {
+struct App {
     struct Model {
-        int requests = 0;
-        std::vector<float> history{20, 34, 28, 45, 39, 52, 47, 60};
+        std::string name;
+        int likes = 0;
+        std::vector<float> traffic{20, 34, 28, 45, 39, 52, 47, 60};
     };
     using Msg = int;
-    enum { Add, Reset };
+    enum { Like, Reset, NameChanged };
 
     static Model init() { return {}; }
 
-    static Model update(Model m, Msg msg) {
-        if (msg == Add) {
-            m.requests++;
-            m.history.push_back(20 + (float)((m.requests * 13) % 55));
-            if (m.history.size() > 20) m.history.erase(m.history.begin());
-        } else {
-            m = Model{};
+    static Model update(Model m, Msg msg, std::string value) {
+        switch (msg) {
+            case Like:  m.likes++;
+                        m.traffic.push_back(20 + (float)((m.likes * 13) % 55));
+                        if (m.traffic.size() > 20) m.traffic.erase(m.traffic.begin());
+                        break;
+            case Reset: m = Model{}; break;
+            case NameChanged: m.name = value; break;
         }
         return m;
     }
 
     static NodeRef view(const Model& m) {
-        // The chart — one primitive. Any shape is `path`; nothing is off-limits.
+        // the chart — one primitive; any shape is `path`
         std::vector<Pt> chart;
-        for (std::size_t i = 0; i < m.history.size(); ++i)
-            chart.push_back({(float)i * 26.f, 90.f - m.history[i]});
+        for (std::size_t i = 0; i < m.traffic.size(); ++i)
+            chart.push_back({(float)i * 26.f, 90.f - m.traffic[i]});
 
-        auto card = [](NodeRef body) {
-            return body | pad(24) | bg(0x1e293b) | round(16) | border(1, 0x334155)
-                        | shadow() | grow(1)
-                        | transition() | on(Hover, css("transform", "translateY(-3px)"));
+        auto card = [](NodeRef body){
+            return body | pad(sp(6)) | bg(bg2) | round(16) | border(1, line) | shadow()
+                        | grow(1) | transition()
+                        | on(Hover, css("transform","translateY(-3px)"), css("border-color","#475569"));
         };
-        auto stat = [&](std::string label, NodeRef value) {
-            return card(col(
-                text(std::move(label)) | fg(0x94a3b8) | font(13) | css("text-transform","uppercase") | tracking(0.6f),
-                std::move(value)
-            ) | gap(6));
-        };
+
+        std::string greeting = m.name.empty() ? "there" : m.name;
 
         return col(
             // hero
             col(
-                text("waya") | font(48) | weight(Weight::black)
-                    | css("background","linear-gradient(90deg,#818cf8,#22d3ee)")
-                    | css("-webkit-background-clip","text") | css("background-clip","text")
-                    | css("color","transparent"),
-                text("Describe what to render. waya owns how.") | fg(0x94a3b8) | font(18)
-            ) | gap(6),
+                text("waya") | font(52) | weight(Weight::black)
+                    | gradient_text(0x818cf8, brand2),
+                text("Everything is a node. Everything composes.") | fg(muted) | font(18)
+            ) | gap(sp(1)),
 
-            // stat row — responsive: side by side, stacks narrow
+            // a real input, in the same vocabulary
+            card(col(
+                text("What's your name?") | fg(muted) | font(13) | tracking(0.5f),
+                input(m.name) | placeholder("type here…") | on_input(NameChanged)
+                    | pad(sp(3)) | round(10) | bg(bg0) | fg(ink) | font(16)
+                    | border(1, line) | css("outline","none")
+                    | on(Focus, css("border-color","#6366f1")),
+                text("Hi, " + greeting + " 👋") | fg(ink) | font(20) | semibold
+            ) | gap(sp(2))),
+
+            // stats: side by side, wraps narrow
             row(
-                stat("Requests", text(m.requests) | fg(0xe2e8f0) | font(44) | bold),
-                stat("Traffic",  path(chart) | stroke(0x22d3ee, 2) | h(90))
-            ) | gap(16) | wrap | at(Md, css("flex-wrap","nowrap")),
+                card(col(
+                    text("Likes") | fg(muted) | font(13),
+                    text(m.likes) | fg(ink) | font(44) | bold
+                ) | gap(sp(1))),
+                card(col(
+                    text("Traffic") | fg(muted) | font(13),
+                    path(chart) | stroke(brand2, 2) | h(90)
+                ) | gap(sp(2)))
+            ) | gap(sp(4)) | wrap | at(Md, css("flex-wrap","nowrap")),
 
             // actions
             row(
-                text("＋ request") | fg(0xffffff) | pad_x(20) | pad_y(12) | bg(0x6366f1)
-                    | round(10) | font(15) | semibold | tap(Add)
-                    | transition() | on(Hover, bg(0x4f46e5)),
-                text("reset") | fg(0xe2e8f0) | pad_x(20) | pad_y(12) | bg(0x334155)
+                text("♥ like") | fg(white) | pad_x(sp(5)) | pad_y(sp(3)) | bg(brand)
+                    | round(10) | font(15) | semibold | tap(Like)
+                    | transition() | on(Hover, bg(0x4f46e5)) | on(Active, scale(0.97f)),
+                text("reset") | fg(ink) | pad_x(sp(5)) | pad_y(sp(3)) | bg(bg2)
                     | round(10) | font(15) | tap(Reset)
-            ) | gap(12)
-        ) | gap(28) | pad(40) | bg(0x0b1020) | css("min-height","100vh");
+            ) | gap(sp(3))
+        ) | gap(sp(7)) | pad(sp(10)) | bg(bg0) | css("min-height","100vh")
+          | max_w(px(720)) | css("margin","0 auto");
     }
 };
 
 int main() {
-    static_assert(SurfaceProgram<Dashboard>);
-    return live<Dashboard>({.port = 8080});
+    static_assert(SurfaceProgram<App>);
+    return live<App>({.port = 8080});
 }

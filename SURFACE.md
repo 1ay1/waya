@@ -73,6 +73,46 @@ Simple by default (named attrs cover the common 90%), never limiting (`css()`
 reaches the other 10%, and `path` draws any shape). And every attribute is the
 same kind of value, so they all compose the same clean way.
 
+### Everything is a node; everything you do to one is a `Mod`
+
+This is maya's principle, exact: there is **one** node type, and everything you
+do to a node — a colour, a layout, a hover state, an event handler — is the
+**same kind of thing**: a `Mod`, a function `Node → Node`, applied with `|`.
+
+```cpp
+text("Save") | fg(white) | pad(12) | round(8) | bg(brand)   // style
+            | tap(Save)                                    // interactivity
+            | on(Hover, bg(0x4f46e5))                       // a state — also a Mod
+```
+
+`fg`, `pad`, `tap`, `on(Hover,…)` are all `Mod`s and all pipe onto any node the
+same way. Because a `Mod` is just a value, you can **name a bundle** and reuse
+it — a "component" is just a shared `Mod` (or a function returning a node):
+
+```cpp
+Mod chip = pad(8) | pill | bg(bg2) | fg(ink) | font(13);
+text("new")  | chip;
+text("beta") | chip;                 // same look, one definition
+```
+
+There are no attributes-vs-props-vs-handlers as separate systems. One node, one
+modifier, one operator — which is exactly why it stays a delight as the app grows.
+
+### Real inputs, same vocabulary
+
+`input(value)` is the fifth primitive — a real text field. It carries its value
+up to `update` through the same message channel:
+
+```cpp
+input(m.query) | placeholder("search…") | on_input(QueryChanged) | pad(8) | round(8)
+
+// update gains an optional value arg for input-carrying messages:
+static Model update(Model m, Msg msg, std::string value) {
+    if (msg == QueryChanged) m.query = value;
+    return m;
+}
+```
+
 ## 3. Not limiting — `path` is the "do anything" escape
 
 The vocabulary is tiny, but `path` makes it complete: any 2-D shape is a list of

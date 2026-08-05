@@ -125,6 +125,48 @@ int main() {
         CHECK(has(delta, "[0,\"1\",\"1\"]")); // the delta is a set_text
     }
 
+    // ── EVERYTHING IS A MOD: style, layout, state, interactivity all `node|mod` ─
+    // maya's uniformity — one operator, one kind of thing, composes freely.
+    {
+        // tap and a style attr are the SAME kind of thing (both Mod)
+        auto n = text("x") | fg(0x111111) | tap(3) | pad(8);
+        CHECK(n->on_tap == 3);
+        CHECK(n->style.has_fg && n->style.fg == 0x111111);
+        CHECK(n->style.pad.value == 8);
+        // Mods compose into a named bundle, then apply to any node
+        Mod chip = pad(8) | round(999) | bg(0x334155) | fg(0xffffff);
+        auto a = text("a") | chip;
+        auto b = text("b") | chip;
+        CHECK(a->style.pad.value == 8 && b->style.pad.value == 8);
+        CHECK(a->style.radius.value == 999);
+    }
+
+    // ── the input primitive is a real field ────────────────────────────────
+    {
+        auto n = input("hello") | placeholder("name") | on_input(2) | type("email");
+        CHECK(n->kind == Kind::input);
+        CHECK(n->text == "hello");
+        CHECK(n->placeholder == "name");
+        CHECK(n->on_input == 2);
+        CHECK(n->input_type == "email");
+        auto html = DomBackend{}.render(*n).html;
+        CHECK(has(html, "<input type=\"email\""));
+        CHECK(has(html, "value=\"hello\""));
+        CHECK(has(html, "placeholder=\"name\""));
+        CHECK(has(html, "data-input=\"2\""));
+    }
+
+    // ── delightful mods reach real css: gradient, blur, scale, truncate ─────
+    {
+        auto css = DomBackend{}.render(*(box(text("x"))
+            | gradient(0x111111, 0x222222) | blur(4) | scale(1.05f) | aspect(1.5f) | scroll)).css;
+        CHECK(has(css, "linear-gradient"));
+        CHECK(has(css, "filter:blur(4px)"));
+        CHECK(has(css, "transform:scale(1.05"));
+        CHECK(has(css, "aspect-ratio:1.5"));
+        CHECK(has(css, "overflow:auto"));
+    }
+
     std::cout << "test_surface: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }
