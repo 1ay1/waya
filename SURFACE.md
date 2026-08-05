@@ -27,36 +27,51 @@ you say "draw a rounded box with this text," and the library decides the pixels.
 waya raises that to the whole application, and keeps it in sync over the network
 by streaming only what changed.
 
-## 2. The vocabulary (this is all of it)
+## 2. The vocabulary
 
 Four primitives. Everything you can build is a composition of these.
 
 | primitive | what it is |
 |---|---|
-| `box(children)` | a rectangle that holds other things — the universal container |
+| `box(children…)` | a rectangle that holds other things — the universal container |
 | `text(string)` | a run of characters |
 | `image(src)` | a bitmap |
 | `path(points)` | an arbitrary vector shape — a chart, an icon, a custom widget |
 
-Plus layout sugar (`row`, `col`, `stack` are just a `box` with a flow) and a
-handful of visual attributes applied by chaining, maya-style:
+Plus layout sugar (`row`, `col`, `stack`, `center`) and a **complete** set of
+chaining attributes — anything CSS and layout can express:
 
 ```cpp
-pad(bg(col({
-    bold(size(fg(text("Dashboard"), 0x3b82f6), 28)),
-    round_(bg(path(cpu_history), 0x0f172a), 8),        // a chart — one primitive
-    row({
-        tap(round_(pad(text("+"), 8), 8), Inc),         // tap → a message
-        tap(round_(pad(text("reset"), 8), 8), Reset),
-    }),
-}), 0x0b1020), 24)
+col(
+    text("Dashboard") | fg(0x3b82f6) | font(28) | bold,
+    box( text("Requests"), text(count) )
+        | pad(12) | round(12) | bg(0x1e293b) | shadow() | border(1, 0x334155)
+        | on(Hover, css("transform","translateY(-2px)")),   // states are values
+    path(cpu) | stroke(0x22d3ee, 2),                        // a chart — one node
+    text("+") | pad(8) | round(8) | bg(0x6366f1) | tap(Inc),
+) | gap(16) | pad(24) | center | at(Md, pad(40))            // responsive
 ```
 
-Notice what is absent: no `<div>`, no `flex`, no `border-radius`, no `<canvas>`,
-no `ctx.fillRect`, no `onclick`. Those are how waya renders; they never appear in
-your code. Interactivity is one concept: `tap(node, msg)` — this node responds
-with a message, which flows through the Elm loop (`Model` / `Msg` / `update` /
-`view`) exactly as the rest of waya already works.
+- **colour / text**: `fg` `bg` `font(size)` `bold` `semibold` `weight(..)`
+  `italic` `underline` `leading` `tracking` `text_align`
+- **box model**: `pad` `pad_x` `pad_y` `margin` `w` `h` `min_w` `max_w`
+  `round` `pill` `border(w, colour)` — lengths take a unit: `w(px(200))`,
+  `w(pct(50))`, `w(fill)`, `w(hug)`
+- **layout**: `row`/`col`/`stack`, `center`, `justify(..)` `align(..)` `wrap`
+  `gap` `grow` `shrink`
+- **position**: `absolute(top,left)` `fixed()` `sticky()` `z(n)`
+- **effects**: `shadow()` `opacity(..)` `pointer` `transition()`
+- **states & responsive**: `on(Hover, …)` `on(Focus, …)` `at(Md, …)` — a state or
+  breakpoint is just another bundle of attributes
+- **the universal channel**: `css("any-prop", "any-value")` and
+  `var("name", "value")` — so **nothing** is ever off-limits (gradients,
+  `backdrop-filter`, grid templates, custom properties, anything the browser
+  grows tomorrow)
+- **interactivity / identity**: `tap(msg)`, `key("id")`
+
+Simple by default (named attrs cover the common 90%), never limiting (`css()`
+reaches the other 10%, and `path` draws any shape). And every attribute is the
+same kind of value, so they all compose the same clean way.
 
 ## 3. Not limiting — `path` is the "do anything" escape
 

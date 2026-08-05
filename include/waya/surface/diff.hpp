@@ -36,7 +36,7 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
     if (a.kind != b.kind) { out.push_back({Op::replace, path, {}, bref}); return; }
 
     // paint/flow delta (applies to every kind)
-    if (a.paint != b.paint || a.flow != b.flow || a.on_tap != b.on_tap)
+    if (a.style != b.style || a.on_tap != b.on_tap)
         out.push_back({Op::set_paint, path, {}, bref});
 
     switch (a.kind) {

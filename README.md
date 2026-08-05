@@ -63,12 +63,14 @@ struct Counter {
 
     static NodeRef view(const Model& m) {
         auto btn = [](std::string s, int msg, std::uint32_t c) {
-            return text(std::move(s)) | fg(0xffffff) | pad(12) | bg(c) | round_(12) | tap(msg);
+            return text(std::move(s)) | fg(0xffffff) | pad_x(20) | pad_y(12)
+                 | bg(c) | round(12) | semibold | tap(msg)
+                 | transition() | on(Hover, opacity(0.85f));   // states are values
         };
-        return col({
-            text(m.n) | fg(0x818cf8) | size(72) | bold,
-            row({ btn("-", Dec, 0x334155), btn("reset", Reset, 0x1e293b), btn("+", Inc, 0x6366f1) }) | gap(10),
-        }) | gap(24) | pad(48) | bg(0x0b1020);
+        return col(
+            text(m.n) | fg(0x818cf8) | font(88) | weight(Weight::black),
+            row( btn("−", Dec, 0x334155), btn("reset", Reset, 0x1e293b), btn("+", Inc, 0x6366f1) ) | gap(12)
+        ) | center | gap(28) | pad(48) | round(24) | bg(0x111827) | shadow();
     }
 };
 
@@ -88,10 +90,20 @@ can test with `==`, no browser.
 | `image(src)` | a bitmap |
 | `path(points)` | any 2-D shape — a chart, an icon, a custom widget, all one node |
 
-Plus `row` / `col` / `stack` (a `box` with a direction) and chaining attributes:
-`fg` `bg` `size` `bold` `round_` `pad` `gap` `grow` `tap(msg)` `key(...)`. That's
-it. A **5,000-point chart is one `path` node**; you never write a loop, a
-`<canvas>`, or a `ctx`.
+Plus `row` / `col` / `stack` / `center` and a **complete** set of chaining
+attributes — anything CSS and layout can express, and never limiting:
+
+```cpp
+... | pad(12) | round(12) | bg(0x1e293b) | shadow() | border(1, 0x334155)  // box model + effects
+... | justify(Justify::between) | align(Align::center) | wrap                // layout
+... | absolute(px(0), px(0)) | z(10)                                         // position
+... | on(Hover, bg(0x2563eb)) | at(Md, w(fill))                              // states & responsive
+... | css("backdrop-filter", "blur(8px)") | var("brand", "#3b82f6")          // the universal channel: ANY css
+```
+
+Named attrs cover the common 90%; `css("prop","value")` reaches the other 10%,
+and `path` draws any shape — so a **5,000-point chart is one `path` node**. You
+never write a loop, a `<canvas>`, or a `ctx`.
 
 ### In sync by delta
 

@@ -57,51 +57,33 @@ inline std::atomic<int> g_fd{-1};
 inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
 
-/// The client: opens a WS, builds the initial surface into #root from the node
-/// JSON, applies streamed patches, and forwards taps. One small renderer maps
-/// surface nodes → DOM (the client's chosen backend). Reconnects on drop.
+/// The client: opens a WS, injects the app's stylesheet, builds the initial
+/// HTML into #root, then applies HTML-fragment patches by path. Dumb by design
+/// — no style logic in JS; the server's DOM backend did it all. Reconnects on
+/// drop (and reloads after a rebuild).
 inline std::string client(int port) {
     return
     "<script>(function(){"
-    "var R=document.getElementById('root');"
-    // build a DOM element from a surface node
-    "function el(n){var e;var k=n.k;"
-    "if(k===1){e=document.createElement('span');e.textContent=n.t||'';}"
-    "else if(k===2){e=document.createElement('img');e.src=n.s||'';}"
-    "else if(k===3){e=document.createElementNS('http://www.w3.org/2000/svg','svg');"
-    "var pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');"
-    "pl.setAttribute('points',(n.p||[]).map(function(p){return p[0]+','+p[1]}).join(' '));"
-    "var pt=n.pt||{};pl.setAttribute('fill',n.cl?col(pt.bg):'none');"
-    "pl.setAttribute('stroke',col(pt.fg));pl.setAttribute('stroke-width',(pt.sz||16)/8);"
-    "e.appendChild(pl);}"
-    "else{e=document.createElement('div');(n.c||[]).forEach(function(c){e.appendChild(el(c))});}"
-    "style(e,n);return e;}"
-    "function col(v){if(v==null)return 'none';return '#'+('000000'+(v>>>0).toString(16)).slice(-6);}"
-    "function style(e,n){var p=n.pt||{},s=e.style;"
-    "if(n.f===1){s.display='flex';s.flexDirection='row';}"
-    "else if(n.f===2){s.display='flex';s.flexDirection='column';}"
-    "if(n.k===1){s.color=col(p.fg);s.fontSize=(p.sz||16)+'px';if(p.b)s.fontWeight='700';}"
-    "if(p.bg!=null)s.background=col(p.bg);"
-    "if(p.r)s.borderRadius=p.r+'px';if(p.pd)s.padding=p.pd+'px';"
-    "if(p.gp)s.gap=p.gp+'px';if(p.gr)s.flex=p.gr+' 1 0';"
-    "if(n.tap!=null){s.cursor='pointer';e.dataset.tap=n.tap;}}"
-    // resolve a dotted path to a DOM node under #root's single child
-    "function at(path){var e=R.firstElementChild;if(path==='')return e;"
-    "var q=path.split('.');for(var i=0;i<q.length;i++){e=e.childNodes[+q[i]];if(!e)return null;}return e;}"
-    "function apply(op){var k=op[0],path=op[1];var e=at(path);"
-    "if(k===0){if(e)e.textContent=op[2];}"                       // set_text
-    "else if(k===1){if(e)style(e,op[2]);}"                       // set_paint: restyle in place (keep kids)
-    "else if(k===2){if(e){var pl=e.firstChild;if(pl)pl.setAttribute('points',(op[2].p||[]).map(function(p){return p[0]+','+p[1]}).join(' '));}}" // set_path
-    "else if(k===3){if(e)e.src=op[2].s||'';}"                    // set_src
-    "else if(k===4){if(e)e.replaceWith(el(op[2]));}"             // replace
+    "var R=document.getElementById('root'),S=document.getElementById('wsheet');"
+    "function css(c){if(c)S.textContent=c;}"
+    // resolve a dotted path to a node under #root's single child (all childNodes)
+    "function at(p){var e=R.firstElementChild;if(p==='')return e;var q=p.split('.');"
+    "for(var i=0;i<q.length;i++){e=e.childNodes[+q[i]];if(!e)return null;}return e;}"
+    "function frag(html){var d=document.createElement('div');d.innerHTML=html;return d.firstChild;}"
+    "function apply(op){var k=op[0],p=op[1],e=at(p);"
+    "if(k===0){if(e)e.textContent=op[2];}"                        // set_text
+    "else if(k===1){if(e)e.replaceWith(frag(op[2]));}"           // set_paint→replace subtree
+    "else if(k===2){if(e)e.replaceWith(frag(op[2]));}"           // set_path
+    "else if(k===3){if(e){var f=frag(op[2]);if(e.tagName==='IMG')e.src=f.src;else e.replaceWith(f);}}" // set_src
+    "else if(k===4){if(e)e.replaceWith(frag(op[2]));}"           // replace
     "else if(k===5){if(e)e.remove();}"                           // remove
-    "else if(k===6){var pa=at(path);if(pa)pa.appendChild(el(op[2]));}}" // insert
+    "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}}" // insert
     "var ws,started=false;"
     "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"');"
     "ws.onopen=function(){if(started)location.reload();started=true;};"
     "ws.onmessage=function(ev){var m=JSON.parse(ev.data);"
-    "if(m.init){R.innerHTML='';R.appendChild(el(m.init));}"       // first frame: full surface
-    "else{for(var i=0;i<m.length;i++)apply(m[i]);}};"            // deltas
+    "if(m.init!==undefined){css(m.css);R.innerHTML=m.init;}"     // first frame: css + html
+    "else{css(S.textContent+(m.css||''));for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}};" // deltas
     "ws.onclose=function(){setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
@@ -125,9 +107,12 @@ void handle(int conn, int port) {
         Model model = P::init();
         NodeRef prev = P::view(model);
 
-        // First frame: send the whole surface as {"init": <node>}.
+        // First frame: render the whole surface with the DOM backend and send
+        // {"init": html, "css": stylesheet}.
         {
-            std::string msg = "{\"init\":"; node_json(msg, *prev); msg += "}";
+            DomBackend dom; auto out = dom.render(*prev);
+            std::string msg = "{\"init\":"; detail::jstr(msg, out.html);
+            msg += ",\"css\":"; detail::jstr(msg, out.css); msg += "}";
             auto f = ws::encode_text(msg);
             ::send(conn, f.data(), f.size(), 0);
         }
@@ -159,11 +144,13 @@ void handle(int conn, int port) {
         return;
     }
 
-    // Initial HTML: a bare page with #root and the client. The surface fills in
-    // over the socket — the page itself contains no app markup.
+    // Initial HTML: a bare shell with #root, an empty <style id=wsheet> for the
+    // app's stylesheet, and the client. The surface fills in over the socket.
     std::string doc =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-        "<style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif}</style>"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<style>*{box-sizing:border-box;margin:0}body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}</style>"
+        "<style id=\"wsheet\"></style>"
         "</head><body><div id=\"root\"></div>" + client(port) + "</body></html>";
     std::string http =
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"

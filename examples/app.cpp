@@ -1,16 +1,14 @@
-/// examples/app.cpp — a waya app.
+/// examples/app.cpp — a waya app. This is how you build UIs with waya.
 ///
 ///   cmake --build build -j && ./build/app        # http://localhost:8080
 ///
-/// This is how you build a waya app. You describe a surface with a tiny
-/// vocabulary — box / text / image / path + chaining attrs + tap(msg) — and
-/// waya renders it, streams only the delta on each tap, and keeps the browser
-/// in sync. Not one line mentions HTML, CSS, a div, flex, onclick, or a canvas;
-/// those are waya's business, not yours.
+/// Describe a surface with a tiny vocabulary — box / text / image / path +
+/// chaining attrs + tap(msg). waya renders it (as HTML here), streams only the
+/// delta on each tap, and keeps the browser in sync. Not one line mentions
+/// HTML, CSS, a div, flex, onclick, or a canvas; those are waya's business.
 
 #include <waya/surface/live.hpp>
 
-#include <cmath>
 #include <vector>
 
 using namespace waya::surface;
@@ -18,54 +16,67 @@ using namespace waya::surface;
 struct Dashboard {
     struct Model {
         int requests = 0;
-        std::vector<float> history{20, 30, 25, 40, 35, 50, 45};
+        std::vector<float> history{20, 34, 28, 45, 39, 52, 47, 60};
     };
     using Msg = int;
-    enum { AddRequest, Reset };
+    enum { Add, Reset };
 
     static Model init() { return {}; }
 
     static Model update(Model m, Msg msg) {
-        if (msg == AddRequest) {
+        if (msg == Add) {
             m.requests++;
-            m.history.push_back(20 + (float)(m.requests * 7 % 60));
-            if (m.history.size() > 24) m.history.erase(m.history.begin());
-        } else if (msg == Reset) {
+            m.history.push_back(20 + (float)((m.requests * 13) % 55));
+            if (m.history.size() > 20) m.history.erase(m.history.begin());
+        } else {
             m = Model{};
         }
         return m;
     }
 
     static NodeRef view(const Model& m) {
-        // build the chart path from the history
+        // The chart — one primitive. Any shape is `path`; nothing is off-limits.
         std::vector<Pt> chart;
         for (std::size_t i = 0; i < m.history.size(); ++i)
-            chart.push_back({(float)i * 16.f, 80.f - m.history[i]});
+            chart.push_back({(float)i * 26.f, 90.f - m.history[i]});
 
         auto card = [](NodeRef body) {
-            return body | pad(20) | bg(0x1e293b) | round_(16);
+            return body | pad(24) | bg(0x1e293b) | round(16) | border(1, 0x334155)
+                        | shadow() | grow(1)
+                        | transition() | on(Hover, css("transform", "translateY(-3px)"));
+        };
+        auto stat = [&](std::string label, NodeRef value) {
+            return card(col(
+                text(std::move(label)) | fg(0x94a3b8) | font(13) | css("text-transform","uppercase") | tracking(0.6f),
+                std::move(value)
+            ) | gap(6));
         };
 
-        return col({
-            text("Live dashboard") | fg(0x818cf8) | size(32) | bold,
-            text("Every tap streams a tiny delta — no HTML in the app code.")
-                | fg(0x94a3b8) | size(15),
+        return col(
+            // hero
+            col(
+                text("waya") | font(48) | weight(Weight::black)
+                    | css("background","linear-gradient(90deg,#818cf8,#22d3ee)")
+                    | css("-webkit-background-clip","text") | css("background-clip","text")
+                    | css("color","transparent"),
+                text("Describe what to render. waya owns how.") | fg(0x94a3b8) | font(18)
+            ) | gap(6),
 
-            card(col({
-                text("Total requests") | fg(0x94a3b8) | size(13),
-                text(m.requests) | fg(0xe2e8f0) | size(48) | bold,
-            }) | gap(4)),
+            // stat row — responsive: side by side, stacks narrow
+            row(
+                stat("Requests", text(m.requests) | fg(0xe2e8f0) | font(44) | bold),
+                stat("Traffic",  path(chart) | stroke(0x22d3ee, 2) | h(90))
+            ) | gap(16) | wrap | at(Md, css("flex-wrap","nowrap")),
 
-            card(col({
-                text("Traffic") | fg(0x94a3b8) | size(13),
-                path(chart) | fg(0x22d3ee) | size(24),      // one primitive = the chart
-            }) | gap(8)),
-
-            row({
-                text("+ request") | fg(0xffffff) | pad(12) | bg(0x6366f1) | round_(10) | tap(AddRequest),
-                text("reset")     | fg(0xe2e8f0) | pad(12) | bg(0x334155) | round_(10) | tap(Reset),
-            }) | gap(12),
-        }) | gap(20) | pad(40) | bg(0x0b1020);
+            // actions
+            row(
+                text("＋ request") | fg(0xffffff) | pad_x(20) | pad_y(12) | bg(0x6366f1)
+                    | round(10) | font(15) | semibold | tap(Add)
+                    | transition() | on(Hover, bg(0x4f46e5)),
+                text("reset") | fg(0xe2e8f0) | pad_x(20) | pad_y(12) | bg(0x334155)
+                    | round(10) | font(15) | tap(Reset)
+            ) | gap(12)
+        ) | gap(28) | pad(40) | bg(0x0b1020) | css("min-height","100vh");
     }
 };
 
