@@ -63,8 +63,11 @@ private:
         if(s.align!=Align::none){ o+="align-items:"; o+=ali(s.align); o+=';'; }
         if(s.wrap==Wrap::wrap) o+="flex-wrap:wrap;"; else if(s.wrap==Wrap::nowrap) o+="flex-wrap:nowrap;";
         if(s.gap.set()){ o+="gap:"; len(o,s.gap); o+=';'; }
-        if(s.has_grow){ o+="flex-grow:"; o+=n(s.grow); o+=';'; }
-        if(s.has_shrink){ o+="flex-shrink:"; o+=n(s.shrink); o+=';'; }
+        // `grow` = flex: <g> 1 auto — grow to share free space but keep the
+        // element's own content as the basis. Emitting bare `flex-grow` (basis
+        // 0) made a grow child in a column eat the whole page height.
+        if(s.has_grow){ o+="flex:"; o+=n(s.grow); o+=" 1 auto;"; }
+        else if(s.has_shrink){ o+="flex-shrink:"; o+=n(s.shrink); o+=';'; }
         // text
         if(kind==Kind::text){ if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
             if(s.font_size.set()){o+="font-size:";len(o,s.font_size);o+=';';}

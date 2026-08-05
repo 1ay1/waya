@@ -187,7 +187,22 @@ void handle(int conn, int port) {
     std::string doc =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<style>*{box-sizing:border-box;margin:0}body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}</style>"
+        "<style>"
+        "*{box-sizing:border-box;margin:0;padding:0}"
+        "html,body{height:100%}"
+        // A real sans-serif stack; force EVERY element (incl. form controls,
+        // which don't inherit font by default) to use it — otherwise inputs and
+        // buttons render in the UA's monospace/serif default.
+        "body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}"
+        "*,input,button,textarea,select{font-family:inherit;font-size:inherit;line-height:inherit;color:inherit}"
+        "input,button,textarea,select{border:0;background:none;outline:none}"
+        "svg{display:block;overflow:visible}"
+        // #root is the page surface: full viewport height. The app's own root
+        // fills it (so its background covers the page) but its CHILDREN size to
+        // their content — a `grow` card no longer absorbs the whole viewport.
+        "#root{min-height:100vh;display:flex;flex-direction:column}"
+        "#root>*{width:100%;flex:1 0 auto;align-content:flex-start}"
+        "</style>"
         "<style id=\"wsheet\"></style>"
         "</head><body><div id=\"root\"></div>" + client(port) + "</body></html>";
     std::string http =

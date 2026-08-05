@@ -46,7 +46,7 @@ struct App {
 
         auto card = [](NodeRef body){
             return body | pad(sp(6)) | bg(bg2) | round(16) | border(1, line) | shadow()
-                        | grow(1) | transition()
+                        | transition()
                         | on(Hover, css("transform","translateY(-3px)"), css("border-color","#475569"));
         };
 
@@ -70,16 +70,16 @@ struct App {
                 text("Hi, " + greeting + " 👋") | fg(ink) | font(20) | semibold
             ) | gap(sp(2))),
 
-            // stats: side by side, wraps narrow
+            // stats: side by side, wraps narrow. grow lives HERE (horizontal).
             row(
                 card(col(
                     text("Likes") | fg(muted) | font(13),
                     text(m.likes) | fg(ink) | font(44) | bold
-                ) | gap(sp(1))),
+                ) | gap(sp(1))) | grow(1),
                 card(col(
                     text("Traffic") | fg(muted) | font(13),
                     path(chart) | stroke(brand2, 2) | h(90)
-                ) | gap(sp(2)))
+                ) | gap(sp(2))) | grow(1)
             ) | gap(sp(4)) | wrap | at(Md, css("flex-wrap","nowrap")),
 
             // actions
@@ -90,7 +90,7 @@ struct App {
                 text("reset") | fg(ink) | pad_x(sp(5)) | pad_y(sp(3)) | bg(bg2)
                     | round(10) | font(15) | tap(Reset)
             ) | gap(sp(3))
-        ) | gap(sp(7)) | pad(sp(10)) | bg(bg0) | css("min-height","100vh")
+        ) | gap(sp(7)) | pad(sp(10)) | bg(bg0)
           | max_w(px(720)) | css("margin","0 auto");
     }
 };
