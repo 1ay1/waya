@@ -136,9 +136,13 @@ correct, with no negotiation and nothing to reconcile, because it never held a
 truth the server didn't. This is SSR in the truest sense: the server *decides*
 every frame; the browser never runs your app, it only displays it.
 
-(The wire is JSON HTML-fragments today — readable and correct. A compact binary
-frame protocol, the framework's private "ANSI," is a later optimisation and
-changes nothing about the model or your code.)
+(The wire is a compact **binary** frame protocol — the framework's private
+"ANSI": varint-packed `{css, ops}`, op paths as index sequences, no quoting. A
+counter delta is **7 bytes** (vs ~30 as JSON). The terminal decodes it on the
+same single code path and coalesces every op of a frame into one
+`requestAnimationFrame`, so it touches the DOM once per frame — fewest bytes
+down the pipe *and* fewest paints in the browser. None of this changes the
+model or your code.)
 
 ## 6. Proven
 

@@ -94,9 +94,20 @@ inline std::optional<std::string> try_handshake(std::string_view req){
 inline std::string encode_text(std::string_view payload){
     std::string f; f.push_back((char)0x81);
     std::size_t n = payload.size();
-    if(n < 126){ f.push_back((char)n); }
-    else if(n < 65536){ f.push_back(126); f.push_back((n>>8)&0xFF); f.push_back(n&0xFF); }
-    else { f.push_back(127); for(int i=7;i>=0;i--) f.push_back((n>>(i*8))&0xFF); }
+    if(n<126){ f.push_back((char)n); }
+    else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }
+    else { f.push_back((char)127); for(int i=7;i>=0;--i) f.push_back((char)((n>>(i*8))&0xFF)); }
+    f.append(payload);
+    return f;
+}
+
+/// Encode a BINARY frame (FIN + opcode 0x2) — for the packed frame protocol.
+inline std::string encode_binary(std::string_view payload){
+    std::string f; f.push_back((char)0x82);
+    std::size_t n = payload.size();
+    if(n<126){ f.push_back((char)n); }
+    else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }
+    else { f.push_back((char)127); for(int i=7;i>=0;--i) f.push_back((char)((n>>(i*8))&0xFF)); }
     f.append(payload);
     return f;
 }
