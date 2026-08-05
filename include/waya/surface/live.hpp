@@ -22,13 +22,18 @@
 #include "diff.hpp"
 #include "wire.hpp"
 #include "binary.hpp"
+#include "effect.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <csignal>
 #include <concepts>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -50,10 +55,7 @@ struct LiveConfig { int port = 8080; const char* host = "127.0.0.1"; bool open =
 template <typename P>
 concept SurfaceProgram =
     requires { typename P::Model; typename P::Msg; }
-    && requires(typename P::Model m) { { P::init() } -> std::convertible_to<typename P::Model>; }
-    && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; }
-    && ( requires(typename P::Model m, typename P::Msg msg) { { P::update(m, msg) } -> std::convertible_to<typename P::Model>; }
-      || requires(typename P::Model m, typename P::Msg msg, std::string v) { { P::update(m, msg, v) } -> std::convertible_to<typename P::Model>; } );
+    && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; };
 
 namespace detail {
 
@@ -61,15 +63,75 @@ inline std::atomic<int> g_fd{-1};
 inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
 
-/// Call P::update with a value when the Program supports it, else without.
-/// This lets `update(Model, Msg)` and `update(Model, Msg, std::string value)`
-/// both work — taps use the 2-arg form, inputs the 3-arg form.
+/// Reserved message id for route deliveries. The wire never carries this from a
+/// tap (taps are the app's own enum values, always >= 0 in practice); the
+/// runtime injects it when a "@route|<path>" frame arrives and routes it through
+/// the app's Sub::on_route handler. Chosen far from any plausible app enum.
+inline constexpr int kRouteMsg = -0x7ACE;
+
+/// A tiny blocking GET for Cmd::fetch. Absolute http:// URLs only; anything else
+/// (or a network error) yields an empty body so the app's handler still fires.
+/// Runs on a detached worker thread, never the model loop.
+inline std::string http_get(const std::string& url) {
+    auto pos = url.find("://");
+    std::string rest = pos == std::string::npos ? url : url.substr(pos + 3);
+    auto slash = rest.find('/');
+    std::string host = slash == std::string::npos ? rest : rest.substr(0, slash);
+    std::string path = slash == std::string::npos ? "/" : rest.substr(slash);
+    int port = 80;
+    if (auto c = host.find(':'); c != std::string::npos) {
+        port = std::atoi(host.substr(c + 1).c_str()); host = host.substr(0, c);
+    }
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return {};
+    sockaddr_in a{}; a.sin_family = AF_INET; a.sin_port = htons((uint16_t)port);
+    a.sin_addr.s_addr = inet_addr(host.c_str());
+    if (a.sin_addr.s_addr == INADDR_NONE) a.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (::connect(fd, (sockaddr*)&a, sizeof(a)) < 0) { ::close(fd); return {}; }
+    std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host +
+                      "\r\nConnection: close\r\n\r\n";
+    ::send(fd, req.data(), req.size(), 0);
+    std::string resp; char b[4096]; ssize_t r;
+    while ((r = ::recv(fd, b, sizeof(b), 0)) > 0) resp.append(b, r);
+    ::close(fd);
+    auto hdr = resp.find("\r\n\r\n");
+    return hdr == std::string::npos ? std::string{} : resp.substr(hdr + 4);
+}
+
+/// Call P::update and return (Model, Cmd). Supports FOUR update shapes so apps
+/// range from trivial to full effectful, and the runtime doesn't care which:
+///   update(Model, Msg)                       → no value, no effects
+///   update(Model, Msg, std::string value)    → value (inputs), no effects
+///   update(Model, Msg)         -> (Model,Cmd) → effects
+///   update(Model, Msg, string) -> (Model,Cmd) → value + effects
 template <typename P, typename Model, typename Msg>
-Model dispatch(Model m, Msg msg, const std::string& value){
-    if constexpr (requires(Model mm, Msg mg, std::string v){ P::update(mm, mg, v); })
-        return P::update(std::move(m), msg, value);
-    else
-        return P::update(std::move(m), msg);
+std::pair<Model, Cmd<Msg>> dispatch(Model m, Msg msg, const std::string& value){
+    using C = Cmd<Msg>;
+    // 3-arg forms first (value-carrying), then 2-arg.
+    if constexpr (requires(Model mm, Msg mg, std::string v){ { P::update(mm,mg,v) } -> std::convertible_to<std::pair<Model,C>>; }) {
+        auto r = P::update(std::move(m), msg, value); return { std::move(r.first), std::move(r.second) };
+    } else if constexpr (requires(Model mm, Msg mg, std::string v){ { P::update(mm,mg,v) } -> std::convertible_to<Model>; }) {
+        return { P::update(std::move(m), msg, value), C::none() };
+    } else if constexpr (requires(Model mm, Msg mg){ { P::update(mm,mg) } -> std::convertible_to<std::pair<Model,C>>; }) {
+        auto r = P::update(std::move(m), msg); return { std::move(r.first), std::move(r.second) };
+    } else {
+        return { P::update(std::move(m), msg), C::none() };
+    }
+}
+
+/// program_init returns (Model, Cmd) too — supports init()->Model or ->(Model,Cmd).
+template <typename P, typename Model, typename Msg>
+std::pair<Model, Cmd<Msg>> init_of(){
+    if constexpr (requires{ { P::init() } -> std::convertible_to<std::pair<Model,Cmd<Msg>>>; }) {
+        auto r = P::init(); return { std::move(r.first), std::move(r.second) };
+    } else return { P::init(), Cmd<Msg>::none() };
+}
+
+/// program subscriptions — P::subscribe(Model)->Sub<Msg> if it exists, else none.
+template <typename P, typename Model, typename Msg>
+Sub<Msg> subs_of(const Model& m){
+    if constexpr (requires{ { P::subscribe(m) } -> std::convertible_to<Sub<Msg>>; }) return P::subscribe(m);
+    else return Sub<Msg>::none();
 }
 
 /// The terminal. Holds NO app state and NO app logic — it decodes packed binary
@@ -107,11 +169,21 @@ inline std::string client(int port) {
     "for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
+    "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);}"
     "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"');"
     "ws.binaryType='arraybuffer';"
-    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;};"
-    "ws.onmessage=function(ev){paint(readFrame(ev.data));};"
+    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
+    // Text frames are runtime control messages (navigation); binary frames are
+    // paints. This keeps one socket doing input, output, and effects.
+    "ws.onmessage=function(ev){if(typeof ev.data==='string'){ctl(ev.data);return;}paint(readFrame(ev.data));};"
     "ws.onclose=function(){setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
+    // control: "@nav|<url>" pushes history + re-routes; "@url|<url>" only syncs
+    // the address bar (deep-link) without a route.
+    "function ctl(s){var b=s.indexOf('|'),k=s.slice(0,b),v=s.slice(b+1);"
+    "if(k==='@nav'){history.pushState({},'',v);route();}"
+    "else if(k==='@rep'){history.replaceState({},'',v);route();}"
+    "else if(k==='@url'){history.pushState({},'',v);}}"
+    "window.addEventListener('popstate',route);"
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
     "if(t&&ws&&ws.readyState===1){ev.preventDefault();ws.send(t.dataset.tap);}});"
@@ -121,6 +193,128 @@ inline std::string client(int port) {
     "document.addEventListener('change',function(ev){var t=ev.target;"
     "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+t.value);}});"
     "})();</script>";
+}
+
+/// A live session: the single owner of one connection's model + render loop.
+/// Background effects (timers, tasks, fetches, wire input) all funnel messages
+/// into `queue`; the loop drains it, so the model is only ever touched by one
+/// thread. `write` is serialized so paint frames and control frames from
+/// different threads never interleave on the socket.
+struct Session {
+    int conn;
+    std::mutex qm;
+    std::condition_variable qcv;
+    std::deque<Deliver> queue;         // pending (msg,value) to dispatch
+    std::atomic<bool> alive{true};
+    std::mutex wm;                     // serializes socket writes
+    // Running interval subscriptions, keyed by (interval_ms, msg). Each has a
+    // generation flag so reconciliation can stop the ones no longer subscribed.
+    struct Timer { long ms; int msg; std::shared_ptr<std::atomic<bool>> run; };
+    std::vector<Timer> timers;
+
+    void push(int msg, std::string value = {}) {
+        { std::lock_guard<std::mutex> l(qm); queue.push_back({msg, std::move(value)}); }
+        qcv.notify_one();
+    }
+    std::optional<Deliver> pop() {
+        std::unique_lock<std::mutex> l(qm);
+        qcv.wait(l, [&]{ return !queue.empty() || !alive; });
+        if (!alive && queue.empty()) return std::nullopt;
+        Deliver d = std::move(queue.front()); queue.pop_front();
+        return d;
+    }
+    void stop() { alive = false; qcv.notify_all(); }
+
+    void send_binary(const std::string& frame) {
+        std::lock_guard<std::mutex> l(wm);
+        ::send(conn, frame.data(), frame.size(), 0);
+    }
+    void send_text(const std::string& s) {
+        auto f = ws::encode_text(s);
+        std::lock_guard<std::mutex> l(wm);
+        ::send(conn, f.data(), f.size(), 0);
+    }
+};
+
+/// Interpret one Cmd. Effects that produce a message push it back into the
+/// session queue (self-messaging); web effects send a control frame. This is
+/// the runtime half of "effects are data" — the app returned a description, we
+/// perform it here and nowhere else.
+template <typename Msg>
+void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
+    std::visit(overload{
+        [](const typename Cmd<Msg>::None&) {},
+        [&](const typename Cmd<Msg>::Quit&) { s->stop(); },
+        [&](const typename Cmd<Msg>::Batch& b) { for (auto& c : b.cmds) perform(s, c); },
+        [&](const typename Cmd<Msg>::Emit& e) { s->push(static_cast<int>(e.msg)); },
+        [&](const typename Cmd<Msg>::After& a) {
+            int m = static_cast<int>(a.msg); long ms = a.delay.count();
+            std::weak_ptr<Session> ws_ = s;
+            std::thread([ws_, ms, m]{
+                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(m);
+            }).detach();
+        },
+        [&](const typename Cmd<Msg>::Task& t) {
+            auto work = t.work; std::weak_ptr<Session> ws_ = s;
+            std::thread([ws_, work]{
+                Msg r = work();
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(static_cast<int>(r));
+            }).detach();
+        },
+        [&](const typename Cmd<Msg>::Fetch& f) {
+            auto url = f.url; auto on = f.on_done; std::weak_ptr<Session> ws_ = s;
+            std::thread([ws_, url, on]{
+                std::string body = detail::http_get(url);
+                Msg r = on(std::move(body));
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(static_cast<int>(r));
+            }).detach();
+        },
+        [&](const typename Cmd<Msg>::Navigate& n) {
+            s->send_text((n.replace ? "@rep|" : "@nav|") + n.url);
+        },
+        [&](const typename Cmd<Msg>::PushUrl& p) { s->send_text("@url|" + p.url); },
+    }, cmd.alt());
+}
+
+/// Reconcile the model's declared subscriptions against the timers currently
+/// running: start newly-declared intervals, stop ones no longer wanted. Idempotent
+/// — safe to call after every update, like maya diffing Subs between frames.
+template <typename Msg>
+void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
+    auto wanted = sub.timers();
+    std::vector<Session::Timer> next;
+    // Keep timers still wanted; mark which wanted ones are already running.
+    std::vector<bool> matched(wanted.size(), false);
+    for (auto& t : s->timers) {
+        bool keep = false;
+        for (std::size_t i = 0; i < wanted.size(); ++i) {
+            if (matched[i]) continue;
+            if (wanted[i].interval.count() == t.ms && static_cast<int>(wanted[i].msg) == t.msg) {
+                matched[i] = true; keep = true; break;
+            }
+        }
+        if (keep) next.push_back(t);
+        else *t.run = false;   // signal the interval thread to exit
+    }
+    // Start any wanted timer not already running.
+    for (std::size_t i = 0; i < wanted.size(); ++i) {
+        if (matched[i]) continue;
+        long ms = wanted[i].interval.count(); int m = static_cast<int>(wanted[i].msg);
+        auto run = std::make_shared<std::atomic<bool>>(true);
+        next.push_back({ms, m, run});
+        std::weak_ptr<Session> ws_ = s;
+        std::thread([ws_, ms, m, run]{
+            while (*run) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+                if (!*run) break;
+                auto sp = ws_.lock();
+                if (!sp || !sp->alive) break;
+                sp->push(m);
+            }
+        }).detach();
+    }
+    s->timers = std::move(next);
 }
 
 template <typename P>
@@ -136,49 +330,81 @@ void handle(int conn, int port) {
     if (auto resp = ws::try_handshake(req)) {
         ::send(conn, resp->data(), resp->size(), 0);
 
-        Model model = P::init();
+        auto s = std::make_shared<Session>();
+        s->conn = conn;
+
+        auto [model, init_cmd] = detail::init_of<P, Model, Msg>();
         NodeRef prev = P::view(model);
 
-        // First frame: a full paint, packed binary. Same shape as any later
-        // frame — the terminal doesn't know it's "first", and a reconnecting
-        // client is resynced by sending it another full paint.
-        {
-            auto f = ws::encode_binary(encode_full(*prev));
-            ::send(conn, f.data(), f.size(), 0);
-        }
+        // First frame: a full paint. Same shape as any later frame — a
+        // reconnecting client is resynced by another full paint.
+        s->send_binary(ws::encode_binary(encode_full(*prev)));
+        detail::perform<Msg>(s, init_cmd);
+        detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
 
-        std::string acc;
-        for (;;) {
-            char fb[8192];
-            ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
-            if (r <= 0) break;
-            acc.append(fb, r);
-            std::size_t used = 0;
-            auto fr = ws::decode(acc, used);
-            if (!fr.ok) continue;
-            acc.erase(0, used);
-            if (fr.opcode == 0x8) break;
-            if (fr.opcode == 0x9) { auto p=ws::encode_pong(fr.payload); ::send(conn,p.data(),p.size(),0); continue; }
-            if (fr.opcode != 0x1) continue;
+        // Reader thread: decode the WebSocket and funnel messages into the
+        // queue. Runs alongside the effect threads; the main loop below owns
+        // the model and drains everything.
+        std::thread reader([s, conn]{
+            std::string acc;
+            for (;;) {
+                char fb[8192];
+                ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
+                if (r <= 0) break;
+                acc.append(fb, r);
+                for (;;) {
+                    std::size_t used = 0;
+                    auto fr = ws::decode(acc, used);
+                    if (!fr.ok) break;
+                    acc.erase(0, used);
+                    if (fr.opcode == 0x8) { s->stop(); return; }
+                    if (fr.opcode == 0x9) { s->send_binary(ws::encode_pong(fr.payload)); continue; }
+                    if (fr.opcode != 0x1) continue;
 
-            // Parse the upstream message. Taps: "<msg>". Input/change events:
-            // "i<msg>|<value>" / "c<msg>|<value>" — the value rides along.
-            const std::string& raw = fr.payload;
-            Msg msg{}; std::string value;
-            if (!raw.empty() && (raw[0]=='i' || raw[0]=='c')) {
-                auto bar = raw.find('|');
-                msg = static_cast<Msg>(std::atoi(raw.substr(1, bar-1).c_str()));
-                if (bar != std::string::npos) value = raw.substr(bar+1);
-            } else {
-                msg = static_cast<Msg>(std::atoi(raw.c_str()));
+                    // Upstream messages: taps "<msg>"; inputs "i<msg>|<value>"
+                    // / "c<msg>|<value>"; route "@route|<path>" (special msg).
+                    const std::string& raw = fr.payload;
+                    if (raw.rfind("@route|", 0) == 0) {
+                        s->push(kRouteMsg, raw.substr(7));
+                    } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c')) {
+                        auto bar = raw.find('|');
+                        int m = std::atoi(raw.substr(1, bar-1).c_str());
+                        s->push(m, bar != std::string::npos ? raw.substr(bar+1) : std::string{});
+                    } else {
+                        s->push(std::atoi(raw.c_str()));
+                    }
+                }
             }
-            model = detail::dispatch<P>(std::move(model), msg, value);
+            s->stop();
+        });
+        reader.detach();
+
+        // The single owner loop: drain the queue, dispatch, interpret effects,
+        // repaint the diff, reconcile subscriptions. One thread, one model.
+        while (auto d = s->pop()) {
+            std::pair<Model, Cmd<Msg>> r;
+            if (d->msg == kRouteMsg) {
+                // Deliver route changes through the app's on_route subscription.
+                auto sub = detail::subs_of<P, Model, Msg>(model);
+                if (auto* rt = sub.route())
+                    r = detail::dispatch<P>(std::move(model), rt->route(d->value), std::string{});
+                else { model = std::move(model); continue; }
+            } else {
+                r = detail::dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value);
+            }
+            model = std::move(r.first);
+            detail::perform<Msg>(s, r.second);
+
             NodeRef next = P::view(model);
             Patch patch = diff(prev, next);
             prev = next;
-            auto f = ws::encode_binary(encode_delta(patch));
-            ::send(conn, f.data(), f.size(), 0);
+            if (!patch.empty())
+                s->send_binary(ws::encode_binary(encode_delta(patch)));
+
+            detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
         }
+        // Stop all interval threads on the way out.
+        for (auto& t : s->timers) *t.run = false;
         ::close(conn);
         return;
     }

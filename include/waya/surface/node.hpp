@@ -210,12 +210,15 @@ inline NodeRef input(std::string value={}){ auto n=std::make_shared<Node>(); n->
 // ═══════════════════════════════════════════════════════════════════════════
 
 struct Mod { std::function<void(Node&)> apply; };
-inline NodeRef operator|(NodeRef n, const Mod& m){ m.apply(*n); finalize(*n); return n; }
+inline NodeRef operator|(NodeRef n, const Mod& m){ if(m.apply) m.apply(*n); finalize(*n); return n; }
 /// Mods compose: `a | b` is a Mod that applies a then b (so you can name bundles).
 inline Mod operator|(Mod a, Mod b){ return {[=](Node& n){ a.apply(n); b.apply(n); }}; }
 
 // A style-only mod — the common case. `sfn` takes a Style& mutator.
 inline Mod sty(std::function<void(Style&)> f){ return {[f=std::move(f)](Node& n){ f(n.style); }}; }
+/// A do-nothing Mod — the identity for `|`. Makes conditional styling clean:
+///   text(x) | (active ? bold : noop)
+inline const Mod noop = {[](Node&){}};
 
 // ── colour & text ──────────────────────────────────────────────────────────────
 inline Mod fg(std::uint32_t c){ return sty([=](Style& s){ s.has_fg=true; s.fg=c; }); }
