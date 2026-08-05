@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -39,11 +40,54 @@ struct ServeConfig {
     const char*  host  = "127.0.0.1";   ///< bind address (loopback by default)
     bool         open  = true;          ///< best-effort: open the browser
     bool         log   = true;          ///< print each request to stderr
+    bool         live  = true;          ///< inject live-reload script (dev)
 };
 
 namespace detail {
 
 inline std::atomic<int> g_listen_fd{-1};
+
+/// A per-process token that changes every time the server (re)starts. The
+/// injected live-reload client polls it; when it changes, the page reloads.
+/// Uses nanosecond time XOR pid so two restarts within the same second still
+/// differ.
+inline std::string start_token() {
+    static const std::string t = [] {
+        timespec ts{};
+        ::clock_gettime(CLOCK_MONOTONIC, &ts);
+        unsigned long long v =
+            static_cast<unsigned long long>(ts.tv_sec) * 1000000000ull +
+            static_cast<unsigned long long>(ts.tv_nsec);
+        v ^= (static_cast<unsigned long long>(::getpid()) << 21);
+        return std::to_string(v);
+    }();
+    return t;
+}
+
+/// A tiny client injected before </body>: poll /__waya_alive; on change, reload.
+/// Zero dependencies, ~15 lines of JS, only added when cfg.live is on.
+inline std::string live_reload_script() {
+    return
+        "<script>(function(){"
+        "var t=null;"
+        "function ping(){"
+        "fetch('/__waya_alive').then(function(r){return r.text()}).then(function(v){"
+        "if(t===null){t=v;}"
+        "else if(v!==t){location.reload();}"
+        "}).catch(function(){});"
+        "}"
+        "setInterval(ping,600);ping();"
+        "})();</script>";
+}
+
+/// Inject the script right before </body> (or append if there's no body tag).
+inline void inject_live_reload(std::string& html) {
+    const std::string s = live_reload_script();
+    if (auto pos = html.rfind("</body>"); pos != std::string::npos)
+        html.insert(pos, s);
+    else
+        html += s;
+}
 
 inline void on_sigint(int) {
     int fd = g_listen_fd.exchange(-1);
@@ -91,6 +135,7 @@ inline int serve(std::function<std::string(const Request&)> handler,
     //   WAYA_NO_OPEN=1    do not spawn a browser
     if (const char* p = std::getenv("WAYA_PORT"))    cfg.port = std::atoi(p);
     if (std::getenv("WAYA_NO_OPEN"))                 cfg.open = false;
+    if (std::getenv("WAYA_NO_LIVE"))                 cfg.live = false;
 
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) { std::perror("waya: socket"); return 1; }
@@ -136,8 +181,13 @@ inline int serve(std::function<std::string(const Request&)> handler,
         std::string body, status = "200 OK", ctype = "text/html; charset=utf-8";
         if (path == "/favicon.ico") {
             status = "204 No Content"; ctype = "text/plain";
+        } else if (path == "/__waya_alive") {
+            // Live-reload heartbeat: the token is constant for one process and
+            // changes on restart, so the client reloads after a rebuild.
+            body = detail::start_token(); ctype = "text/plain";
         } else {
             body = handler(Request{method, path});
+            if (cfg.live) detail::inject_live_reload(body);
         }
 
         if (cfg.log)

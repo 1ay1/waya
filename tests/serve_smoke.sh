@@ -6,8 +6,9 @@ set -u
 HELLO="${1:?path to hello binary}"
 PORT="${2:-8137}"
 
-# Start the server. WAYA_NO_OPEN keeps it from spawning a browser in CI.
-WAYA_PORT="$PORT" WAYA_NO_OPEN=1 "$HELLO" >/tmp/waya_serve.log 2>&1 &
+# Start the server. WAYA_NO_OPEN keeps it from spawning a browser in CI;
+# WAYA_NO_LIVE keeps the injected live-reload script out of the checked HTML.
+WAYA_PORT="$PORT" WAYA_NO_OPEN=1 WAYA_NO_LIVE=1 "$HELLO" >/tmp/waya_serve.log 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null' EXIT
 

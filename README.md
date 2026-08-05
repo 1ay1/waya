@@ -170,6 +170,19 @@ generated services table. Pass `--print` instead to dump the HTML to stdout
 ./build/hello --print > page.html
 ```
 
+### Live reload
+
+For the edit loop, `scripts/dev.sh` watches the source tree, rebuilds on save,
+and restarts the server — and the page **refreshes itself** a moment later (the
+dev server injects a tiny live-reload client, no browser extension needed):
+
+```sh
+scripts/dev.sh                 # edit a .cpp/.hpp, save, watch the browser update
+scripts/dev.sh mypage build    # custom target / build dir
+```
+
+Install `inotify-tools` for instant reloads; otherwise it polls once a second.
+
 Serving your own page is one call:
 
 ```cpp
