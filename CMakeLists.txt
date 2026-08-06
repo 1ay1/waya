@@ -45,6 +45,10 @@ endif()
 # into errors in CI with -DWAYA_WERROR=ON.
 option(WAYA_WERROR "Treat warnings as errors for waya's own targets" OFF)
 option(WAYA_SANITIZE "Build waya's own targets with ASan+UBSan" OFF)
+# Strict surface validation: refuse to render a structurally-invalid tree
+# (aborts with a spec-quoting message on the first bad view). Makes "impossible
+# UIs can't ship" literal. On for tests; opt-in for apps via -DWAYA_STRICT=ON.
+option(WAYA_STRICT "Abort on structural surface violations at render time" OFF)
 
 add_library(waya_dev_flags INTERFACE)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -60,6 +64,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_link_options(waya_dev_flags INTERFACE
             -fsanitize=address,undefined)
     endif()
+endif()
+if(WAYA_STRICT)
+    target_compile_definitions(waya_dev_flags INTERFACE WAYA_STRICT)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

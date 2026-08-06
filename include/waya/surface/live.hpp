@@ -200,11 +200,16 @@ template <typename P, typename Model>
 NodeRef safe_view(const Model& m){
     try {
         NodeRef r = P::view(m);
-#ifndef NDEBUG
+#if defined(WAYA_STRICT)
+        // Strict builds REFUSE to render a structurally invalid surface: the
+        // guarantee is literal, not advisory. assert_valid prints every
+        // violation and aborts, so a bad tree never reaches diff/wire.
+        if (r) assert_valid(r);
+#elif !defined(NDEBUG)
         // Debug builds catch malformed trees LOUDLY on first render (WHATWG
         // content-model violations: unnamed form controls, nested interactive
-        // nodes, void elements with children, missing alt text). Release builds
-        // skip the walk entirely — zero cost in production.
+        // nodes, void elements with children, duplicate keys, missing alt).
+        // Release builds skip the walk entirely — zero cost in production.
         if (r) { auto vs = check(*r); for (auto& v : vs) std::fprintf(stderr, "waya: %s\n", v.message().c_str()); }
 #endif
         return r;

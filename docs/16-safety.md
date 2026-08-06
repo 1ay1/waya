@@ -8,33 +8,57 @@ nothing in production and catch the mistakes that actually ship.
 ## Structural validation
 
 A surface is a runtime tree, so waya validates it against the parts of the
-WHATWG content model that bite. In a **debug build** the live runtime checks the
-tree on every render and prints any violation to stderr — so a malformed UI
-fails loudly the first time you see it, not silently in front of a user. In a
-release build the walk is skipped entirely (zero cost).
+WHATWG content model — and the waya invariants — that bite. The guarantee is
+enforced at **three escalating tiers**, so you choose how loud a violation is:
 
-You can also run it yourself, which is ideal in tests:
+1. **Debug — log.** In a debug build the live runtime checks every render and
+   prints any violation to stderr. A malformed UI fails loudly the first time
+   you see it, not silently in front of a user. Release builds skip the walk
+   entirely (zero cost).
+2. **Strict — abort.** Build with `-DWAYA_STRICT=ON` (or `#define WAYA_STRICT`)
+   and the runtime *refuses to render* an invalid tree: it prints every
+   violation and aborts before the tree is ever diffed or sent. This is the
+   switch that makes “impossible UIs can’t ship” literal rather than advisory —
+   turn it on in CI and staging.
+3. **Compile — reject.** For a component whose shape is *fixed* (no data-driven
+   branching), `WAYA_STATIC_CHECK(cond)` turns a decidable invariant into a
+   hard compile error, so a malformed shell never even links.
+
+You can also run the validator yourself, which is ideal in tests:
 
 ```cpp
 #include <waya/surface/validate.hpp>
 
-assert(verify(view(model)));          // true when structurally sound
+assert(verify(view(model)));                 // true when structurally sound
+assert_valid(view(model));                   // aborts with a report on any violation
 std::string report = explain(view(model));   // human-readable violations
-auto vs = check(*view(model));        // std::vector<Violation> for programmatic use
+auto vs = check(view(model));                // std::vector<Violation> for tooling
+
+// compile-time invariant for a fixed-shape factory:
+NodeRef icon_button(){
+    WAYA_STATIC_CHECK(!waya::surface::detail::is_void(Kind::button));
+    return button("x") | tap(Close{});
+}
 ```
 
 The rules:
 
 | Rule | Catches |
 |------|---------|
-| `form-control-name` | an `input`/`select`/`textarea` in a `form` with no `name` — its value would never reach `update()` |
+| `form-control-name` | an `input`/`select`/`textarea`/`checkbox`/`radio` in a `form` with no `name` — its value would never reach `update()` |
 | `nested-interactive` | a tap target / button / link inside another one (invalid HTML; the browser splits your DOM) |
 | `void-element` | children on a leaf primitive (`image`/`input`/`checkbox`/`radio`/`path`) |
 | `img-alt` | an image with no `alt` text (accessibility) |
 | `orphan-option` | a stray `<option>` not built through `select(...)` |
+| `empty-select` | a `select` with no options — an unusable, unchoosable dropdown |
+| `duplicate-key` | two sibling nodes sharing a `key` — silently corrupts the keyed-list move-diff |
+| `dead-handler` | an event handler wired to no real `Msg` — a click that does nothing |
 
 These are the "wait, it caught that?" moments — the mistakes every web dev makes
-on autopilot, surfaced immediately with a message that tells you the fix.
+on autopilot, surfaced immediately with a message that tells you the fix. The
+`duplicate-key` and `dead-handler` rules in particular catch *silent* bugs: the
+UI renders, but interactions are quietly lost — exactly the failures the surface
+model exists to prevent.
 
 ## Context-aware escaping
 

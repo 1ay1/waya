@@ -47,6 +47,37 @@ int main() {
     check(!explain(image("/x.png")).empty(), "explain reports violations");
     check(explain(text("fine")).empty(), "explain empty for clean tree");
 
+    // ── hardened rules ───────────────────────────────────────────────────────
+    // duplicate sibling keys corrupt the keyed-list diff
+    { auto dup = col(text("a") | key("k1"), text("b") | key("k1"));
+      check(has_rule(dup, "duplicate-key"), "duplicate sibling keys flagged"); }
+    { auto uniq = col(text("a") | key("k1"), text("b") | key("k2"));
+      check(!has_rule(uniq, "duplicate-key"), "unique keys ok"); }
+
+    // a select with no options is unusable
+    check(has_rule(select({}), "empty-select"), "empty select flagged");
+    check(!has_rule(select({option("a")}), "empty-select"), "select with an option ok");
+
+    // an event handler wired to no real message is dead
+    { auto bad = box(text("x"));
+      bad->events.push_back({"keydown", -1, "Enter"});
+      check(has_rule(bad, "dead-handler"), "handler with no message flagged"); }
+
+    // a stray <option> outside a select is a mistake
+    { auto n = text("opt"); n->tag = "option";
+      check(has_rule(n, "orphan-option"), "orphan option flagged"); }
+
+    // assert_valid returns a sound tree unchanged (for chaining)
+    { auto ok = col(text("fine"));
+      check(assert_valid(ok) == ok, "assert_valid passes a sound tree through"); }
+
+    // the compile-time invariant path exists and holds for a fixed shape
+    WAYA_STATIC_CHECK(!waya::surface::detail::is_void(Kind::button));
+    WAYA_STATIC_CHECK(waya::surface::detail::is_void(Kind::image));
+    static_assert(NodeFactory<decltype([]{ return text("x"); })>,
+                  "a lambda returning NodeRef is a NodeFactory");
+    check(true, "static invariants compiled");
+
     // ── attribute-context escaping ───────────────────────────────────────────
     // a double-quote in an attribute value must be entity-escaped, not raw
     { auto n = text("x") | attr("title", "a\"b");
