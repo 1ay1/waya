@@ -6,6 +6,15 @@
 > maya renders a **cell grid** to a terminal. waya renders a **DOM tree** to a browser.
 > Same philosophy, different substrate.
 
+!!! warning "Design document — historical"
+    This is the founding design/architecture record. It describes the reasoning
+    and predates the shipped code, so it references early **spikes** (the
+    `spike/` prototypes) that have since been promoted into `include/waya/` and
+    removed. The *philosophy* here is current and load-bearing; the *file paths
+    and "run this spike" instructions are not*. For how the shipped framework
+    works and what you can actually run, use the [Guide](../index.md) and the
+    [Surface Model](surface.md).
+
 ---
 
 ## 0. The thesis

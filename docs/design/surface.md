@@ -160,12 +160,14 @@ Three payoffs, and waya gets all three from the same design:
    API. New primitive to learn? There basically aren't any.
 2. **Power via the right backend per case.** A form is best as accessible DOM
    with real inputs; a 10,000-point chart is best drawn on a canvas in one pass.
-   waya can render *different parts of the same surface* with different backends
-   and you write the same `path` / `box` either way.
+   Because the surface never names a substrate, waya *can* render different parts
+   with different backends — the DOM backend ships today, and the seam is built so
+   a canvas backend for heavy graphics is a drop-in addition, not an app rewrite.
 3. **Portability.** Because the surface never mentions HTML, the same waya
    program can later render to a native window, a PDF, an image, or an actual
    terminal — new backend, zero app changes. The app is defined by *what it
-   shows*, not *what technology shows it*.
+   shows*, not *what technology shows it*. (The DOM backend is the one that
+   exists now; the rest are what the design deliberately keeps possible.)
 
 ## 5. How it stays in sync (the network)
 
@@ -210,22 +212,39 @@ same single code path and coalesces every op of a frame into one
 down the pipe *and* fewest paints in the browser. None of this changes the
 model or your code.)
 
-## 6. Proven
+## 6. Proven — by what ships today
 
-`spike/surface/` (run `spike/surface/run.sh`) demonstrates the whole claim in
-one file, **15/15 green**:
+The thesis isn't a promise you have to take on faith; the parts that exist are
+verifiable right now, and the tests that prove them run in CI.
 
-- A real dashboard `view(count, chart)` — written purely in the 4-primitive
-  vocabulary, not one HTML/CSS/canvas token in sight.
-- Rendered through **two backends unchanged**:
-  - `DomBackend` → `<div style="display:flex…">`, `<span>`, `<svg>`
-  - `CanvasBackend` → `[{"op":"rect"…},{"op":"text"…},{"op":"poly"…}]`
-- The **diff** turns `count 42→43` into a single `set_text` op; a chart-data
-  change into one `set_path` op.
-- A **5,000-point chart** is one `path` node → one draw-op.
+**The surface never mentions HTML.** The node model (`include/waya/surface/node.hpp`)
+is four primitives + `Mod`s — not one HTML/CSS token appears in an app's `view`.
+You can read any example (`examples/*.cpp`) and confirm it: `col`, `text`,
+`path`, `| fg(...)`, `| tap(...)` — never `<div>`, never a style string (unless
+you reach for the `css()` escape hatch on purpose).
 
-That is the thesis, working: describe what to render, render it any way, sync
-by delta — powerful, simple, substrate-free.
+**The backend is a clean seam.** Rendering lives entirely in `DomBackend`
+(`include/waya/surface/dom.hpp`): it walks a surface and emits HTML + CSS. The
+surface has no idea it exists — which is exactly what makes a second backend a
+drop-in, not a rewrite. Today one backend ships (the DOM); §4 is why that seam
+is worth keeping even so.
+
+**The diff is proven correct, not asserted.** `tests/test_diff_prop.cpp`
+property-checks the invariant every diffing UI must hold —
+`apply(a, diff(a, b)) == b` — over **40,000 random tree pairs** (positional and
+keyed), reconciling each exactly. A `count 42→43` change is a single `set_text`
+op; a chart-data change is one `set_path`; a 5,000-point `path` is one node and
+one op. Run it: `ctest --test-dir build -R test_diff_prop`.
+
+**The whole model is pure, so it's testable and time-travellable.** Because
+`update`/`view` touch no I/O, `test::harness<P>` drives a real app with no
+browser, and `debug::timeline<P>` records every message to scrub history (see
+[Testing](../21-testing.md) and [Time-Travel](../22-time-travel.md)). That's the
+Elm-loop half of the thesis, demonstrated in ~30 lines.
+
+That is the thesis working with shipped code: describe *what* to render in four
+primitives, render it through a swappable backend, and sync by a provably-correct
+delta.
 
 ## 7. Where this sits relative to the rest of waya
 
