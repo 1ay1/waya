@@ -187,10 +187,7 @@ int main() {
         CHECK(has(css_of(box() | bg_surface), "var(--wa-surface)"));
         CHECK(has(css_of(text("x") | fg_primary), "var(--wa-primary)"));
         CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line)"));
-        // presets emit distinct palettes
-        CHECK(has(css_of(box() | theme(Theme::light())), "--wa-bg:#f8fafc"));
-        CHECK(has(css_of(box() | theme(Theme::ocean())), "--wa-primary:#14b8a6"));
-        // tint() recolours just the accent
+        // the token MECHANISM: tint() recolours just the accent (core Theme)
         CHECK(has(css_of(box() | theme(Theme::dark().tint(0x22c55e))), "--wa-primary:#22c55e"));
         // themed() paints bg+text from vars with a smooth transition (live switch)
         auto th = css_of(box() | themed());
@@ -198,7 +195,7 @@ int main() {
         CHECK(has(th, "transition:background-color"));
         // a LIVE theme switch is ONE op (root set_paint); children read vars
         auto a = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::dark()) | themed();
-        auto b = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::light()) | themed();
+        auto b = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::dark().tint(0xef4444)) | themed();
         auto p = diff(a, b);
         CHECK(p.size() == 1 && p[0].op == Op::set_paint && p[0].path == "");
     }
@@ -283,23 +280,12 @@ int main() {
         CHECK(has(css_of(box() | when_(false, bg(0x111111), bg(0x222222))), "#222222"));  // else branch
     }
     {
-        // push() = a growing spacer; divider() = a hairline rule
+        // push() = a growing spacer (core sugar)
         CHECK(has(DomBackend{}.render(*push()).css, "flex:1 1 auto"));
-        auto d = DomBackend{}.render(*divider()).css;
-        CHECK(has(d, "height:1px") && has(d, "var(--wa-line"));
-        CHECK(has(DomBackend{}.render(*divider(true)).css, "width:1px"));
-        // card() = a themed surface panel
-        auto c = DomBackend{}.render(*card(text("x"))).css;
-        CHECK(has(c, "var(--wa-surface)") && has(c, "padding:20px") && has(c, "border-radius:16px"));
-        // link() looks like a link
-        CHECK(has(DomBackend{}.render(*link("go")).css, "var(--wa-primary)"));
     }
     {
-        // stop() emits data-stop; dialog wires backdrop-close + stopped panel
+        // stop() emits data-stop (core sugar, used by dialogs)
         CHECK(has(DomBackend{}.render(*(box() | stop())).html, "data-stop=\"1\""));
-        // popover closed renders no chrome; open renders a frosted panel
-        CHECK(!has(DomBackend{}.render(*popover(false, text("t"), text("p"))).html, "backdrop-filter") ||
-               !has(DomBackend{}.render(*popover(false, text("t"), text("p"))).css, "backdrop-filter"));
     }
     {
         // overlay actually COVERS the viewport (inset:0), pads off edges, fades in
@@ -309,9 +295,6 @@ int main() {
         // pin() and inset(0,..) emit inset via extra so explicit 0 isn't dropped
         CHECK(has(css_of(box() | fixed | pin()), "inset:0"));
         CHECK(has(css_of(box() | inset(px(0), px(0), px(0), px(0))), "inset:0px 0px 0px 0px"));
-        // dialog panel has a solid themed-with-fallback surface (not transparent)
-        struct Cl{}; auto d = DomBackend{}.render(*dialog(true, Cl{}, text("x"))).css;
-        CHECK(has(d, "var(--wa-surface, #141b2e)"));
     }
 
     // ── flashy mods: aurora / glow_text / float / breathe / gradient_border ───

@@ -1,9 +1,12 @@
 #pragma once
 /// \file sugar.hpp
-/// Delightful conveniences over the surface vocabulary. Optional \u2014 everything
-/// here is just shorthand for things you can already write. Include it for a
-/// nicer authoring experience: named colours, a spacing scale, and the `when` /
-/// `each` combinators for conditional and list content.
+/// General, unopinionated conveniences over the surface vocabulary. Everything
+/// here is either a pure combinator (when/each/screens/fragment), a layout shell
+/// (page/app_shell/centered/scroll_fill), a floating-layer primitive (overlay/
+/// modal/anchored), or the design-TOKEN system (theme + fg_*/bg_* token mods).
+/// None of it bakes in a specific look — opinionated, ready-made COMPONENTS
+/// (buttons, cards, dialogs, badges, the theme presets) live in the official
+/// component library, waya/ui.hpp, which is built entirely on top of this.
 
 #include "node.hpp"
 #include "router.hpp"
@@ -58,24 +61,10 @@ struct Theme {
     std::uint32_t danger   = color::bad;
     std::uint32_t on_primary = color::white;// text on a primary surface
 
-    // ── ready-made presets: `theme(Theme::light())`, `page(t.bg, …)` ──────────
+    // ── the neutral default (slate/indigo) ─ the schema needs ONE baseline;
+    // opinionated named presets (light/midnight/ocean/rose) live in the official
+    // component library (waya/ui/theme.hpp), not the core.
     static Theme dark()  { return {}; }     // the default (slate/indigo)
-    static Theme light() {
-        return { 0xf8fafc, 0xffffff, 0xf1f5f9, 0xe2e8f0, 0x0f172a, 0x64748b,
-                 0x6366f1, 0x0891b2, 0x059669, 0xd97706, 0xdc2626, 0xffffff };
-    }
-    static Theme midnight() {   // near-black, violet accent
-        return { 0x0a0a0f, 0x14141f, 0x1e1e2e, 0x2a2a3c, 0xe4e4f0, 0x8888a8,
-                 0x8b5cf6, 0x22d3ee, 0x34d399, 0xf59e0b, 0xef4444, 0xffffff };
-    }
-    static Theme ocean() {      // deep teal/cyan
-        return { 0x081c22, 0x0d2b33, 0x123c47, 0x1d5563, 0xe0f2f1, 0x80cbc4,
-                 0x14b8a6, 0x38bdf8, 0x34d399, 0xfbbf24, 0xfb7185, 0x042f2e };
-    }
-    static Theme rose() {       // warm light, rose accent
-        return { 0xfff1f2, 0xffffff, 0xffe4e6, 0xfecdd3, 0x4c0519, 0x9f1239,
-                 0xe11d48, 0xdb2777, 0x059669, 0xd97706, 0xdc2626, 0xffffff };
-    }
     /// Recolour just the accent, keeping the rest — `Theme::dark().tint(0x22c55e)`.
     Theme tint(std::uint32_t p, std::uint32_t a = 0) const { Theme t=*this; t.primary=p; if(a) t.accent=a; return t; }
 };
@@ -121,27 +110,6 @@ inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border
 /// `push()` — a flexible gap that shoves siblings apart. `row(logo, push(), menu)`
 /// pins logo left and menu right. Reads clearer than a bare growing box.
 inline NodeRef push(){ auto n = box(); n->style.has_grow=true; n->style.grow=1; finalize(*n); return n; }
-/// `divider()` — a hairline rule. Horizontal by default; `divider(true)` = vertical.
-inline NodeRef divider(bool vertical=false){
-    auto n = box();
-    if (vertical){ n->style.extra.emplace_back("width","1px"); n->style.extra.emplace_back("align-self","stretch"); }
-    else         { n->style.extra.emplace_back("height","1px"); n->style.extra.emplace_back("width","100%"); }
-    n->style.extra.emplace_back("background","var(--wa-line, rgba(255,255,255,.10))");
-    n->style.extra.emplace_back("flex","0 0 auto");
-    finalize(*n); return n;
-}
-/// `link(text)` — a styled inline link look (primary colour, underline on hover,
-/// pointer). Pair with `tap(msg)` or `on("click",…)`.
-inline NodeRef link(std::string label){
-    return text(std::move(label)) | fg_primary | pointer
-         | transition("opacity .15s ease") | on(Hover, css("text-decoration","underline"));
-}
-/// `card(children…)` — the ubiquitous panel: themed surface + border + padding
-/// + radius + soft elevation. The single most-repeated container, now one call.
-template <typename... Cs> NodeRef card(Cs... cs){
-    return col(std::move(cs)...) | gap(14) | pad(20) | round(16)
-         | bg_surface | border_token() | elevation(2);
-}
 
 // ── floating layers ─ dropdowns, tooltips, popovers without absolute-by-hand ─
 /// `anchored(trigger, floating, place)` — render `floating` positioned relative
@@ -161,14 +129,6 @@ inline NodeRef anchored(NodeRef trigger, NodeRef floating, std::string place="bo
     n->style.pos = Pos::relative;
     n->style.extra.emplace_back("display","inline-flex");
     finalize(*n); return n;
-}
-/// `popover(open, trigger, panel, place)` — anchored + auto show/hide + frosted
-/// panel chrome. A dropdown menu in one line.
-inline NodeRef popover(bool open, NodeRef trigger, NodeRef panel, std::string place="bottom-right"){
-    auto styled = open ? (panel | frost(14) | round(12) | pad(6) | elevation(4)
-                                | css("min-width","11rem") | pop_in(160))
-                       : box();
-    return anchored(std::move(trigger), std::move(styled), place);
 }
 /// `themed()` — the everyday combo: page-bg, primary text, and a smooth colour
 /// transition so a LIVE theme switch animates instead of snapping. Put on the
@@ -304,35 +264,6 @@ inline NodeRef overlay(NodeRef content){
 /// `modal(cond, content)` — the overlay only when `cond`; empty otherwise.
 inline NodeRef modal(bool open, NodeRef content){
     return open ? overlay(std::move(content)) : box();
-}
-/// `dialog(open, close_msg, panel)` — a complete modal: a dimmed backdrop that
-/// closes on click (tap(close_msg)), with the panel STOPPED so clicking the
-/// content doesn't close it, plus frosted chrome + a pop-in entrance. The whole
-/// modal pattern, correct, in one line.
-template <typename Msg, typename... Cs>
-NodeRef dialog(bool open, Msg close_msg, Cs... panel_children){
-    if (!open) return box();
-    auto panel = col(std::move(panel_children)...)
-        | gap(16) | pad(28) | round(20)
-        // a solid raised surface that works with OR without a theme (var falls
-        // back to a dark slate), a hairline edge, and a deep soft shadow.
-        | css("background", "var(--wa-surface, #141b2e)")
-        | css("border", "1px solid var(--wa-line, rgba(255,255,255,.10))")
-        | css("box-shadow", "0 24px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)")
-        | css("max-width", "28rem") | css("width", "100%")
-        | stop() | pop_in(180);
-    return overlay(std::move(panel)) | tap(close_msg);
-}
-/// `toast_layer(nodes)` — a fixed, non-interactive top-right stack for toasts.
-inline NodeRef toast_layer(std::vector<NodeRef> toasts){
-    auto n = col_(std::move(toasts));
-    auto& s = n->style;
-    s.pos = Pos::fixed;
-    s.top = {sp(4),Unit::px}; s.right = {sp(4),Unit::px};
-    s.has_z = true; s.z = 1100; s.gap = {sp(2),Unit::px};
-    s.extra.emplace_back("pointer-events", "none");
-    finalize(*n);
-    return n;
 }
 
 // ── Responsive app shells ────────────────────────────────────────
