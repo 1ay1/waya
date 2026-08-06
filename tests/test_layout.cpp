@@ -207,6 +207,34 @@ int main() {
         CHECK(has(c, "repeat(3,minmax(0,1fr))"));
     }
 
+    // ── rendering-correctness regressions ───────────────────────────
+    {
+        // transforms COMPOSE (scale + rotate) instead of the last winning
+        auto c = css_of(box() | scale(1.1f) | rotate(45));
+        CHECK(has(c, "transform:scale(1.1) rotate(45deg)"));
+        CHECK(!has(c, "transform:scale(1.1);transform:"));   // not two declarations
+    }
+    {
+        // filters compose too (blur + another filter)
+        auto c = css_of(box() | blur(2) | css("filter","brightness(1.2)"));
+        CHECK(has(c, "filter:blur(2px) brightness(1.2)"));
+    }
+    {
+        // fg on a CONTAINER emits color (it inherits to text descendants)
+        CHECK(has(css_of(box(text("x")) | fg(0xff0000)), "color:#ff0000"));
+    }
+    {
+        // underline + strike COMBINE into one text-decoration
+        auto c = css_of(text("x") | underline | strike);
+        CHECK(has(c, "text-decoration:underline line-through"));
+        CHECK(!has(c, "text-decoration:underline;text-decoration:"));
+    }
+    {
+        // box-shadow is additive (multiple shadows are valid, comma-joined)
+        auto c = css_of(box() | css("box-shadow","0 1px 2px #000") | css("box-shadow","0 0 8px #f00"));
+        CHECK(has(c, "box-shadow:0 1px 2px #000, 0 0 8px #f00"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

@@ -85,13 +85,18 @@ private:
         if(s.has_grow){ o+="flex:"; o+=n(s.grow); o+=" 1 auto;"; }
         else if(s.has_shrink){ o+="flex-shrink:"; o+=n(s.shrink); o+=';'; }
         // text
-        // text colour & typography apply to text AND text-bearing controls.
+        // Colour INHERITS, so a container's fg cascades to its text descendants —
+        // emit it for any node (not just text-bearing ones).
+        if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
+        // Typography applies to text AND text-bearing controls.
         if(kind==Kind::text || kind==Kind::input || kind==Kind::textarea ||
            kind==Kind::button || kind==Kind::select){
-            if(s.has_fg){o+="color:";hex(o,s.fg);o+=';';}
             if(s.font_size.set()){o+="font-size:";len(o,s.font_size);o+=';';}
             if(s.weight!=Weight::none){o+="font-weight:";o+=wt(s.weight);o+=';';}
-            if(s.italic)o+="font-style:italic;"; if(s.underline)o+="text-decoration:underline;"; if(s.strike)o+="text-decoration:line-through;";
+            if(s.italic)o+="font-style:italic;";
+            // underline + strike both map to text-decoration — combine so you can
+            // have both ("underline line-through"), not have the last one win.
+            if(s.underline || s.strike){ o+="text-decoration:"; if(s.underline)o+="underline"; if(s.underline&&s.strike)o+=' '; if(s.strike)o+="line-through"; o+=';'; }
             if(s.has_lh){o+="line-height:";o+=n(s.line_height);o+=';';} if(s.has_ls){o+="letter-spacing:";o+=n(s.letter_spacing);o+="px;"; } }
         if(s.text_align!=Justify::none){ o+="text-align:"; o+= s.text_align==Justify::center?"center":s.text_align==Justify::end?"right":"left"; o+=';'; }
         // box model
@@ -118,8 +123,27 @@ private:
             case Cursor::move:o+="cursor:move;";break; case Cursor::not_allowed:o+="cursor:not-allowed;";break; case Cursor::none:break; }
         if(is_tap && s.cursor==Cursor::none) o+="cursor:pointer;";
         if(s.has_transition){o+="transition:";o+=s.transition_spec;o+=';';}
-        // the universal channel — anything
-        for(auto&[k,v]:s.extra){ o+=k; o+=':'; o+=v; o+=';'; }
+        // the universal channel — anything. Some properties (transform, filter,
+        // backdrop-filter) are ADDITIVE: multiple mods (scale + rotate, blur +
+        // brightness) each add a function, so we CONCATENATE same-key values with
+        // a space instead of letting the last one win (which would drop scale).
+        {
+            std::vector<std::pair<std::string,std::string>> merged;
+            auto is_additive = [](const std::string& k){
+                return k=="transform" || k=="filter" || k=="backdrop-filter" ||
+                       k=="-webkit-backdrop-filter" || k=="box-shadow";
+            };
+            for(auto&[k,v]:s.extra){
+                bool done=false;
+                if(is_additive(k)){
+                    for(auto& m:merged) if(m.first==k){ m.second += (k=="box-shadow"?", ":" ")+v; done=true; break; }
+                } else {
+                    for(auto& m:merged) if(m.first==k){ m.second=v; done=true; break; }  // last wins
+                }
+                if(!done) merged.emplace_back(k,v);
+            }
+            for(auto&[k,v]:merged){ o+=k; o+=':'; o+=v; o+=';'; }
+        }
         return o;
     }
 
