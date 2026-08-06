@@ -333,7 +333,7 @@ inline std::string client(int port) {
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
     "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);}"
-    "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"');"
+    "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"/?r='+encodeURIComponent(location.pathname+location.search));"
     "ws.binaryType='arraybuffer';"
     "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
     // Text frames are runtime control messages (navigation); binary frames are
@@ -582,7 +582,9 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
     // stable per-timer key = interval folded with the Msg token, so reconcile
     // matches the same declared timer across renders.
     auto keyof = [](const typename Sub<Msg>::Every& e){
-        return (std::uint64_t)e.interval.count() * 1099511628211ull ^ (std::uint64_t)(std::uint32_t)detail::value_token<Msg>(e.msg);
+        std::uint64_t alt = 0;
+        if constexpr (requires { e.msg.index(); }) alt = e.msg.index();
+        return (std::uint64_t)e.interval.count() * 1099511628211ull ^ (alt + 1);
     };
     std::vector<Session::Timer> next;
     std::vector<bool> matched(wanted.size(), false);
@@ -640,6 +642,31 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         s->conn = conn;
 
         auto [model, init_cmd] = detail::init_of<P, Model, Msg>();
+        // Route the initial model to the REQUESTED path (the client passes it as
+        // ?r=<path> on the WS URL) so the live app starts on the SAME screen the
+        // SSR rendered — no flash-to-Home, and the wired tokens match the DOM the
+        // browser already has.
+        {
+            std::string rp = detail::request_path(req);   // e.g. "/?r=%2Fusers%2F2"
+            std::string route = "/";
+            if (auto q = rp.find("?r="); q != std::string::npos) {
+                std::string enc = rp.substr(q + 3), dec;
+                for (std::size_t i = 0; i < enc.size(); ++i) {
+                    if (enc[i] == '%' && i + 2 < enc.size()) {
+                        auto hex = [](char c){ return c<='9'?c-'0':(c|32)-'a'+10; };
+                        dec += (char)(hex(enc[i+1])*16 + hex(enc[i+2])); i += 2;
+                    } else if (enc[i] == '+') dec += ' ';
+                    else dec += enc[i];
+                }
+                if (!dec.empty()) route = dec;
+            }
+            auto sub = detail::subs_of<P, Model, Msg>(model);
+            if (auto* rt = sub.route()) {
+                bool ok=true;
+                auto rr = detail::safe_dispatch<P>(std::move(model), rt->route(route), route, ok);
+                model = std::move(rr.first);
+            }
+        }
         detail::begin_msg_capture();
         NodeRef prev = detail::safe_view<P>(model);
 

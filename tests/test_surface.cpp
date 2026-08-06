@@ -20,6 +20,8 @@ static bool has(const std::string& h, std::string_view n){ return h.find(n)!=std
 enum { Inc, Reset };
 
 static NodeRef view(int n) {
+    detail::begin_msg_capture();   // the runtime does this before every render, so
+                                  // tap tokens are stable per-render (salt resets)
     return col(
         text("Count") | fg(0x3b82f6) | font(28) | bold,
         text(n) | fg(0xe2e8f0),

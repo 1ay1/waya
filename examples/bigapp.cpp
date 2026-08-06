@@ -184,7 +184,8 @@ struct App {
             {Settings, [&]{ return settings_screen(m); }},
             {NotFound, [&]{ return text("404 \u2014 not found") | fg(muted) | display; }},
         });
-        return page(bg0, centered(64, col(nav(m), col(body) | as_main) | gap(28)));
+        return page(bg0, centered(64, col(nav(m), col(body) | as_main) | gap(28)))
+             | theme(Theme::dark());   // resolve the fg_primary/etc tokens
     }
 };
 
