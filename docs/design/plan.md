@@ -1,6 +1,6 @@
 # waya — Build Plan
 
-Sequencing for the architecture in [DESIGN.md](DESIGN.md). Every phase ends in
+Sequencing for the architecture in [DESIGN.md](design.md). Every phase ends in
 something runnable and demoable; no phase is pure infrastructure.
 
 **Guiding rule:** prove the risky mechanism before building the comfortable

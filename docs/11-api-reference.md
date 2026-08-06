@@ -471,3 +471,131 @@ HTML + interned CSS.
 
 See also: [Recipes & Patterns](12-recipes.md) for higher-level component
 patterns, and the [Examples Walkthrough](13-examples.md) for complete apps.
+
+---
+
+## Appendix: every mod family, in use
+
+A quick, copy-ready example of each family, so you can see the shape rather than
+just the signature.
+
+### Colour & text
+
+```cpp
+text("Heading")   | fg(0xe2e8f0) | font(28) | weight(Weight::bold)
+text("subtitle")  | fg(0x94a3b8) | font(16) | italic
+text("CODE_PATH") | fg(0x22d3ee) | font(13) | tracking(0.5f)
+text(long_text)   | leading(1.7f) | max_w(rem(34))          // comfortable reading
+text(one_liner)   | truncate | max_w(px(200))               // ellipsis on overflow
+```
+
+### The box model (padding, size, corners, border)
+
+```cpp
+box(content)
+    | pad(20)                       // 20px all sides
+    | pad_x(24) | pad_y(12)         // or per-axis
+    | w(pct(100)) | max_w(rem(30))  // full width, capped
+    | round(16)                     // rounded corners
+    | border(1, 0x334155)           // 1px border
+    | bg(0x1e293b);                 // background
+```
+
+### Flex layout
+
+```cpp
+row(a, b, c) | gap(12) | center               // horizontal, vertically centered
+row(logo, push(), nav) | between              // logo left, nav right (push = spacer)
+col(header, body | grow(1), footer) | h(vh(100))   // body fills the height
+row(items) | wrap | gap(8)                     // items wrap to new lines
+```
+
+### Position & layering
+
+```cpp
+stack(
+    image(url) | w(pct(100)),
+    text("NEW") | absolute(px(8), px(8)) | bg(0xef4444) | fg(0xffffff) | pad_x(8) | round(6)
+)                                              // a badge over an image
+
+dialog | fixed | pin() | z(100)                // full-screen overlay layer
+```
+
+### Effects & motion
+
+```cpp
+card | elevation(2) | transition() | on(Hover, elevation(4) | scale(1.02f))
+panel | backdrop_blur(12) | bg(0x1e293b88)     // frosted glass
+row(items) | fade_up(400) | delay(120)         // staggered entrance
+spinner | spin(700)                            // continuous rotation
+placeholder | shimmer()                        // loading shimmer
+```
+
+### States (hover / focus / active)
+
+```cpp
+text("Menu item")
+    | pad(10) | round(8) | transition()
+    | on(Hover,  bg(0x334155))
+    | on(Active, scale(0.98f))
+    | on(Focus,  border(2, 0x6366f1));
+```
+
+### Responsive breakpoints
+
+```cpp
+col(sidebar, content)
+    | at(Md, horizontal | gap(24))   // becomes a row on tablets and up
+    | below(Md, gap(12));            // tighter spacing on phones
+```
+
+### Events
+
+```cpp
+text("Save")        | pointer | tap(Save{})
+input(m.q)          | on_input([](std::string v){ return SetQuery{v}; }) | on_enter(Search{})
+checkbox(m.on)      | on_change([](std::string v){ return SetOn{ v == "true" }; })
+card(item)          | draggable(std::to_string(item.id))
+column              | on_drop([](std::string s){ return Move{ s }; })
+```
+
+### Semantics & accessibility
+
+```cpp
+row(brand, push(), links) | as_nav
+col(article_body)         | as_article
+image(chart_url)          | alt("Quarterly revenue, up 12%")
+button("Menu")            | aria("expanded", m.open ? "true" : "false")
+```
+
+### The `css()` escape hatch
+
+```cpp
+box(...) | css("background", "linear-gradient(135deg,#6366f1,#22d3ee)")
+        | css("mix-blend-mode", "screen")
+        | css("clip-path", "circle(50%)");
+```
+
+---
+
+## Appendix: common gotchas
+
+- **`col` vs `col_`.** `col(a, b, c)` takes children as arguments; `col_(vec)`
+  takes a `std::vector<NodeRef>`. Build children in a loop → use `col_`. Same for
+  `row`/`row_`, `box`/`box_`.
+- **The input value comes from the model.** Write `input(m.draft)`, not
+  `input()`. The model is the source of truth; the field reflects it. To clear a
+  field, clear the model value in `update`.
+- **Style-on-hover doesn't need a message.** Use `on(Hover, …)` (pure CSS) to
+  *look* different on hover. Use `on_hover(Msg, Msg)` only when hovering must
+  change your **model**.
+- **The sender receives its own `broadcast`.** A `Cmd::broadcast` fans out to
+  every subscribed session *including the sender*. Don't also apply the change
+  locally, or you'll double it.
+- **`tap` needs `pointer` for the cursor.** `tap(Msg{})` wires the click;
+  `pointer` shows the hand cursor. Use `interactive()` for hover/press feedback
+  too. For real buttons, use the `button` primitive.
+- **Give reordering lists a `key`.** Without `key(...)`, a reordered list is
+  rebuilt; with it, the diff emits moves and preserves focus/scroll.
+- **`update` must stay pure.** No file/network/clock inside it. Need those?
+  Return a `Cmd` (fetch/after/task) and let the runtime perform it.

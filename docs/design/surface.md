@@ -5,7 +5,7 @@
 > Powerful enough to draw anything. Simple enough to learn in a minute.
 
 This is the core idea behind waya, and it reframes the DOM-oriented parts of
-[DESIGN.md](DESIGN.md) as *one backend*, not the whole story.
+[DESIGN.md](design.md) as *one backend*, not the whole story.
 
 ---
 

@@ -1,5 +1,19 @@
 # Introduction
 
+!!! abstract "New to web development? Read this first."
+    A **website** is HTML (the content), CSS (the look), and JavaScript (the
+    behaviour), running in a browser and talking to a **server** (a program that
+    sends pages and data). Normally you write all three languages *plus* server
+    code, and glue them together by hand.
+
+    **waya replaces all of that with one thing: C++.** You write a program that
+    describes what the screen should look like, and waya generates the HTML, the
+    CSS, and the tiny bit of browser plumbing for you, and runs the server. You
+    never touch HTML, CSS, or JavaScript. If you know how to write a C++ struct
+    and a function, you know enough to start. Jump to the
+    [hands-on tutorial](tutorial-todo.md) to build a real app step by step, or
+    keep reading for the big picture.
+
 ## What waya is
 
 waya is a **server-side web framework** written in C++26. You build a web

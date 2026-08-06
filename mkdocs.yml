@@ -66,6 +66,7 @@ nav:
   - Guide:
       - Introduction: 00-introduction.md
       - Getting Started: 01-getting-started.md
+      - "Tutorial: Build a To-Do App": tutorial-todo.md
       - The Mental Model: 02-mental-model.md
       - The Vocabulary: 03-vocabulary.md
       - Styling: 04-styling.md
@@ -83,3 +84,11 @@ nav:
   - Internals:
       - How It Works: internals/architecture.md
       - The Wire Protocol: internals/wire-protocol.md
+  - Project & Design:
+      - The Surface Model: design/surface.md
+      - Components: design/components.md
+      - Theming: design/theming.md
+      - SEO: design/seo.md
+      - Scaling (design note): design/scaling.md
+      - Architecture & Philosophy: design/design.md
+      - Build Plan: design/plan.md

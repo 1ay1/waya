@@ -834,4 +834,4 @@ them possible.
 
 ---
 
-*Build sequencing and milestones: see [PLAN.md](PLAN.md).*
+*Build sequencing and milestones: see [PLAN.md](plan.md).*

@@ -1,214 +1,174 @@
 <h1 align="center">waya</h1>
 
 <p align="center">
-  A C++26 server-side web framework with a type-state compile-time HTML DSL,<br>
-  a static/dynamic template diff engine, and an Elm-style runtime.
+  A <b>C++26 server-side web framework</b>. Describe a <b>surface</b> with a tiny<br>
+  vocabulary; waya renders it to the browser and streams only the delta on every interaction.
 </p>
 
 <p align="center">
-  <a href="https://1ay1.github.io/waya/">Documentation</a> ·
-  <a href="DESIGN.md">Design</a> ·
-  <a href="PLAN.md">Plan</a> ·
-  <a href="spike/">Spike</a>
+  <b><a href="https://1ay1.github.io/waya/">📖 Documentation</a></b> ·
+  <a href="https://1ay1.github.io/waya/01-getting-started/">Getting Started</a> ·
+  <a href="https://1ay1.github.io/waya/11-api-reference/">API Reference</a> ·
+  <a href="examples/">Examples</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/1ay1/waya/actions/workflows/ci.yml"><img src="https://github.com/1ay1/waya/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/1ay1/waya/actions/workflows/docs.yml"><img src="https://github.com/1ay1/waya/actions/workflows/docs.yml/badge.svg" alt="Docs"></a>
   <img src="https://img.shields.io/badge/C%2B%2B-26-blue" alt="C++26">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
 </p>
 
 ---
 
-> **Status: Phase 0 complete.** The core mechanism is proven and both project
-> kill-risks are retired with measurements. See [PLAN.md](PLAN.md).
+You write three pure functions — the initial state, how a message changes it,
+and how it looks — and waya turns that into a real, running website: it renders
+the UI to HTML + CSS, serves it, and keeps every browser in sync over a
+WebSocket, sending only the parts of the page that changed.
 
-## The idea
-
-Every web stack forces you to think in the browser's primitives — the box
-model, the cascade, the DOM, event handlers, hydration. waya's bet is that
-**those should be an implementation detail you never touch.** You describe a
-**surface** with a tiny vocabulary; waya owns *how* it renders — HTML, CSS,
-canvas, whatever fits — and keeps it in sync over the network by streaming only
-what changed. Powerful enough to draw anything, simple enough to learn in a
-minute, and never tied to a substrate. See **[SURFACE.md](SURFACE.md)** — it's
-the framework's one and only API (`include/waya/surface/`, run
-`./build/app`): a live app whose `view()` is pure `box`/`text`/`path`
-(a chart is one node), rendered to the browser and kept in sync by streaming
-only the delta on each tap. Not one line of the app mentions HTML, CSS, a div,
-flex, onclick, or a canvas.
-
-## How you build a waya app
-
-One vocabulary. You describe a **surface** — the visual state of your app — with
-four primitives and a few chaining attributes. waya renders it (as HTML today,
-as anything tomorrow) and keeps the browser in sync by streaming only what
-changed. There is no HTML, no CSS, no DOM, no event wiring in your code.
+**No HTML. No CSS. No DOM. No JavaScript. No client-side state.** You describe
+*what* the screen should look like as a function of your data; waya owns *how*
+it gets there and stays there.
 
 ```cpp
 #include <waya/surface/live.hpp>
 using namespace waya::surface;
 
 struct Counter {
-    struct Model { int n = 0; };
-    using Msg = int;
-    enum { Inc, Dec, Reset };
+    struct Model { int n = 0; };                 // 1. your state
+    struct Inc {}; struct Dec {};                // 2. what can happen
+    using Msg = std::variant<Inc, Dec>;
 
-    static Model init()               { return {}; }
-    static Model update(Model m, Msg msg) {
-        if (msg == Inc)   m.n++;
-        if (msg == Dec)   m.n--;
-        if (msg == Reset) m.n = 0;
+    static Model init() { return {}; }           // 3. the starting state
+
+    static Model update(Model m, Msg msg) {      // 4. next state (pure — testable with ==)
+        std::visit(overload{
+            [&](Inc){ m.n++; },
+            [&](Dec){ m.n--; },
+        }, msg);
         return m;
     }
 
-    static NodeRef view(const Model& m) {
-        auto btn = [](std::string s, int msg, std::uint32_t c) {
-            return text(std::move(s)) | fg(0xffffff) | pad_x(20) | pad_y(12)
-                 | bg(c) | round(12) | semibold | tap(msg)
-                 | transition() | on(Hover, opacity(0.85f));   // states are values
-        };
+    static NodeRef view(const Model& m) {        // 5. how it looks (pure)
         return col(
-            text(m.n) | fg(0x818cf8) | font(88) | weight(Weight::black),
-            row( btn("−", Dec, 0x334155), btn("reset", Reset, 0x1e293b), btn("+", Inc, 0x6366f1) ) | gap(12)
-        ) | center | gap(28) | pad(48) | round(24) | bg(0x111827) | shadow();
+            text(m.n) | font(64) | weight(Weight::black),
+            row(
+                text("−") | pad(14) | round(12) | bg(0x1e293b) | pointer | tap(Dec{}),
+                text("+") | pad(14) | round(12) | bg(0x6366f1) | pointer | tap(Inc{})
+            ) | gap(12)
+        ) | gap(24) | pad(48) | center;
     }
 };
 
-int main() { return live<Counter>({.port = 8080}); }   // ./build/counter
+int main() { return live<Counter>({ .port = 8080 }); }
 ```
 
-That's the whole thing — the Elm shape (`Model` / `Msg` / `init` / `update` /
-`view`), and a `view` that describes a surface. `update` is a pure function you
-can test with `==`, no browser.
+That is a complete, running web app. Click `+` and the number updates — with a
+**handful of bytes** over the wire, no re-render, and no framework in the
+browser.
 
-### The vocabulary (all of it)
+## Why waya
 
-| primitive | what it is |
-|---|---|
-| `box(children)` | a rectangle that holds things — the universal container |
-| `text(string)` | a run of characters |
-| `image(src)` | a bitmap |
-| `path(points)` | any 2-D shape — a chart, an icon, a custom widget, all one node |
+- **One vocabulary.** Four primitives — `box`, `text`, `image`, `path` — plus a
+  text `input` family, and a complete set of chaining **modifiers** applied with
+  `|`. No CSS, no DOM APIs.
+- **Everything is a node; everything you do to one is a `Mod`.** A colour, a
+  layout, a hover state, an event handler — all the same kind of value. A
+  "component" is just a function that returns a node.
+- **The Elm Architecture.** A pure `Model`, a pure `update`, a pure `view`. Side
+  effects are *described* as data (`Cmd`) and performed by the runtime, so your
+  logic is testable with `==` and has no I/O.
+- **SSR by construction.** Every route server-renders real, crawlable HTML —
+  great SEO out of the box, with correct `<title>`, Open Graph, and JSON-LD.
+- **Sync by delta.** The surface is retained; each frame is diffed against the
+  last and only the changed nodes are streamed as a compact binary frame.
+- **Responsive without breakpoints.** Layout primitives (`grid`, `cluster`,
+  `switcher`, `sidebar`) adapt to available space on their own.
+- **Real-time & multiplayer.** Timers, async work, and pub/sub broadcast are
+  first-class — two open tabs can update each other instantly.
 
-Plus `row` / `col` / `stack` / `center` and a **complete** set of chaining
-attributes — anything CSS and layout can express, and never limiting:
+## Install
 
-```cpp
-... | pad(12) | round(12) | bg(0x1e293b) | shadow() | border(1, 0x334155)  // box model + effects
-... | justify(Justify::between) | align(Align::center) | wrap                // layout
-... | absolute(px(0), px(0)) | z(10)                                         // position
-... | on(Hover, bg(0x2563eb)) | at(Md, w(fill))                              // states & responsive
-... | css("backdrop-filter", "blur(8px)") | var("brand", "#3b82f6")          // the universal channel: ANY css
+waya is **header-only**. Add it and link the system threads library:
+
+```cmake
+add_subdirectory(third_party/waya)          # or FetchContent
+target_link_libraries(my_app PRIVATE waya::waya)
+target_compile_features(my_app PRIVATE cxx_std_26)
 ```
 
-Named attrs cover the common 90%; `css("prop","value")` reaches the other 10%,
-and `path` draws any shape — so a **5,000-point chart is one `path` node**. You
-never write a loop, a `<canvas>`, or a `ctx`.
+Requires a **C++26** compiler (GCC 15+ is the reference toolchain) and
+**CMake 3.28+**. See the
+[Getting Started guide](https://1ay1.github.io/waya/01-getting-started/) for the
+full walkthrough.
 
-### In sync by delta
+## Run the examples
 
-waya keeps the previous surface and diffs the next against it — only the changed
-nodes travel. Tapping `+` on the counter sends **one op**:
-
+```sh
+cmake -S . -B build && cmake --build build -j
+./build/splash    # an animated landing page          → http://localhost:8080
+./build/studio    # live theme switching
+./build/orbit     # live generative art (a subscription ticks it)
+./build/pulse     # a real-time collaborative dashboard (open two tabs)
+./build/blog      # "hypertext" — a full content site: router, search, SEO, TOC
 ```
-tap +  →  [[0,"0","1"]]         (a set_text at the number — a couple dozen bytes)
+
+### Live reload
+
+`scripts/dev.sh` watches the source, rebuilds on save, and the browser reloads
+itself. A failed build keeps the last good server up.
+
+```sh
+scripts/dev.sh splash          # edit examples/splash.cpp, save, watch it update
 ```
 
-The subtree content-hash lets the diff skip everything unchanged in O(1), so a
-dashboard with a big list stays cheap. The connection is a dumb byte pipe; waya
-is the smart end.
+## Documentation
 
-### Substrate-free — and never limiting
+The full manual lives at **[1ay1.github.io/waya](https://1ay1.github.io/waya/)** —
+a from-scratch tutorial, deep API reference, recipes, and internals:
 
-Because your `view` never names HTML, waya owns *how* it renders. Today that's a
-DOM backend (a spike also proves a canvas backend from the same surface,
-unchanged). Tomorrow it could be a native window, a PDF, an image — your app is
-defined by *what it shows*, not the technology that shows it. And nothing is out
-of reach: when the named primitives don't cover something, you describe the
-shape with `path`, which stays substrate-agnostic (SVG on the DOM backend, draw
-ops on the canvas backend).
+- **[Introduction](https://1ay1.github.io/waya/00-introduction/)** — what waya is and the core idea.
+- **[Getting Started](https://1ay1.github.io/waya/01-getting-started/)** — install, build, and run your first app.
+- **[The Mental Model](https://1ay1.github.io/waya/02-mental-model/)** — surfaces, nodes, mods, and the Elm loop.
+- **[The Vocabulary](https://1ay1.github.io/waya/03-vocabulary/)** · **[Styling](https://1ay1.github.io/waya/04-styling/)** · **[Layout](https://1ay1.github.io/waya/05-layout/)**
+- **[The Runtime](https://1ay1.github.io/waya/06-runtime/)** · **[Events](https://1ay1.github.io/waya/07-events/)** · **[Effects](https://1ay1.github.io/waya/08-effects/)**
+- **[Routing & SEO](https://1ay1.github.io/waya/09-routing-seo/)** · **[Scaling](https://1ay1.github.io/waya/10-scaling/)**
+- **[API Reference](https://1ay1.github.io/waya/11-api-reference/)** — every function, mod, and type.
+- **[Recipes](https://1ay1.github.io/waya/12-recipes/)** · **[Examples](https://1ay1.github.io/waya/13-examples/)** · **[Glossary](https://1ay1.github.io/waya/glossary/)**
 
-See **[SURFACE.md](SURFACE.md)** for the full model, and
-[`examples/`](examples/) for `splash` (animated landing), `orbit` (live
-generative art), `studio` (live themes), and `pulse` (real-time collaborative
-dashboard) — every one a surface program, run with `waya::surface::live`.
+Design & architecture notes live under [`docs/design/`](docs/design/).
 
-<details>
-<summary>Under the hood: the DOM backend, and its own guarantees</summary>
+Build the docs locally:
 
-The surface's DOM backend is built on a type-state HTML DSL that makes invalid
-HTML a *compile* error — a `<td>` outside a `<tr>`, a `<div>` inside a `<p>`, an
-unescaped interpolation — and interns styles to atomic classes. That machinery
-lives in `include/waya/{html,dsl,style,render}/` and is exercised by the test
-suite, but it is **implementation detail**: waya users write the surface
-vocabulary above, never `div_`/`p_`/`| cls`. If you never write HTML, you can't
-write invalid HTML.
-</details>
+```sh
+pip install -r docs/requirements.txt
+mkdocs serve      # live preview at http://127.0.0.1:8000
+```
 
 ## Under the hood
 
 The machinery beneath the surface, all tested:
 
-- **Diff + wire** (`include/waya/surface/`): the surface is retained and diffed
-  with a subtree content-hash (skips unchanged branches in O(1)); the minimal
-  op set (`set_text`/`set_paint`/`set_path`/`replace`/`insert`/`remove`) is
-  streamed as compact JSON. Soundness is tested — applying a patch reproduces
-  the rendered surface.
+- **Diff + wire** (`include/waya/surface/`): the surface is retained and diffed;
+  the minimal op set (`set_text`/`set_paint`/`set_path`/`replace`/`insert`/
+  `remove`/`move`) is streamed as a compact binary frame, coalesced into one
+  paint per frame. Applying a patch reproduces the rendered surface (tested).
 - **Persistent WebSocket, per-session state** (`include/waya/net/ws.hpp`): a
-  dependency-free RFC 6455 implementation (tested against the spec's reference
-  vectors). Each browser gets its own `Model`; thread-per-connection so one open
-  client never blocks another.
-- **Subtree memoisation** (maya's `CacheId`): `each_keyed` re-runs a row's view
-  only when its key changes — unchanged rows aren't rebuilt.
-- **The DOM backend** is a type-state HTML DSL that makes invalid HTML a compile
-  error and interns styles to atomic classes. It's internal; you never see it.
+  dependency-free RFC 6455 implementation. Each browser gets its own `Model`;
+  thread-per-connection so one open client never blocks another.
+- **The DOM backend** (`include/waya/surface/dom.hpp`): renders a surface to
+  HTML with interned (deduplicated) CSS classes. It's internal — you never see
+  it. Swap the backend and your app is unchanged.
 
-## Measured
+See the [internals](https://1ay1.github.io/waya/internals/architecture/) docs
+for the full picture and the [wire protocol](https://1ay1.github.io/waya/internals/wire-protocol/).
 
-The two risks that could have killed the project were discharged with numbers,
-not optimism: a 1163-element compile in **739 ms** (gate < 2 s), and framework
-diagnostics reduced to **one error in 5–6 lines**. Details in
-[DESIGN.md §10](DESIGN.md). Test suite: **32/32 green**, CI on every push.
+## Quality
 
-## Run it
-
-```sh
-cmake -S . -B build && cmake --build build -j
-./build/splash                 # http://localhost:8080 — an animated landing page
-./build/orbit                  # live generative art (a subscription ticks it)
-./build/studio                 # live theme switching + every polish mod
-./build/pulse                  # real-time dashboard — open two tabs
-```
-
-### Live reload
-
-`scripts/dev.sh` watches the source, rebuilds on save, and the browser updates
-itself — the app's WebSocket client reconnects to the rebuilt server and reloads.
-A failed build keeps the last good server up, so your browser never hangs.
-
-```sh
-scripts/dev.sh splash          # edit examples/splash.cpp, save, watch it update
-scripts/dev.sh orbit build     # a specific target / build dir
-```
-
-Install `inotify-tools` for instant reloads; otherwise it polls once a second.
-
-## Repository
-
-- `DESIGN.md` — architecture, philosophy, risk assessment
-- `PLAN.md` — phased build plan with gates
-- `spike/` — the Phase 0 proof: DSL, tests, runner
-- `reference/maya/` — the TUI framework being ported from (git-ignored; clone [1ay1/maya](https://github.com/1ay1/maya) here to follow the source citations)
-
-## Requirements
-
-GCC 15+ with `-std=c++26` (uses P2741 computed `static_assert` messages). The
-dev server (`waya/net/serve.hpp`) is POSIX-only for now.
-
-```sh
-cmake -S . -B build && cmake --build build -j && ctest --test-dir build
-```
+- **Tests:** `ctest --test-dir build` — the suite is green on every push (CI).
+- **Warnings:** the whole tree builds `-Werror` clean (`cmake -DWAYA_WERROR=ON`).
+- **Sanitizers:** all tests pass under ASan+UBSan (`cmake -DWAYA_SANITIZE=ON`);
+  the concurrent live runtime is TSan-clean under load.
 
 ## License
 

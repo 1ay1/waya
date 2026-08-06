@@ -86,6 +86,9 @@ never touch.** You describe *what* to show; waya owns *how* to show it.
 - :material-rocket-launch: **[Getting Started](01-getting-started.md)**
   Install, build, and run your first app in a few minutes.
 
+- :material-school: **[Tutorial: Build a To-Do App](tutorial-todo.md)**
+  A zero-to-finished, line-by-line walkthrough. Start here if you're new.
+
 - :material-brain: **[The Mental Model](02-mental-model.md)**
   Surfaces, nodes, mods, and the Elm loop — the whole idea in one page.
 
