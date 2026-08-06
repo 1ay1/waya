@@ -1,15 +1,16 @@
 #!/bin/sh
-# tests/serve_smoke.sh — verify a waya app serves its shell + client.
+# tests/serve_smoke.sh - verify a waya app serves its shell + client.
 # A waya app's page is a bare shell (#root) plus the client that streams the
 # surface over a WebSocket; the UI itself never appears in the initial HTML.
 
 set -u
 APP="${1:?path to app binary}"
 PORT="${2:-8137}"
+LOG="${TMPDIR:-/tmp}/waya_serve.$$.log"
 
-WAYA_PORT="$PORT" WAYA_NO_OPEN=1 "$APP" >/tmp/waya_serve.log 2>&1 &
+WAYA_PORT="$PORT" WAYA_NO_OPEN=1 "$APP" >"$LOG" 2>&1 &
 PID=$!
-trap 'kill "$PID" 2>/dev/null' EXIT
+trap 'kill "$PID" 2>/dev/null; rm -f "$LOG" 2>/dev/null' EXIT
 
 i=0
 while [ "$i" -lt 30 ]; do

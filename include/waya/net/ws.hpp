@@ -14,8 +14,9 @@
 #include <string>
 #include <string_view>
 
-#include <unistd.h>
-#include <sys/socket.h>
+// This file is a PURE codec (handshake + frame encode/decode) and makes no
+// syscalls, so it needs no platform sockets headers — it compiles unchanged on
+// POSIX and Windows. The actual socket I/O lives in the runtime (live.hpp).
 
 namespace waya::ws {
 

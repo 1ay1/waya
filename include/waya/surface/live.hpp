@@ -47,6 +47,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// SIGPIPE avoidance is platform-specific. Linux offers the MSG_NOSIGNAL send
+// flag; macOS/BSD historically don't (they use the SO_NOSIGPIPE socket option
+// and/or ignoring SIGPIPE). We ignore SIGPIPE globally in live() AND pass this
+// flag where available, so a client vanishing mid-send never kills the process.
+#ifndef MSG_NOSIGNAL
+#define WAYA_MSG_NOSIGNAL 0
+#else
+#define WAYA_MSG_NOSIGNAL MSG_NOSIGNAL
+#endif
+
 #ifdef WAYA_GZIP
 #include <zlib.h>
 #endif
@@ -470,13 +480,13 @@ struct Session {
     void send_binary(const std::string& frame) {
         if (!alive) return;
         std::lock_guard<std::mutex> l(wm);
-        if (::send(conn, frame.data(), frame.size(), MSG_NOSIGNAL) < 0) alive = false;
+        if (::send(conn, frame.data(), frame.size(), WAYA_MSG_NOSIGNAL) < 0) alive = false;
     }
     void send_text(const std::string& s) {
         if (!alive) return;
         auto f = ws::encode_text(s);
         std::lock_guard<std::mutex> l(wm);
-        if (::send(conn, f.data(), f.size(), MSG_NOSIGNAL) < 0) alive = false;
+        if (::send(conn, f.data(), f.size(), WAYA_MSG_NOSIGNAL) < 0) alive = false;
     }
 };
 
@@ -987,7 +997,9 @@ int live(LiveConfig cfg = {}) {
             std::fprintf(stderr, "waya: on your network at http://%s:%d\n", lan.c_str(), cfg.port);
     }
     if (cfg.open && !std::getenv("WAYA_NO_OPEN")) {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+        std::system(("start \"\" \"" + url + "\"").c_str());
+#elif defined(__APPLE__)
         std::system(("open '"+url+"' >/dev/null 2>&1 &").c_str());
 #else
         std::system(("xdg-open '"+url+"' >/dev/null 2>&1 &").c_str());
