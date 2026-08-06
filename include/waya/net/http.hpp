@@ -15,6 +15,7 @@
 /// Cmd::fetch/task. Blocking is fine there; one request, one thread, then gone.
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -153,16 +154,27 @@ inline Response parse_response(const std::string& raw) {
         }
         pos = next;
     }
-    // de-chunk if needed
+    // de-chunk if needed. A hostile/truncated response can declare a chunk
+    // length longer than the actual body, or a negative/overflowing hex length;
+    // every access below is bounds-checked so a bad response yields a short body
+    // rather than an out_of_range throw or an OOB read.
     for (auto& [k, v] : r.headers) {
         if (k.size() == 17 && (k[0]|32) == 't' && v.find("chunked") != std::string::npos) {
             std::string out; std::size_t i = 0;
             while (i < r.body.size()) {
                 std::size_t nl = r.body.find("\r\n", i); if (nl == std::string::npos) break;
-                long len = std::strtol(r.body.substr(i, nl - i).c_str(), nullptr, 16);
-                if (len <= 0) break;
-                out += r.body.substr(nl + 2, len);
-                i = nl + 2 + len + 2;
+                // parse the hex chunk size (ignoring any ;chunk-extension)
+                std::string szline = r.body.substr(i, nl - i);
+                errno = 0;
+                long long len = std::strtoll(szline.c_str(), nullptr, 16);
+                if (len <= 0 || errno) break;                      // 0 = terminator; <0/overflow = malformed
+                std::size_t data = nl + 2;                          // start of chunk data
+                if (data > r.body.size()) break;
+                std::size_t avail = r.body.size() - data;
+                std::size_t take = (std::size_t)len <= avail ? (std::size_t)len : avail;
+                out.append(r.body, data, take);
+                if (take < (std::size_t)len) break;                 // truncated: stop cleanly
+                i = data + take + 2;                                // skip data + trailing CRLF
             }
             r.body = std::move(out);
             break;

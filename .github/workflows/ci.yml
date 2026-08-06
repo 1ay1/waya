@@ -93,3 +93,31 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+  # Build with ThreadSanitizer and exercise the concurrent live runtime. The
+  # multi-threaded connection handling (one thread per WS connection + the
+  # broadcast Hub) must stay data-race-free under load.
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC 15 (C++26)
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-15 g++-15 cmake ninja-build
+          echo "CXX=g++-15" >> "$GITHUB_ENV"
+          echo "CC=gcc-15" >> "$GITHUB_ENV"
+
+      - name: Configure (TSan)
+        run: cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DWAYA_TSAN=ON
+
+      - name: Build
+        run: cmake --build build-tsan -j
+
+      - name: Test
+        run: ctest --test-dir build-tsan --output-on-failure
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1

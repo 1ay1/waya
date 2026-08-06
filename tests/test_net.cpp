@@ -65,6 +65,44 @@ int main() {
         auto r = http::detail::parse_response(raw);
         check(r.body == "hello world", "http chunked decoded");
     }
+    // ── adversarial chunked responses must never over-read / throw ────────────
+    {
+        // chunk declares more bytes than present → take what's there, stop clean
+        std::string over = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                           "ff\r\nhi";   // says 255 bytes, only "hi" follows
+        auto r1 = http::detail::parse_response(over);
+        check(r1.body == "hi", "oversized chunk length is clamped, not OOB");
+
+        // negative / garbage hex length → no crash, empty-ish body
+        std::string neg = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                          "-1\r\nboom\r\n";
+        auto r2 = http::detail::parse_response(neg);
+        check(r2.body.empty(), "negative chunk length rejected");
+
+        // huge hex length that overflows long long → rejected via errno
+        std::string huge = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                           "ffffffffffffffffffff\r\nx\r\n";
+        auto r3 = http::detail::parse_response(huge);
+        check(r3.body.size() <= 1, "overflowing chunk length rejected");
+
+        // truncated header (no \r\n\r\n) → whole thing is head, no crash
+        auto r4 = http::detail::parse_response("HTTP/1.1 200 OK\r\nX: y");
+        check(r4.status == 200, "truncated response still yields status");
+    }
+    // ── HTTP parse fuzz: no raw bytes may crash parse_response ──────────────────
+    {
+        const char alpha[] = "HTTP/1. 20\r\nTransfer-Encoding: chunked\r\n\r\n0123456789abcdef:; ";
+        std::uint64_t s = 0x1234567890abcdefull;
+        auto rnd = [&]{ s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; };
+        for (int iter = 0; iter < 20000; ++iter) {
+            std::string buf;
+            std::size_t n = rnd() % 80;
+            for (std::size_t i = 0; i < n; ++i) buf.push_back(alpha[rnd() % (sizeof(alpha)-1)]);
+            (void)http::detail::parse_response(buf);   // must not crash / throw
+            (void)http::parse_cookies(buf);
+        }
+        check(true, "HTTP fuzz: 20k random responses, no crash");
+    }
     // url parsing
     {
         auto u = http::detail::parse_url("https://api.example.com:8443/v1/pay?x=1");

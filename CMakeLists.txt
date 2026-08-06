@@ -45,6 +45,9 @@ endif()
 # into errors in CI with -DWAYA_WERROR=ON.
 option(WAYA_WERROR "Treat warnings as errors for waya's own targets" OFF)
 option(WAYA_SANITIZE "Build waya's own targets with ASan+UBSan" OFF)
+# ThreadSanitizer for the concurrent live runtime (mutually exclusive with
+# ASan/UBSan). Catches data races in the per-connection threads + broadcast Hub.
+option(WAYA_TSAN "Build waya's own targets with ThreadSanitizer" OFF)
 # Strict surface validation: refuse to render a structurally-invalid tree
 # (aborts with a spec-quoting message on the first bad view). Makes "impossible
 # UIs can't ship" literal. On for tests; opt-in for apps via -DWAYA_STRICT=ON.
@@ -63,6 +66,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(waya_dev_flags INTERFACE
             -fsanitize=address,undefined)
+    endif()
+    if(WAYA_TSAN)
+        target_compile_options(waya_dev_flags INTERFACE
+            -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(waya_dev_flags INTERFACE
+            -fsanitize=thread)
     endif()
 endif()
 if(WAYA_STRICT)
