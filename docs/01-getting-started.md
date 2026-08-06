@@ -13,14 +13,39 @@ line of it.
 waya is **header-only** — there is nothing to compile into a `.a`/`.so`. You
 just add the include directory and link the system threads library.
 
+## The `waya` command
+
+The repo ships a single launcher — like `npm` or `cargo` — so you never have
+to remember the underlying cmake invocations. It runs on Linux, macOS, the BSDs,
+and Windows (Git-Bash / WSL, or `waya.cmd` from cmd/PowerShell):
+
+```sh
+./waya new my-app     # scaffold a fresh app
+./waya dev            # watch, rebuild & live-reload in the browser
+./waya run            # build then serve once
+./waya list           # list example targets
+./waya doctor         # check your toolchain
+```
+
+Put it on your PATH (`ln -s "$PWD/waya" ~/.local/bin/waya`) and drop the `./`.
+Every command takes an optional target and flags like `--port` / `--no-open`:
+
+```sh
+waya dev palette
+waya run counter --port 9000 --no-open
+```
+
 ## Install
 
 The fastest start is the scaffolder — it generates a complete, building app:
 
 ```sh
-scripts/create-waya-app.sh my-app && cd my-app
-cmake -S . -B build && cmake --build build && ./build/my-app
+./waya new my-app && cd my-app
+waya run          # builds, then serves on http://localhost:8080
 ```
+
+(Under the hood `waya new` calls `scripts/create-waya-app.sh`; you can run that
+directly too.)
 
 To add waya to an existing project, pick one of the following.
 

@@ -1,0 +1,241 @@
+#!/bin/sh
+# waya - the one command for a waya project.
+#
+# A tiny, dependency-free launcher (like `npm`/`cargo`) that wraps the whole
+# workflow so you never have to remember the underlying cmake / script names.
+#
+#   waya new <name> [dir]     scaffold a fresh app (fetches waya via CMake)
+#   waya dev [target]         watch + rebuild + live-reload in the browser
+#   waya build [target]       configure (if needed) and build one target
+#   waya run [target]         build then run the server (Ctrl-C to stop)
+#   waya serve [target]       alias for `run`
+#   waya list                 list the example targets you can dev/run
+#   waya clean                remove the build directory
+#   waya doctor               check your toolchain (cmake, compiler, watcher)
+#   waya help                 this text
+#
+# Options common to dev/build/run:
+#   -d, --build-dir <dir>     build directory        (default: build)
+#   -p, --port <n>            server port             (sets WAYA_PORT)
+#       --host <addr>         bind address            (sets WAYA_HOST)
+#       --no-open             don't auto-open the browser
+#   -j, --jobs <n>            parallel build jobs     (sets JOBS)
+#
+# Pure POSIX sh. Runs on Linux, macOS, the BSDs, and Windows under
+# MSYS2 / Git-Bash / Cygwin / WSL. Native Windows cmd/PowerShell: use waya.cmd.
+#
+# ASCII only (a non-ASCII byte in a double-quoted string breaks `set -u` on
+# some BSD shells).
+
+set -u
+
+# ── Locate the repo root (the dir holding this script) ───────────────────────
+SELF="$0"
+# Resolve symlinks so `waya` can be symlinked onto PATH and still find scripts/.
+while [ -h "$SELF" ]; do
+    _l="$(readlink "$SELF")"
+    case "$_l" in /*) SELF="$_l" ;; *) SELF="$(dirname "$SELF")/$_l" ;; esac
+done
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
+SCRIPTS="$ROOT/scripts"
+
+# ── Colours (TTY only) ───────────────────────────────────────────────────────
+if [ -t 1 ]; then C='\033[36m'; B='\033[1m'; R='\033[31m'; Y='\033[33m'; G='\033[32m'; Z='\033[0m'
+else C=''; B=''; R=''; Y=''; G=''; Z=''; fi
+say()  { printf '%bwaya%b %b\n' "$C" "$Z" "$*"; }
+die()  { printf '%bwaya%b %berror%b %b\n' "$C" "$Z" "$R" "$Z" "$*" >&2; exit 1; }
+ok()   { printf '  %bok%b   %b\n' "$G" "$Z" "$*"; }
+bad()  { printf '  %bmiss%b %b\n' "$R" "$Z" "$*"; }
+note() { printf '  %b--%b   %b\n' "$Y" "$Z" "$*"; }
+
+BUILD="build"
+
+# ── Parse the shared options out of "$@", leaving positionals in REST ─────────
+REST=""
+parse_opts() {
+    REST=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -d|--build-dir) BUILD="${2:?--build-dir needs a value}"; shift 2 ;;
+            -p|--port)      WAYA_PORT="${2:?--port needs a value}"; export WAYA_PORT; shift 2 ;;
+            --host)         WAYA_HOST="${2:?--host needs a value}"; export WAYA_HOST; shift 2 ;;
+            --no-open)      WAYA_NO_OPEN=1; export WAYA_NO_OPEN; shift ;;
+            -j|--jobs)      JOBS="${2:?--jobs needs a value}"; export JOBS; shift 2 ;;
+            --)             shift; while [ $# -gt 0 ]; do REST="$REST $1"; shift; done ;;
+            -*)             die "unknown option: $1  (try: waya help)" ;;
+            *)              REST="$REST $1"; shift ;;
+        esac
+    done
+    REST="${REST# }"
+}
+
+# ── The example targets, scraped from CMakeLists.txt (single source of truth) ─
+examples() {
+    grep -oE 'foreach\(ex [^)]*' "$ROOT/CMakeLists.txt" 2>/dev/null | sed 's/foreach(ex //'
+}
+
+# Resolve $BUILD to an absolute path: absolute inputs (e.g. -d /tmp/x) are used
+# as-is; relative ones are anchored at the repo root, so `waya` works no matter
+# what directory you invoke it from.
+abs_build() {
+    case "$BUILD" in
+        /*|?:*) printf '%s' "$BUILD" ;;              # /abs on POSIX, C:\ on Windows
+        *)      printf '%s' "$ROOT/$BUILD" ;;
+    esac
+}
+
+need_cmake() {
+    command -v cmake >/dev/null 2>&1 || die "cmake not found - install CMake >= 3.28 (try: waya doctor)."
+}
+
+# ── Subcommands ──────────────────────────────────────────────────────────────
+cmd_new() {
+    parse_opts "$@"
+    set -- $REST
+    [ $# -ge 1 ] || die "usage: waya new <name> [dir]"
+    say "scaffolding ${B}$1${Z}..."
+    sh "$SCRIPTS/create-waya-app.sh" "$@"
+}
+
+cmd_dev() {
+    parse_opts "$@"
+    set -- $REST
+    target="${1:-counter}"
+    need_cmake
+    # dev.sh takes (target, build-dir) positionally; honours WAYA_PORT/HOST/JOBS.
+    exec sh "$SCRIPTS/dev.sh" "$target" "$BUILD"
+}
+
+cmd_build() {
+    parse_opts "$@"
+    set -- $REST
+    target="${1:-counter}"
+    need_cmake
+    bdir="$(abs_build)"
+    [ -f "$bdir/CMakeCache.txt" ] || {
+        say "configuring ${B}$BUILD${Z}..."
+        cmake -S "$ROOT" -B "$bdir" || die "configure failed."
+    }
+    say "building ${B}$target${Z}..."
+    cmake --build "$bdir" --target "$target" ${JOBS:+-j "$JOBS"} \
+        || die "build failed."
+    ok "built -> $BUILD/$target"
+}
+
+find_binary() {
+    _t="$1"; _bd="$(abs_build)"
+    for cand in "$_bd/$_t" "$_bd/$_t.exe" \
+                "$_bd"/*/"$_t" "$_bd"/*/"$_t.exe"; do
+        [ -f "$cand" ] && [ -x "$cand" ] && { printf '%s' "$cand"; return 0; }
+    done
+    _b="$(find "$_bd" \( -name "$_t" -o -name "$_t.exe" \) -type f 2>/dev/null | head -1)"
+    [ -n "$_b" ] && [ -x "$_b" ] && { printf '%s' "$_b"; return 0; }
+    return 1
+}
+
+cmd_run() {
+    parse_opts "$@"
+    set -- $REST
+    target="${1:-counter}"
+    cmd_build "$target" -d "$BUILD"
+    bin="$(find_binary "$target")" || die "no binary produced for '$target'."
+    say "running ${B}$target${Z}  (Ctrl-C to stop)"
+    exec "$bin"
+}
+
+cmd_list() {
+    say "example targets (use with dev / run / build):"
+    for t in $(examples); do printf '  %s\n' "$t"; done
+}
+
+cmd_clean() {
+    parse_opts "$@"
+    bdir="$(abs_build)"
+    if [ -d "$bdir" ]; then
+        rm -rf "$bdir"
+        say "removed ${B}$BUILD${Z}."
+    else
+        say "nothing to clean ($BUILD does not exist)."
+    fi
+}
+
+cmd_doctor() {
+    say "checking your toolchain..."
+    if command -v cmake >/dev/null 2>&1; then
+        ok "cmake     $(cmake --version 2>/dev/null | head -1 | awk '{print $3}')"
+    else
+        bad "cmake     not found - install CMake >= 3.28"
+    fi
+
+    cxx=""
+    for c in "${CXX:-}" c++ g++ clang++; do
+        [ -n "$c" ] && command -v "$c" >/dev/null 2>&1 && { cxx="$c"; break; }
+    done
+    if [ -n "$cxx" ]; then
+        ok "compiler  $cxx ($("$cxx" --version 2>/dev/null | head -1))"
+        note "waya needs C++26 (GCC 15+ / recent Clang)."
+    else
+        bad "compiler  no c++/g++/clang++ on PATH"
+    fi
+
+    if command -v fswatch >/dev/null 2>&1; then
+        ok "watcher   fswatch (instant live-reload)"
+    elif command -v inotifywait >/dev/null 2>&1; then
+        ok "watcher   inotifywait (instant live-reload)"
+    else
+        note "watcher   none - dev uses mtime polling (works, ~1s latency)."
+        note "          faster: 'brew install fswatch' or 'apt install inotify-tools'."
+    fi
+
+    case "$(uname -s 2>/dev/null)" in
+        MINGW*|MSYS*|CYGWIN*) note "platform  Windows POSIX layer detected - the runtime works here." ;;
+        *) : ;;
+    esac
+}
+
+usage() {
+    cat <<EOF
+${B}waya${Z} - the one command for a waya project.
+
+${B}Usage:${Z}  waya <command> [target] [options]
+
+${B}Commands:${Z}
+  new <name> [dir]   scaffold a fresh app (self-contained, fetches waya)
+  dev [target]       watch, rebuild & live-reload   (default target: counter)
+  build [target]     configure if needed, then build one target
+  run [target]       build then run the server      (alias: serve)
+  list               list the example targets
+  clean              remove the build directory
+  doctor             check cmake / compiler / file watcher
+  help               show this
+
+${B}Options${Z} (for dev / build / run):
+  -d, --build-dir <dir>   build directory     (default: build)
+  -p, --port <n>          server port         (WAYA_PORT)
+      --host <addr>       bind address        (WAYA_HOST)
+      --no-open           don't open a browser
+  -j, --jobs <n>          parallel build jobs (JOBS)
+
+${B}Examples:${Z}
+  waya new my-app && cd my-app && waya run
+  waya dev palette
+  waya run counter --port 9000 --no-open
+  waya list
+EOF
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+CMD="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$CMD" in
+    new|create)        cmd_new "$@" ;;
+    dev|watch)         cmd_dev "$@" ;;
+    build|b)           cmd_build "$@" ;;
+    run|serve|start)   cmd_run "$@" ;;
+    list|ls|examples)  cmd_list ;;
+    clean)             cmd_clean "$@" ;;
+    doctor|check)      cmd_doctor ;;
+    help|-h|--help|"") usage ;;
+    *)                 printf '%bwaya%b %berror%b unknown command: %s\n\n' "$C" "$Z" "$R" "$Z" "$CMD" >&2; usage; exit 1 ;;
+esac

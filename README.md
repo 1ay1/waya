@@ -104,6 +104,20 @@ full walkthrough.
 
 ## Run the examples
 
+The repo ships a single `waya` command — like `npm` or `cargo` — that wraps
+build, run, scaffold, and live-reload. It works on Linux, macOS, the BSDs, and
+Windows (Git-Bash / WSL, or `waya.cmd` from cmd/PowerShell):
+
+```sh
+./waya run splash     # build & serve       → http://localhost:8080
+./waya list           # every example target
+./waya dev            # watch + rebuild + live-reload
+./waya doctor         # check your toolchain
+```
+
+Symlink it onto your PATH (`ln -s "$PWD/waya" ~/.local/bin/waya`) and drop the
+`./`. Prefer raw cmake? That still works:
+
 ```sh
 cmake -S . -B build && cmake --build build -j
 ./build/splash    # an animated landing page          → http://localhost:8080
@@ -115,11 +129,12 @@ cmake -S . -B build && cmake --build build -j
 
 ### Live reload
 
-`scripts/dev.sh` watches the source, rebuilds on save, and the browser reloads
-itself. A failed build keeps the last good server up.
+`waya dev` (or `scripts/dev.sh`) watches the source, rebuilds on save, and the
+browser reloads itself. A failed build keeps the last good server up.
 
 ```sh
-scripts/dev.sh splash          # edit examples/splash.cpp, save, watch it update
+waya dev splash                # edit examples/splash.cpp, save, watch it update
+waya dev counter --port 9000   # pick a target, port, --no-open, etc.
 ```
 
 ## Documentation
