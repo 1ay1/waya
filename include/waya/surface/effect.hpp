@@ -94,15 +94,38 @@ public:
     struct Navigate { std::string url; bool replace = false; };
     /// history.pushState the URL without triggering a route (deep-link sync).
     struct PushUrl  { std::string url; };
-    /// An HTTP request; the response BODY becomes a Msg via `on_done`. GET by
-    /// default; set method/headers/body for POST/PUT/auth'd JSON APIs. Runs on
-    /// a worker thread. https:// requires the runtime built with -DWAYA_TLS.
+    /// The outcome of a `Fetch`, delivered to `on_response`. Lets an app tell a
+    /// 404/500/timeout apart from a legitimately-empty 200 — `status == 0` means
+    /// the request never completed (DNS/connect/timeout/TLS-not-built). `ok()`
+    /// mirrors http::Response::ok() (2xx). This is the honest, no-silent-drop
+    /// path; the string `on_done` overload stays as sugar for the happy case.
+    struct Response {
+        int status = 0;
+        std::string body;
+        std::vector<std::pair<std::string,std::string>> headers;
+        bool ok() const { return status >= 200 && status < 300; }
+        std::string header(std::string_view k) const {
+            for (auto& [hk, hv] : headers) {
+                if (hk.size() != k.size()) continue;
+                bool eq = true;
+                for (std::size_t i = 0; i < k.size(); ++i)
+                    if ((hk[i]|32) != (k[i]|32)) { eq = false; break; }
+                if (eq) return hv;
+            }
+            return {};
+        }
+    };
+    /// An HTTP request. Exactly ONE of `on_done` (body only) / `on_response`
+    /// (full status+headers+body) is set. GET by default; set method/headers/
+    /// body for POST/PUT/auth'd JSON APIs. Runs on a worker thread. https://
+    /// requires the runtime built with -DWAYA_TLS.
     struct Fetch    {
         std::string url;
         std::function<Msg(std::string)> on_done;
         std::string method = "GET";
         std::vector<std::pair<std::string,std::string>> headers;
         std::string body;
+        std::function<Msg(Response)> on_response;   // richer: set instead of on_done
     };
     /// Publish `payload` to everyone subscribed to `topic` (incl. self). The
     /// sender doesn't know or care who's listening — each receiver's
@@ -142,6 +165,25 @@ public:
                     std::string body, std::function<Msg(std::string)> on_done) {
         return Cmd(Alt{Fetch{std::move(url), std::move(on_done), std::move(method),
                              std::move(headers), std::move(body)}});
+    }
+    /// `fetch_full(url, on)` — like fetch, but `on` receives the full Response
+    /// (status, headers, body) so you can branch on 404/500/timeout instead of
+    /// getting an empty string you can't distinguish from a real empty 200.
+    static Cmd fetch_full(std::string url, std::function<Msg(Response)> on) {
+        return Cmd(Alt{Fetch{std::move(url), {}, "GET", {}, {}, std::move(on)}});
+    }
+    /// `post_full(url, body, on)` — POST with a full-Response callback.
+    static Cmd post_full(std::string url, std::string body, std::function<Msg(Response)> on,
+                         std::string content_type = "application/json") {
+        return Cmd(Alt{Fetch{std::move(url), {}, "POST",
+                             {{"Content-Type", std::move(content_type)}}, std::move(body), std::move(on)}});
+    }
+    /// `http_full(method, url, headers, body, on)` — any request, full Response.
+    static Cmd http_full(std::string method, std::string url,
+                         std::vector<std::pair<std::string,std::string>> headers,
+                         std::string body, std::function<Msg(Response)> on) {
+        return Cmd(Alt{Fetch{std::move(url), {}, std::move(method),
+                             std::move(headers), std::move(body), std::move(on)}});
     }
     /// Publish to a topic. Every session subscribed via Sub::on_topic(topic,..)
     /// — this one included — receives `payload` and maps it to its own Msg.
@@ -200,8 +242,16 @@ public:
                 });
             },
             [&](const Fetch& ft) -> Cmd<B> {
+                if (ft.on_response) {
+                    return Cmd<B>::http_full(ft.method, ft.url, ft.headers, ft.body,
+                        [on = ft.on_response, mapper = f](typename Cmd<B>::Response r) -> B {
+                            // translate our Response into the child's Response shape
+                            typename Cmd<Msg>::Response cr{r.status, std::move(r.body), std::move(r.headers)};
+                            return mapper(on(std::move(cr)));
+                        });
+                }
                 return Cmd<B>::http(ft.method, ft.url, ft.headers, ft.body,
-                    [on = ft.on_done, mapper = std::forward<F>(f)](std::string body) -> B {
+                    [on = ft.on_done, mapper = f](std::string body) -> B {
                         return mapper(on(std::move(body)));
                     });
             },

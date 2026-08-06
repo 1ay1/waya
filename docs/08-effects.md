@@ -81,6 +81,26 @@ The client runs on a bounded worker pool (never the model loop) and does real
 DNS, arbitrary methods, request headers + body, and a timeout. The mapper gets
 the response body (empty on error, so your handler always fires).
 
+#### Need the status? Use the `_full` variants
+
+`fetch`/`post`/`http` hand you the body only — which means a `404`, a `500`, or a
+timeout arrives as an empty string you can't tell apart from a legitimate empty
+`200`. When that distinction matters, use `fetch_full` / `post_full` /
+`http_full`: your callback receives the whole `Response` — `status`, `headers`,
+`body`, `ok()`, and a case-insensitive `header(name)`:
+
+```cpp
+[&](Load){ return { m.loading(), Cmd<Msg>::fetch_full("https://api.dev/items",
+    [](Cmd<Msg>::Response r) -> Msg {
+        if (r.status == 0)   return LoadFailed{ "network error" };   // never completed
+        if (!r.ok())         return LoadFailed{ "HTTP " + std::to_string(r.status) };
+        return Loaded{ r.body };
+    }) }; }
+```
+
+`status == 0` means the request never completed (DNS/connect/timeout, or an
+`https://` URL without `-DWAYA_TLS`). No outcome is ever silently dropped.
+
 **HTTPS** requires the runtime built with `-DWAYA_TLS=ON` (links OpenSSL);
 without it, `https://` URLs fail cleanly (empty body) rather than talking
 plaintext.

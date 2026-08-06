@@ -53,6 +53,33 @@ constexpr void check_program() {
     static_assert(requires { { P::init() } -> std::convertible_to<typename P::Model>; }
                || requires { { P::init() } -> std::convertible_to<std::pair<typename P::Model, Cmd<typename P::Msg>>>; },
         "waya: your Program needs `static Model init()` (or `static std::pair<Model,Cmd<Msg>> init()`).");
+
+    // `update` is optional (a static app has none), but if the app defines ANY
+    // callable named `update`, it MUST match one of the four supported shapes.
+    // Otherwise a typo’d signature (wrong param order, missing const, returning
+    // the wrong type) silently compiles as “no update” and every message is a
+    // no-op — a maddening bug. We detect “has some update” vs “has a VALID
+    // update” and fire a targeted error on the mismatch.
+    {
+        using M = typename P::Model;
+        using Msg = typename P::Msg;
+        using C = Cmd<Msg>;
+        constexpr bool has_any_update =
+            requires(M m, Msg g, std::string v){ P::update(m, g, v); } ||
+            requires(M m, Msg g){ P::update(m, g); };
+        constexpr bool has_valid_update =
+            requires(M m, Msg g){ { P::update(m, g) } -> std::convertible_to<M>; } ||
+            requires(M m, Msg g){ { P::update(m, g) } -> std::convertible_to<std::pair<M, C>>; } ||
+            requires(M m, Msg g, std::string v){ { P::update(m, g, v) } -> std::convertible_to<M>; } ||
+            requires(M m, Msg g, std::string v){ { P::update(m, g, v) } -> std::convertible_to<std::pair<M, C>>; };
+        static_assert(!has_any_update || has_valid_update,
+            "waya: your `update` doesn't match a supported shape. It must be one of:\n"
+            "  static Model update(Model, Msg);\n"
+            "  static Model update(Model, Msg, std::string value);      // for input values\n"
+            "  static std::pair<Model,Cmd<Msg>> update(Model, Msg);     // with effects\n"
+            "  static std::pair<Model,Cmd<Msg>> update(Model, Msg, std::string value);\n"
+            "Check the parameter order/types and the return type.");
+    }
 }
 
 namespace detail {

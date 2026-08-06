@@ -403,7 +403,21 @@ private:
             { std::unique_lock<std::mutex> l(m_);
               cv_.wait(l, [this]{ return !jobs_.empty(); });
               job = std::move(jobs_.front()); jobs_.pop_front(); }
-            try { job(); } catch (...) { /* an effect must never kill a worker */ }
+            try { job(); }
+            catch (const std::exception& e) {
+                // An effect must never kill a worker — but a silently-dropped
+                // effect is a debugging nightmare, so surface it loudly in debug.
+#ifndef NDEBUG
+                std::fprintf(stderr, "waya: effect threw (dropped): %s\n", e.what());
+#else
+                (void)e;
+#endif
+            }
+            catch (...) {
+#ifndef NDEBUG
+                std::fprintf(stderr, "waya: effect threw (dropped): unknown exception\n");
+#endif
+            }
         }
     }
     std::mutex m_;
@@ -495,7 +509,13 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
                 http::Response rr = http::request({
                     .method = req.method, .url = req.url,
                     .headers = req.headers, .body = req.body });
-                Msg r = req.on_done(std::move(rr.body));
+                // on_response gets the honest, full outcome (status/headers/body
+                // — status 0 == the request never completed); on_done is the
+                // body-only sugar. Exactly one is set.
+                Msg r = req.on_response
+                    ? req.on_response(typename Cmd<Msg>::Response{
+                          rr.status, std::move(rr.body), std::move(rr.headers) })
+                    : req.on_done(std::move(rr.body));
                 if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(std::any{r});
             });
         },

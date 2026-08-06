@@ -117,6 +117,24 @@ int main() {
     { auto h = html_of(box(text("x")) | attr("data-safe", "javascript:ok"));
       check(has(h, "data-safe=\"javascript:ok\""), "non-URL attr keeps its value verbatim"); }
 
+    // ── markup escape hatch: guard rail + safe alternative ───────────────────
+    // markup() with active content is flagged (accidental XSS via user input).
+    check(has_rule(markup("<b>ok</b><script>evil()</script>"), "markup-unsafe"),
+          "markup with <script> flagged");
+    check(has_rule(markup("<img src=x onerror=alert(1)>"), "markup-unsafe"),
+          "markup with on*= handler flagged");
+    check(!has_rule(markup("<b>bold</b> <i>italic</i>"), "markup-unsafe"),
+          "benign markup is fine");
+    // sanitized_html strips the dangerous bits, keeps formatting
+    { auto h = html_of(sanitized_html("<b>hi</b><script>evil()</script>"));
+      check(has(h, "<b>hi</b>") && !has(h, "<script"), "sanitized_html drops <script>"); }
+    { auto h = html_of(sanitized_html("<a href=\"javascript:evil()\">x</a>"));
+      check(!has(h, "javascript:"), "sanitized_html neutralises javascript: url"); }
+    { auto h = html_of(sanitized_html("<div onclick=\"evil()\">click</div>"));
+      check(!has(h, "onclick"), "sanitized_html strips inline handler"); }
+    check(verify(sanitized_html("<b>hi</b><script>x</script>")),
+          "sanitized_html output passes validation");
+
     std::cout << "test_safety: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

@@ -300,7 +300,45 @@ inline NodeRef video(std::string src){ auto n=std::make_shared<Node>(); n->kind=
 inline NodeRef audio(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::audio; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
 /// `markup(html)` — inject TRUSTED raw HTML (rich text, an SVG icon, embedded
 /// content). The one primitive that is NOT auto-escaped — never pass user input.
+/// (Debug/strict builds flag markup that carries <script>/on*= as `markup-unsafe`.)
 inline NodeRef markup(std::string html){ auto n=std::make_shared<Node>(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n; }
+/// `sanitized_html(html)` — render rich HTML from a POSSIBLY-UNTRUSTED source
+/// (markdown output, CMS/user content). Strips `<script>`/`<style>`/`<iframe>`
+/// blocks, `on*=` inline handlers, and `javascript:` URLs before injecting, so
+/// formatting survives but active content can't. When in doubt, reach for this
+/// instead of markup(). (Not a full HTML sanitiser — for high-stakes untrusted
+/// input, sanitise server-side with a dedicated library; this is a safe default.)
+inline NodeRef sanitized_html(std::string html){
+    auto lower=[&](const std::string& s){ std::string o; o.reserve(s.size()); for(char c:s) o+=(char)((c>='A'&&c<='Z')?c+32:c); return o; };
+    // drop <script|style|iframe|object|embed ...>...</...> blocks
+    for(const char* tag : {"script","style","iframe","object","embed"}){
+        std::string open="<"; open+=tag; std::string close="</"; close+=tag; close+=">";
+        for(;;){
+            std::string lo=lower(html);
+            auto s=lo.find(open); if(s==std::string::npos) break;
+            auto e=lo.find(close, s);
+            auto end = (e==std::string::npos) ? html.size() : e+close.size();
+            html.erase(s, end-s);
+        }
+    }
+    // strip inline event handlers  on...="..."  / on...='...'
+    { std::string lo=lower(html); std::size_t i=0;
+      while((i=lo.find(" on", i))!=std::string::npos){
+        std::size_t eq=lo.find('=', i);
+        // only treat as a handler if it's on<word>=
+        bool word=true; for(std::size_t j=i+3;j<eq && j<lo.size();++j){ char c=lo[j]; if(!((c>='a'&&c<='z'))){ word=false; break; } }
+        if(eq==std::string::npos||!word){ i+=3; continue; }
+        std::size_t vs=eq+1; char q = (vs<html.size()? html[vs] : '\0');
+        std::size_t ve;
+        if(q=='"'||q=='\''){ ve=html.find(q, vs+1); ve=(ve==std::string::npos)?html.size():ve+1; }
+        else { ve=html.find_first_of(" >", vs); ve=(ve==std::string::npos)?html.size():ve; }
+        html.erase(i, ve-i); lo=lower(html);
+      } }
+    // neutralise javascript: URLs
+    { std::string lo=lower(html); std::size_t i=0;
+      while((i=lo.find("javascript:", i))!=std::string::npos){ html.replace(i,11,"#"); lo=lower(html); i+=1; } }
+    auto n=std::make_shared<Node>(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ONE uniform modifier. maya's principle: everything is a node, and everything

@@ -53,6 +53,7 @@ The rules:
 | `empty-select` | a `select` with no options — an unusable, unchoosable dropdown |
 | `duplicate-key` | two sibling nodes sharing a `key` — silently corrupts the keyed-list move-diff |
 | `dead-handler` | an event handler wired to no real `Msg` — a click that does nothing |
+| `markup-unsafe` | `markup(...)` whose raw HTML carries a `<script>` / `javascript:` / `on*=` handler — almost always user input in the trusted channel |
 
 These are the "wait, it caught that?" moments — the mistakes every web dev makes
 on autopilot, surfaced immediately with a message that tells you the fix. The
@@ -75,8 +76,18 @@ hand-escape anything:
 text("x") | attr("title", user_supplied)   // safe: quotes become &quot;
 ```
 
-The one explicit opt-out is `markup(html)`, which emits raw trusted HTML. It's
-named to signal danger — only pass content you control.
+The one explicit opt-out is `markup(html)`, which emits raw trusted HTML — only
+pass content you control. If you need to render rich HTML from an *untrusted*
+source (markdown output, CMS/user content), reach for `sanitized_html(html)`
+instead: it strips `<script>`/`<style>`/`<iframe>` blocks, inline `on*=` event
+handlers, and `javascript:` URLs, so formatting survives but active content
+can't. And the `markup-unsafe` validator rule (above) catches the case where
+active content slipped into `markup()` by accident.
+
+```cpp
+markup(trusted_svg)                 // you control this — fine
+sanitized_html(rendered_markdown)   // untrusted — scripts/handlers stripped
+```
 
 ## URL sanitisation
 
