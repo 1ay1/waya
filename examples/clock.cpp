@@ -69,6 +69,9 @@ struct Clock {
         };
 
         // A tiny two-screen router: the same Model, a different view per route.
+        // Each screen carries a stable key, so switching routes is ONE keyed
+        // replace of the body — not a node-by-node morph of one screen into the
+        // other (which would wastefully reuse the clock digit as the heading).
         NodeRef body = (m.route == "/about")
             ? col(
                 text("about") | fg(0xe2e8f0) | font(40) | weight(Weight::black),
@@ -76,7 +79,7 @@ struct Clock {
                      "The seconds tick over a WebSocket; only the digit that "
                      "changed is sent.") | fg(0x94a3b8) | font(16)
                      | css("max-width", "34rem") | css("line-height", "1.6")
-              ) | gap(16) | center
+              ) | key("screen:about") | gap(16) | center
             : col(
                 text(hhmmss(m.seconds)) | fg(0x818cf8) | font(76) | weight(Weight::black)
                     | css("font-variant-numeric", "tabular-nums"),
@@ -86,12 +89,12 @@ struct Clock {
                 ) | gap(12),
                 (m.flash ? (text("saved ✓") | fg(0x34d399) | font(14) | semibold)
                          : (text("") | css("height", "1.25rem")))
-              ) | gap(24) | center;
+              ) | key("screen:clock") | gap(24) | center;
 
         return col(
             row(
-                link("clock", GoHome,  m.route != "/about"),
-                link("about", GoAbout, m.route == "/about")
+                link("clock", GoHome,  m.route != "/about") | key("nav:clock"),
+                link("about", GoAbout, m.route == "/about") | key("nav:about")
             ) | gap(20),
             body
         ) | center | gap(36) | pad(56) | round(24) | bg(0x111827)

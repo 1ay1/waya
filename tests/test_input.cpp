@@ -207,6 +207,29 @@ int main() {
         CHECK(keys(work) == keys(b));
     }
 
+    // ── same-position, DIFFERENT key → one replace, not a morph ──────────────
+    // Two screens sharing a slot (a route switch): keying them makes the diff a
+    // single replace instead of morphing one screen's nodes into the other's.
+    {
+        auto screenA = col(text("clock"), text("00:00")) | key("screen:clock");
+        auto screenB = col(text("about"), text("info"))  | key("screen:about");
+        finalize(*screenA); finalize(*screenB);
+        auto p = diff(screenA, screenB);
+        CHECK(p.size() == 1);
+        CHECK(p[0].op == Op::replace);       // identity changed → replace whole subtree
+        CHECK(p[0].path == "");
+    }
+    // SAME key, changed content → still a normal in-place diff (no replace).
+    {
+        auto a = col(text("a"), text("1")) | key("s");
+        auto b = col(text("a"), text("2")) | key("s");
+        finalize(*a); finalize(*b);
+        auto p = diff(a, b);
+        bool no_replace = true; for (auto& op : p) if (op.op == Op::replace) no_replace = false;
+        CHECK(no_replace);
+        CHECK(p.size() == 1 && p[0].op == Op::set_text && p[0].s == "2");
+    }
+
     // A keyed insert carries a target index (encodes as insert_at on the wire).
     {
         auto a = list({"a","b"});

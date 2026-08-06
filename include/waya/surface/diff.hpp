@@ -122,6 +122,15 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
 
     if (a.kind != b.kind) { out.push_back({Op::replace, path, {}, bref}); return; }
 
+    // Identity check: if both nodes carry a key and the keys DIFFER, they are
+    // semantically different nodes that happen to share a position (e.g. two
+    // route screens). Replace as one op instead of morphing one into the other
+    // — cheaper on the wire AND correct (no cross-identity DOM reuse). Matches
+    // React/Elm keyed reconciliation.
+    if (!a.key.empty() && !b.key.empty() && a.key != b.key) {
+        out.push_back({Op::replace, path, {}, bref}); return;
+    }
+
     // paint/flow delta (applies to every kind)
     if (a.style != b.style || a.on_tap != b.on_tap)
         out.push_back({Op::set_paint, path, {}, bref});
