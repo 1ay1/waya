@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
@@ -222,6 +223,8 @@ inline void finalize(Node& n){
 namespace detail {
 inline void push(std::vector<NodeRef>&){}
 template<typename... R> void push(std::vector<NodeRef>& v, NodeRef n, R... r){ v.push_back(std::move(n)); push(v,std::move(r)...); }
+/// #rrggbb string from a 0xRRGGBB int — used by many colour-taking mods.
+inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; }
 }
 template <typename... Cs> NodeRef box(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
 template <typename... Cs> NodeRef row(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::row; finalize(*n); return n; }
@@ -383,12 +386,98 @@ inline Mod scale(float f){ return sty([=](Style& s){ s.extra.emplace_back("trans
 inline Mod rotate(float deg){ return sty([=](Style& s){ s.extra.emplace_back("transform","rotate("+std::to_string((int)deg)+"deg)"); }); }
 inline Mod stroke(std::uint32_t color, float width_=2){ return sty([=](Style& s){ s.has_fg=true; s.fg=color; s.has_stroke_w=true; s.stroke_w=width_; }); }
 
+// ── motion ─ composable animation mods over the shell's @keyframes library ───
+// Each just sets the `animation` shorthand referencing a `wa-*` keyframe defined
+// once in the page shell. They compose with everything and automatically honour
+// prefers-reduced-motion (the shell neutralises animations for that preference).
+/// `animate("wa-fade-up", 400)` — the general form: any keyframe by name, a
+/// duration in ms, and an easing. Use the named helpers below for the common ones.
+inline Mod animate(std::string keyframes, int ms=400, std::string ease="cubic-bezier(.2,.7,.2,1)", std::string fill="both"){
+    return sty([=](Style& s){ s.extra.emplace_back("animation",
+        keyframes + " " + std::to_string(ms) + "ms " + ease + " " + fill); });
+}
+// Entrances (play once): the polish that makes new content feel alive.
+inline Mod fade_in(int ms=300){ return animate("wa-fade", ms); }
+inline Mod fade_up(int ms=400){ return animate("wa-fade-up", ms); }
+inline Mod fade_down(int ms=400){ return animate("wa-fade-down", ms); }
+inline Mod slide_in(int ms=400){ return animate("wa-slide-left", ms); }
+inline Mod slide_in_left(int ms=400){ return animate("wa-slide-right", ms); }
+inline Mod pop_in(int ms=350){ return animate("wa-pop", ms); }
+// Loops (infinite): spinners, attention, live indicators.
+inline Mod spin(int ms=900){ return sty([=](Style& s){ s.extra.emplace_back("animation",
+    "wa-spin " + std::to_string(ms) + "ms linear infinite"); }); }
+inline Mod pulse(int ms=1600){ return sty([=](Style& s){ s.extra.emplace_back("animation",
+    "wa-pulse " + std::to_string(ms) + "ms ease-in-out infinite"); }); }
+inline Mod bounce(int ms=900){ return sty([=](Style& s){ s.extra.emplace_back("animation",
+    "wa-bounce " + std::to_string(ms) + "ms ease-in-out infinite"); }); }
+inline Mod ping(int ms=1200){ return sty([=](Style& s){ s.extra.emplace_back("animation",
+    "wa-ping " + std::to_string(ms) + "ms cubic-bezier(0,0,.2,1) infinite"); }); }
+/// `shimmer()` — a moving sheen for skeleton loaders. Sets its own gradient bg.
+inline Mod shimmer(std::uint32_t base=0x1e293b, std::uint32_t hi=0x334155, int ms=1400){
+    return sty([=](Style& s){
+        s.extra.emplace_back("background",
+            "linear-gradient(90deg,"+detail::hexstr(base)+" 25%,"+detail::hexstr(hi)+" 37%,"+detail::hexstr(base)+" 63%)");
+        s.extra.emplace_back("background-size","200% 100%");
+        s.extra.emplace_back("animation","wa-shimmer "+std::to_string(ms)+"ms linear infinite");
+    });
+}
+/// `delay(ms)` — stagger an entrance (pair with fade_up in an each() index).
+inline Mod delay(int ms){ return sty([=](Style& s){ s.extra.emplace_back("animation-delay", std::to_string(ms)+"ms"); }); }
+
+// ── elevation & modern surface effects ────────────────────────────────
+/// `elevation(3)` — a Material-style depth scale (1–5). Higher = more lifted.
+/// Reads as real depth (layered, tinted shadows), not a flat drop-shadow.
+inline Mod elevation(int level){
+    static const char* E[] = {
+        "none",
+        "0 1px 2px rgba(0,0,0,.30)",
+        "0 2px 4px rgba(0,0,0,.30),0 1px 2px rgba(0,0,0,.25)",
+        "0 6px 12px rgba(0,0,0,.32),0 2px 4px rgba(0,0,0,.28)",
+        "0 12px 24px rgba(0,0,0,.34),0 4px 8px rgba(0,0,0,.28)",
+        "0 24px 48px rgba(0,0,0,.40),0 8px 16px rgba(0,0,0,.30)",
+    };
+    int i = level<0?0:level>5?5:level;
+    return sty([=](Style& s){ s.extra.emplace_back("box-shadow", E[i]); });
+}
+/// `glow(color)` — a soft coloured halo (brand buttons, active/live states).
+inline Mod glow(std::uint32_t color, int spread=24){
+    auto h = detail::hexstr(color);
+    return sty([=](Style& s){ s.extra.emplace_back("box-shadow",
+        "0 0 "+std::to_string(spread)+"px "+h+"66, 0 0 "+std::to_string(spread/2)+"px "+h+"44"); });
+}
+/// `ring(color, width)` — a focus/selection ring (outline that doesn't shift layout).
+inline Mod ring(std::uint32_t color, int width=2){
+    return sty([=](Style& s){ s.extra.emplace_back("box-shadow",
+        "0 0 0 "+std::to_string(width)+"px "+detail::hexstr(color)); });
+}
+/// `glass(blur, tint)` — frosted-glass panel: translucent tint + backdrop blur.
+/// The modern "floating panel over content" look, in one word.
+inline Mod glass(int blur_px=14, std::uint32_t tint=0xffffff, float alpha=0.08f){
+    auto h = detail::hexstr(tint);
+    char a[3]; std::snprintf(a, sizeof(a), "%02x", (int)(alpha*255));
+    return sty([=](Style& s){
+        s.extra.emplace_back("background", h + std::string(a));
+        s.extra.emplace_back("backdrop-filter", "blur("+std::to_string(blur_px)+"px)");
+        s.extra.emplace_back("-webkit-backdrop-filter", "blur("+std::to_string(blur_px)+"px)");
+        s.extra.emplace_back("border", "1px solid "+h+"22");
+    });
+}
+
+// ── typography presets ─ composable text styles (still overridable by | mods) ─
+/// The type scale. `display` is the biggest (hero/title); use with `text(...)`.
+inline const Mod display  = sty([](Style& s){ s.font_size={32,Unit::px}; s.weight=Weight::black; s.line_height=1.1f; s.has_lh=true; });
+inline const Mod heading  = sty([](Style& s){ s.font_size={24,Unit::px}; s.weight=Weight::bold;  s.line_height=1.2f; s.has_lh=true; });
+inline const Mod subtitle = sty([](Style& s){ s.font_size={18,Unit::px}; s.weight=Weight::semibold; });
+inline const Mod body     = sty([](Style& s){ s.font_size={15,Unit::px}; s.line_height=1.6f; s.has_lh=true; });
+inline const Mod caption  = sty([](Style& s){ s.font_size={13,Unit::px}; });
+inline const Mod label    = sty([](Style& s){ s.font_size={12,Unit::px}; s.weight=Weight::semibold; s.extra.emplace_back("text-transform","uppercase"); s.extra.emplace_back("letter-spacing",".06em"); });
+inline const Mod mono     = sty([](Style& s){ s.extra.emplace_back("font-family","ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"); });
+
 // ── image fit ───────────────────────────────────────────────────────────
 inline const Mod cover   = sty([](Style& s){ s.extra.emplace_back("object-fit","cover"); });
 inline const Mod contain = sty([](Style& s){ s.extra.emplace_back("object-fit","contain"); });
 
-// ── gradients (delightful sugar over the universal channel) ──────────────
-namespace detail { inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; } }
+// ── gradients (delightful sugar over the universal channel) ─────────────
 inline Mod gradient(std::uint32_t a, std::uint32_t b, int deg=90){
     return sty([=](Style& s){ s.extra.emplace_back("background",
         "linear-gradient("+std::to_string(deg)+"deg,"+detail::hexstr(a)+","+detail::hexstr(b)+")"); }); }

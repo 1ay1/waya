@@ -686,6 +686,22 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
         // the mobile browser chrome; the app root fills width + stretches.
         "#root{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:stretch;background:inherit}"
         "#root>*{flex:1 0 auto}"
+        // Motion library: a fixed set of @keyframes the animation mods reference
+        // by name (spin/pulse/shimmer/fade/slide/bounce). Defined ONCE here so
+        // animations cost nothing per element — a mod just sets `animation:...`.
+        "@keyframes wa-spin{to{transform:rotate(360deg)}}"
+        "@keyframes wa-pulse{0%,100%{opacity:1}50%{opacity:.45}}"
+        "@keyframes wa-ping{75%,100%{transform:scale(2);opacity:0}}"
+        "@keyframes wa-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-25%)}}"
+        "@keyframes wa-shimmer{100%{background-position:-200% 0}}"
+        "@keyframes wa-fade{from{opacity:0}to{opacity:1}}"
+        "@keyframes wa-fade-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}"
+        "@keyframes wa-fade-down{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}"
+        "@keyframes wa-slide-left{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}"
+        "@keyframes wa-slide-right{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}"
+        "@keyframes wa-pop{0%{opacity:0;transform:scale(.92)}60%{transform:scale(1.02)}100%{opacity:1;transform:none}}"
+        // Respect the user's reduced-motion preference — accessibility, by default.
+        "@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}"
         "</style>"
         "<style id=\"wsheet\"></style>"
         "</head><body><div id=\"root\"></div>" + client(port) + "</body></html>";

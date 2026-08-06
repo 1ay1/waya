@@ -150,6 +150,44 @@ int main() {
         CHECK(has(c, "56"));
     }
 
+    // ── polish layer: motion / elevation / glass / typography / theme ───────
+    {
+        // motion mods reference the shell's wa-* keyframes via `animation`
+        CHECK(has(css_of(box() | spin()),      "animation:wa-spin"));
+        CHECK(has(css_of(box() | pulse()),     "animation:wa-pulse"));
+        CHECK(has(css_of(box() | fade_up()),   "animation:wa-fade-up"));
+        CHECK(has(css_of(box() | pop_in()),    "animation:wa-pop"));
+        CHECK(has(css_of(box() | animate("wa-fade", 250)), "wa-fade 250ms"));
+        CHECK(has(css_of(box() | shimmer()),   "animation:wa-shimmer"));
+        CHECK(has(css_of(box() | delay(120)),  "animation-delay:120ms"));
+    }
+    {
+        // elevation is a shadow scale; glow/ring/glass are modern surface effects
+        CHECK(has(css_of(box() | elevation(3)), "box-shadow:"));
+        CHECK(has(css_of(box() | glow(0x6366f1)), "box-shadow:"));
+        CHECK(has(css_of(box() | ring(0x22d3ee, 2)), "box-shadow:0 0 0 2px"));
+        auto g = css_of(box() | glass());
+        CHECK(has(g, "backdrop-filter:blur"));
+    }
+    {
+        // typography presets set size/weight, still overridable afterwards
+        CHECK(has(css_of(text("x") | display), "font-size:32px"));
+        CHECK(has(css_of(text("x") | heading), "font-weight:700") || has(css_of(text("x") | heading), "font-size:24px"));
+        CHECK(has(css_of(text("x") | label),   "text-transform:uppercase"));
+        CHECK(has(css_of(text("x") | mono),    "ui-monospace"));
+        // override wins: display then a bigger font
+        CHECK(has(css_of(text("x") | display | font(50)), "font-size:50px"));
+    }
+    {
+        // theme tokens: theme() emits CSS vars at the root; token mods read them
+        auto root = css_of(box() | theme(Theme{}));
+        CHECK(has(root, "--wa-primary:"));
+        CHECK(has(root, "--wa-surface:"));
+        CHECK(has(css_of(box() | bg_surface), "var(--wa-surface)"));
+        CHECK(has(css_of(text("x") | fg_primary), "var(--wa-primary)"));
+        CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line)"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

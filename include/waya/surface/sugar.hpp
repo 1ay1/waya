@@ -34,6 +34,59 @@ inline constexpr std::uint32_t white     = 0xffffff;
 // `pad(sp(4))` == 16px. Small numbers, harmonious spacing.
 inline float sp(int step){ return step * 4.f; }
 
+// Theme tokens — semantic colours that flow through CSS variables.
+// A design-token system: name colours by ROLE (surface, primary, on_surface),
+// set them ONCE at the root with `theme(t)`, and every node that uses a token
+// mod (`bg_surface`, `fg_primary`…) reads the live value. Recolour a whole app —
+// or ship dark/light — by swapping the Theme at the root. Nodes stay decoupled
+// from concrete hex: maximally modular + reusable.
+struct Theme {
+    std::uint32_t bg       = color::bg0;    // page background
+    std::uint32_t surface  = color::bg1;    // cards / panels
+    std::uint32_t raised   = color::bg2;    // raised surface
+    std::uint32_t line     = color::line;   // borders
+    std::uint32_t text     = color::ink;    // primary text
+    std::uint32_t muted    = color::muted;  // secondary text
+    std::uint32_t primary  = color::brand;  // brand / accent
+    std::uint32_t accent   = color::brand2; // secondary accent
+    std::uint32_t success  = color::good;
+    std::uint32_t warning  = color::warn;
+    std::uint32_t danger   = color::bad;
+    std::uint32_t on_primary = color::white;// text on a primary surface
+};
+
+namespace detail {
+inline void put_var(Style& s, const char* name, std::uint32_t c){ s.extra.emplace_back(name, hexstr(c)); }
+}
+
+/// `theme(t)` — a ROOT mod: declares every token as a CSS variable, so all
+/// descendants can read `var(--wa-primary)` etc. Put it on your page/app root.
+inline Mod theme(const Theme& t){
+    return sty([=](Style& s){
+        detail::put_var(s, "--wa-bg", t.bg);          detail::put_var(s, "--wa-surface", t.surface);
+        detail::put_var(s, "--wa-raised", t.raised);  detail::put_var(s, "--wa-line", t.line);
+        detail::put_var(s, "--wa-text", t.text);      detail::put_var(s, "--wa-muted", t.muted);
+        detail::put_var(s, "--wa-primary", t.primary); detail::put_var(s, "--wa-accent", t.accent);
+        detail::put_var(s, "--wa-success", t.success); detail::put_var(s, "--wa-warning", t.warning);
+        detail::put_var(s, "--wa-danger", t.danger);   detail::put_var(s, "--wa-on-primary", t.on_primary);
+    });
+}
+
+// Token mods — use these instead of raw fg()/bg() to stay themeable. Each reads
+// the live CSS variable set by `theme(...)` at the root.
+inline Mod fg_token(const char* var){ return sty([=](Style& s){ s.extra.emplace_back("color", std::string("var(")+var+")"); }); }
+inline Mod bg_token(const char* var){ return sty([=](Style& s){ s.extra.emplace_back("background", std::string("var(")+var+")"); }); }
+inline const Mod fg_text    = fg_token("--wa-text");
+inline const Mod fg_muted   = fg_token("--wa-muted");
+inline const Mod fg_primary = fg_token("--wa-primary");
+inline const Mod fg_on_primary = fg_token("--wa-on-primary");
+inline const Mod bg_surface = bg_token("--wa-surface");
+inline const Mod bg_raised  = bg_token("--wa-raised");
+inline const Mod bg_primary = bg_token("--wa-primary");
+inline const Mod bg_page    = bg_token("--wa-bg");
+/// `border_token()` — a 1px border in the theme's line colour.
+inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line)"); }); }
+
 // ── Combinators ─────────────────────────────────────────────────────────
 
 /// `when(cond, node)` — the node, or an empty (zero-size) box when false. So
