@@ -21,6 +21,24 @@ target_compile_features(waya INTERFACE cxx_std_26)
 find_package(Threads REQUIRED)
 target_link_libraries(waya INTERFACE Threads::Threads)
 
+# ── Optional runtime features ───────────────────────────────────────
+# TLS enables HTTPS in Cmd::fetch/post (real external APIs). Off by default so
+# the base library has zero external deps; turn on with -DWAYA_TLS=ON.
+option(WAYA_TLS "Enable HTTPS in the HTTP client (requires OpenSSL)" OFF)
+if(WAYA_TLS)
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(waya INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(waya INTERFACE WAYA_TLS)
+endif()
+
+# GZIP compresses the SSR first paint (smaller first byte). Requires zlib.
+option(WAYA_GZIP "Gzip-compress the SSR HTML (requires zlib)" OFF)
+if(WAYA_GZIP)
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(waya INTERFACE ZLIB::ZLIB)
+    target_compile_definitions(waya INTERFACE WAYA_GZIP)
+endif()
+
 # ── Developer warning / sanitizer options ───────────────────────────────────
 # An INTERFACE target carrying strict warnings, linked by waya's OWN targets
 # (tests + examples) only — never forced on library consumers. Turn warnings
