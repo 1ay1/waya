@@ -301,6 +301,18 @@ int main() {
         CHECK(!has(DomBackend{}.render(*popover(false, text("t"), text("p"))).html, "backdrop-filter") ||
                !has(DomBackend{}.render(*popover(false, text("t"), text("p"))).css, "backdrop-filter"));
     }
+    {
+        // overlay actually COVERS the viewport (inset:0), pads off edges, fades in
+        auto c = css_of(overlay(text("x")));
+        CHECK(has(c, "position:fixed") && has(c, "inset:0"));
+        CHECK(has(c, "padding:clamp") && has(c, "wa-fade"));
+        // pin() and inset(0,..) emit inset via extra so explicit 0 isn't dropped
+        CHECK(has(css_of(box() | fixed | pin()), "inset:0"));
+        CHECK(has(css_of(box() | inset(px(0), px(0), px(0), px(0))), "inset:0px 0px 0px 0px"));
+        // dialog panel has a solid themed-with-fallback surface (not transparent)
+        struct Cl{}; auto d = DomBackend{}.render(*dialog(true, Cl{}, text("x"))).css;
+        CHECK(has(d, "var(--wa-surface, #141b2e)"));
+    }
 
     // ── flashy mods: aurora / glow_text / float / breathe / gradient_border ───
     {

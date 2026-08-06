@@ -391,7 +391,15 @@ inline Mod absolute(Len top_={}, Len left_={}){ return sty([=](Style& s){ s.pos=
 inline const Mod fixed  = sty([](Style& s){ s.pos=Pos::fixed; });
 inline const Mod sticky = sty([](Style& s){ s.pos=Pos::sticky; });
 inline const Mod relative = sty([](Style& s){ s.pos=Pos::relative; });
-inline Mod inset(Len t, Len r, Len b, Len l){ return sty([=](Style& s){ s.top=t; s.right=r; s.bottom=b; s.left=l; }); }
+inline Mod inset(Len t, Len r, Len b, Len l){
+    // Emit the CSS `inset` shorthand via the extra channel, so an explicit 0
+    // works (Len{0} would be treated as "unset" by the top/left/… path).
+    auto v=[](Len x){ return x.unit==Unit::pct? std::to_string((int)x.value)+"%" : std::to_string((int)x.value)+"px"; };
+    return sty([=](Style& s){ s.extra.emplace_back("inset", v(t)+" "+v(r)+" "+v(b)+" "+v(l)); });
+}
+/// `pin()` — stretch to all four edges of the nearest positioned ancestor
+/// (inset:0). Pair with `absolute`/`fixed`. The overlay/full-bleed primitive.
+inline Mod pin(){ return sty([](Style& s){ s.extra.emplace_back("inset", "0"); }); }
 inline Mod z(int zi){ return sty([=](Style& s){ s.has_z=true; s.z=zi; }); }
 
 // ── effects ──────────────────────────────────────────────────────────────

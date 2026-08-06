@@ -280,17 +280,24 @@ inline NodeRef fragment(std::vector<NodeRef> kids){
 // tree (so the diff still owns it) but escapes the normal layout flow — exactly
 // what a modal/menu needs. Content is centered by default; pass mods to place it.
 
-/// `overlay(content)` — a fixed full-screen layer above the page (z 1000),
-/// content centered. Add `tap(Close)` for a click-away backdrop.
+/// `overlay(content)` — a fixed full-screen dim layer above the page, content
+/// centred. The backdrop fades in; the content is padded off the edges so a
+/// dialog never touches the screen on small viewports. Add `tap(Close)` for a
+/// click-away, and `stop()` on the panel so content clicks don't close it.
 inline NodeRef overlay(NodeRef content){
     auto n = box(std::move(content));
     auto& s = n->style;
     s.pos = Pos::fixed;
-    s.top = {0,Unit::px}; s.left = {0,Unit::px}; s.right = {0,Unit::px}; s.bottom = {0,Unit::px};
     s.has_z = true; s.z = 1000;
     s.flow = Flow::col; s.justify = Justify::center; s.align = Align::center;
-    s.extra.emplace_back("background", "rgba(0,0,0,.55)");
-    s.extra.emplace_back("backdrop-filter", "blur(2px)");
+    // inset:0 via the extra channel (Len{0} reads as "unset", so top/left/… must
+    // go here) — this is what actually makes the layer cover the viewport.
+    s.extra.emplace_back("inset", "0");
+    s.extra.emplace_back("padding", "clamp(16px, 5vw, 40px)");   // never hug the edges
+    s.extra.emplace_back("background", "rgba(4,6,12,.62)");
+    s.extra.emplace_back("backdrop-filter", "blur(6px)");
+    s.extra.emplace_back("-webkit-backdrop-filter", "blur(6px)");
+    s.extra.emplace_back("animation", "wa-fade 200ms ease both");
     finalize(*n);
     return n;
 }
@@ -306,8 +313,13 @@ template <typename Msg, typename... Cs>
 NodeRef dialog(bool open, Msg close_msg, Cs... panel_children){
     if (!open) return box();
     auto panel = col(std::move(panel_children)...)
-        | gap(16) | pad(28) | round(20) | bg_surface | border_token()
-        | elevation(5) | css("max-width", "28rem") | css("width", "100%")
+        | gap(16) | pad(28) | round(20)
+        // a solid raised surface that works with OR without a theme (var falls
+        // back to a dark slate), a hairline edge, and a deep soft shadow.
+        | css("background", "var(--wa-surface, #141b2e)")
+        | css("border", "1px solid var(--wa-line, rgba(255,255,255,.10))")
+        | css("box-shadow", "0 24px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)")
+        | css("max-width", "28rem") | css("width", "100%")
         | stop() | pop_in(180);
     return overlay(std::move(panel)) | tap(close_msg);
 }
