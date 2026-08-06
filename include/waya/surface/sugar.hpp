@@ -147,23 +147,11 @@ inline Mod theme_transition(){ return sty([](Style& s){
 // ── memoization ─ skip rebuilding an expensive subtree when its inputs are same ─
 // The diff already skips UNCHANGED subtrees in O(depth) via the subtree hash, so
 // you rarely need this. Reach for it only when BUILDING a subtree is itself
-// costly (a big list, a heavy chart) and its inputs change rarely: `memo(key,
-// build)` returns the cached NodeRef while `key` is unchanged, skipping `build`.
-// `key` is a hash the caller computes from the subtree's inputs.
-namespace detail {
-inline thread_local std::unordered_map<std::uint64_t, std::pair<std::uint64_t, NodeRef>> g_memo;
-}
-/// `memo(cache_id, deps_hash, [&]{ return … })` — cache_id identifies the memo
-/// slot (one per call-site), deps_hash is the inputs' hash; build runs only when
-/// deps_hash changes.
-template <typename Fn>
-NodeRef memo(std::uint64_t cache_id, std::uint64_t deps_hash, Fn build){
-    auto& slot = detail::g_memo[cache_id];
-    if (!slot.second || slot.first != deps_hash) { slot.first = deps_hash; slot.second = build(); }
-    return slot.second;
-}
+// costly (a big list, a heavy chart) and its inputs change rarely. The ergonomic
+// `memo(props..., build)` and `component(fn)` live in surface/component.hpp —
+// include that for reusable, auto-memoised components.
 
-// ── Combinators ─────────────────────────────────────────────────────────
+// ── Combinators ────────────────────────────────────────────────────────
 
 /// `when(cond, node)` — the node, or an empty (zero-size) box when false. So
 /// `col(header, when(loading, spinner()), body)` just works.

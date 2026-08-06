@@ -90,6 +90,8 @@ using waya::surface::sr_only;    using waya::surface::autofocus;  using waya::su
 using waya::surface::focus_within; using waya::surface::aria_label; using waya::surface::role;
 using waya::surface::aria;       using waya::surface::group;      using waya::surface::group_hidden;
 using waya::surface::ripple;     using waya::surface::name;       using waya::surface::placeholder;
+using waya::surface::key;        using waya::surface::animated;   using waya::surface::memo;
+using waya::surface::component;  using waya::surface::tap;        using waya::surface::disabled;
 
 // ── Layout contexts (phantom tags) ──────────────────────────────────────────
 namespace ctx {

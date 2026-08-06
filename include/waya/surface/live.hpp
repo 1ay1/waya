@@ -26,6 +26,7 @@
 #include "meta.hpp"
 #include "assets.hpp"
 #include "validate.hpp"
+#include "component.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -344,10 +345,18 @@ inline std::string client(int port) {
     // move: op[2]=[from,to]; detach the child at `from`, reinsert before `to`.
     "else if(k===8){var pa=at(p);if(pa){var from=op[2][0],to=op[2][1];var nd=pa.childNodes[from];if(nd){nd.remove();var ref=pa.childNodes[to];pa.insertBefore(nd,ref||null);}}}}"
     // — rAF-coalesced paint: queue frames, apply them all in one animation frame —
+    // With FLIP: before applying, snapshot the positions of [data-wa-flip]
+    // elements; after, animate each from its old box to its new one (a smooth
+    // reorder). Freshly-inserted [data-wa-flip] nodes get an entrance instead.
     "var q=[],raf=0;"
-    "function flush(){raf=0;var frames=q;q=[];"
+    "function flipSnapshot(){var m={};document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');if(k)m[k]=el.getBoundingClientRect();});return m;}"
+    "function flipPlay(prev){document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');var o=prev[k];var n=el.getBoundingClientRect();"
+    "if(!o){el.animate([{opacity:0,transform:'translateY(8px) scale(.98)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.7,.2,1)'});return;}"
+    "var dx=o.left-n.left,dy=o.top-n.top;if(dx||dy){el.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration:260,easing:'cubic-bezier(.2,.7,.2,1)'});}});}"
+    "function flush(){raf=0;var frames=q;q=[];var prev=flipSnapshot();var moved=false;"
     "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)S.textContent+=m.css;"
-    "for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}}"
+    "for(var i=0;i<m.ops.length;i++){var op=m.ops[i];if(op[0]===8||op[0]===9||op[0]===6||op[0]===5)moved=true;apply(op);}}"
+    "if(moved&&Object.keys(prev).length)flipPlay(prev);}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
     // A stable per-tab session id, kept in sessionStorage so it SURVIVES a

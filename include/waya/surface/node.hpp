@@ -934,6 +934,15 @@ inline Mod name(std::string nm){ return {[=](Node& n){ n.name=nm; }}; }
 inline Mod checked(bool on=true){ return {[=](Node& n){ n.checked=on; }}; }
 inline Mod disabled(bool on=true){ return {[=](Node& n){ n.disabled=on; }}; }
 inline Mod key(std::string k){ return {[=](Node& n){ n.key=k; }}; }
+/// `animated()` — mark a keyed list item so the browser smoothly ANIMATES its
+/// motion: it slides from its old position to its new one on reorder (FLIP), and
+/// fades+rises in when first inserted. Put it on each item of a keyed list
+/// alongside `key(...)`; the client tracks it by that key. Beautiful reordering,
+/// insertion, and filtering with zero extra state.
+///   each_keyed(items, key_of, [](auto& it){ return row(...) | key(it.id) | animated(); })
+inline Mod animated(){ return {[](Node& n){
+    // use the node's own key as the FLIP identity (falls back to a stable-ish id)
+    n.attrs.emplace_back("data-wa-flip", n.key.empty()? std::string("_") : n.key); }}; }
 
 // ── the general event mod — wire any DOM event to a Msg ───────────────────
 /// `on("pointerenter", Show{})` — the escape hatch: any DOM event name → Msg. For
