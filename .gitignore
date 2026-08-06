@@ -1,4 +1,20 @@
-reference/
+# Build output
 build/
+out/
 *.o
+
+# Vendored reference sources (maya) — not part of waya
+reference/
+
+# Node (jsdom for the browser-applier tests is installed on demand, never committed)
+node_modules/
+package.json
+package-lock.json
+
+# agentty workspace state
 .agentty/
+
+# Editor / OS
+.DS_Store
+*.swp
+compile_commands.json

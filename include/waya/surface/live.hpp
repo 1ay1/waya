@@ -169,10 +169,32 @@ inline std::string client(int port) {
     "function at(p){var e=R.firstElementChild;if(p==='')return e;var q=p.split('.');"
     "for(var i=0;i<q.length;i++){e=e.childNodes[+q[i]];if(!e)return null;}return e;}"
     "function parent(p){var q=p.split('.');q.pop();return at(q.join('.'));}"
+    // Copy attributes from `nw` onto the live element `e`, deleting stale ones.
+    // Reuses the SAME DOM node, so focus, caret and selection survive an update.
+    "function morphAttrs(e,nw){"
+    "for(var i=e.attributes.length-1;i>=0;i--){var a=e.attributes[i].name;if(!nw.hasAttribute(a))e.removeAttribute(a);}"
+    "for(var j=0;j<nw.attributes.length;j++){var b=nw.attributes[j];if(e.getAttribute(b.name)!==b.value)e.setAttribute(b.name,b.value);}}"
+    // Is `e` a form control the user could be editing right now?
+    "function editable(e){var t=e.tagName;return t==='INPUT'||t==='TEXTAREA'||t==='SELECT';}"
+    // In-place update of a control: morph attrs, but DON'T fight the user for
+    // the value of the field they're focused in (the DOM already holds it).
+    "function morphControl(e,nw){var focused=(document.activeElement===e);morphAttrs(e,nw);"
+    "if(!focused){if(nw.tagName==='SELECT'){e.value=nw.value;}"
+    "else if('value'in nw&&e.value!==nw.value){e.value=nw.value;}"
+    "if('checked'in nw&&e.checked!==nw.checked)e.checked=nw.checked;"
+    "if('textContent'in nw&&nw.tagName==='TEXTAREA'&&e.value!==nw.value)e.value=nw.value;}}"
     "function apply(op){var k=op[0],p=op[1],e=at(p);"
     "if(k===7){R.innerHTML=op[2];}"
     "else if(k===0){if(e)e.textContent=op[2];}"
-    "else if(k===1||k===2||k===4){if(e)e.replaceWith(frag(op[2]));}"
+    // set_paint(1): a NODE-LEVEL change (style/tap/control value). Morph the
+    // live element in place so focus/caret survive; the node's CHILDREN are
+    // diffed by their own deeper ops, so we only touch attrs here (+ the value
+    // for a leaf control). Fall back to replace only if the tag changed.
+    "else if(k===1){if(e){var nw=frag(op[2]);"
+    "if(!nw||nw.tagName!==e.tagName){if(e&&nw)e.replaceWith(nw);}"
+    "else if(editable(e)){morphControl(e,nw);}"
+    "else{morphAttrs(e,nw);}}}"
+    "else if(k===2||k===4){if(e)e.replaceWith(frag(op[2]));}"
     "else if(k===3){if(e){var f=frag(op[2]);if(e.tagName==='IMG')e.src=f.src;else e.replaceWith(f);}}"
     "else if(k===5){if(e)e.remove();}"
     "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}"

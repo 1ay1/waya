@@ -29,6 +29,8 @@ find_program(WAYA_NODE node)
 if(WAYA_NODE)
     add_test(NAME client_apply
         COMMAND ${WAYA_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/client_apply.test.js)
+    add_test(NAME surface_apply
+        COMMAND ${WAYA_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/surface_apply.test.js)
 endif()
 
 # ── Compile-fail tests: each case MUST NOT compile ───────────────────────────
