@@ -4,6 +4,7 @@
 #include <waya/surface/layout.hpp>
 #include <waya/surface/sugar.hpp>
 #include <waya/surface/dom.hpp>
+#include <waya/surface/diff.hpp>
 #include <iostream>
 #include <string>
 
@@ -186,6 +187,20 @@ int main() {
         CHECK(has(css_of(box() | bg_surface), "var(--wa-surface)"));
         CHECK(has(css_of(text("x") | fg_primary), "var(--wa-primary)"));
         CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line)"));
+        // presets emit distinct palettes
+        CHECK(has(css_of(box() | theme(Theme::light())), "--wa-bg:#f8fafc"));
+        CHECK(has(css_of(box() | theme(Theme::ocean())), "--wa-primary:#14b8a6"));
+        // tint() recolours just the accent
+        CHECK(has(css_of(box() | theme(Theme::dark().tint(0x22c55e))), "--wa-primary:#22c55e"));
+        // themed() paints bg+text from vars with a smooth transition (live switch)
+        auto th = css_of(box() | themed());
+        CHECK(has(th, "background:var(--wa-bg)") && has(th, "color:var(--wa-text)"));
+        CHECK(has(th, "transition:background-color"));
+        // a LIVE theme switch is ONE op (root set_paint); children read vars
+        auto a = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::dark()) | themed();
+        auto b = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::light()) | themed();
+        auto p = diff(a, b);
+        CHECK(p.size() == 1 && p[0].op == Op::set_paint && p[0].path == "");
     }
 
     // ── alignment defaults: a ROW vertically-centres, a COL doesn't force it ─

@@ -40,9 +40,10 @@ inline float sp(int step){ return step * 4.f; }
 // Theme tokens — semantic colours that flow through CSS variables.
 // A design-token system: name colours by ROLE (surface, primary, on_surface),
 // set them ONCE at the root with `theme(t)`, and every node that uses a token
-// mod (`bg_surface`, `fg_primary`…) reads the live value. Recolour a whole app —
-// or ship dark/light — by swapping the Theme at the root. Nodes stay decoupled
-// from concrete hex: maximally modular + reusable.
+// mod (`bg_surface`, `fg_primary`…) reads the live value. Recolour a whole app,
+// ship dark/light, or switch themes LIVE — just swap the Theme at the root and
+// the whole tree re-tints in one paint (nodes read the variables). Nodes stay
+// decoupled from concrete hex: maximally modular + reusable.
 struct Theme {
     std::uint32_t bg       = color::bg0;    // page background
     std::uint32_t surface  = color::bg1;    // cards / panels
@@ -56,6 +57,27 @@ struct Theme {
     std::uint32_t warning  = color::warn;
     std::uint32_t danger   = color::bad;
     std::uint32_t on_primary = color::white;// text on a primary surface
+
+    // ── ready-made presets: `theme(Theme::light())`, `page(t.bg, …)` ──────────
+    static Theme dark()  { return {}; }     // the default (slate/indigo)
+    static Theme light() {
+        return { 0xf8fafc, 0xffffff, 0xf1f5f9, 0xe2e8f0, 0x0f172a, 0x64748b,
+                 0x6366f1, 0x0891b2, 0x059669, 0xd97706, 0xdc2626, 0xffffff };
+    }
+    static Theme midnight() {   // near-black, violet accent
+        return { 0x0a0a0f, 0x14141f, 0x1e1e2e, 0x2a2a3c, 0xe4e4f0, 0x8888a8,
+                 0x8b5cf6, 0x22d3ee, 0x34d399, 0xf59e0b, 0xef4444, 0xffffff };
+    }
+    static Theme ocean() {      // deep teal/cyan
+        return { 0x081c22, 0x0d2b33, 0x123c47, 0x1d5563, 0xe0f2f1, 0x80cbc4,
+                 0x14b8a6, 0x38bdf8, 0x34d399, 0xfbbf24, 0xfb7185, 0x042f2e };
+    }
+    static Theme rose() {       // warm light, rose accent
+        return { 0xfff1f2, 0xffffff, 0xffe4e6, 0xfecdd3, 0x4c0519, 0x9f1239,
+                 0xe11d48, 0xdb2777, 0x059669, 0xd97706, 0xdc2626, 0xffffff };
+    }
+    /// Recolour just the accent, keeping the rest — `Theme::dark().tint(0x22c55e)`.
+    Theme tint(std::uint32_t p, std::uint32_t a = 0) const { Theme t=*this; t.primary=p; if(a) t.accent=a; return t; }
 };
 
 namespace detail {
@@ -64,6 +86,9 @@ inline void put_var(Style& s, const char* name, std::uint32_t c){ s.extra.emplac
 
 /// `theme(t)` — a ROOT mod: declares every token as a CSS variable, so all
 /// descendants can read `var(--wa-primary)` etc. Put it on your page/app root.
+/// Because the variables live on ONE node, switching themes live (store the
+/// Theme in your Model, change it in update) re-tints the whole app in a single
+/// paint — and the colour transition animates smoothly (see below).
 inline Mod theme(const Theme& t){
     return sty([=](Style& s){
         detail::put_var(s, "--wa-bg", t.bg);          detail::put_var(s, "--wa-surface", t.surface);
@@ -82,13 +107,28 @@ inline Mod bg_token(const char* var){ return sty([=](Style& s){ s.extra.emplace_
 inline const Mod fg_text    = fg_token("--wa-text");
 inline const Mod fg_muted   = fg_token("--wa-muted");
 inline const Mod fg_primary = fg_token("--wa-primary");
+inline const Mod fg_accent  = fg_token("--wa-accent");
 inline const Mod fg_on_primary = fg_token("--wa-on-primary");
 inline const Mod bg_surface = bg_token("--wa-surface");
 inline const Mod bg_raised  = bg_token("--wa-raised");
 inline const Mod bg_primary = bg_token("--wa-primary");
+inline const Mod bg_accent  = bg_token("--wa-accent");
 inline const Mod bg_page    = bg_token("--wa-bg");
 /// `border_token()` — a 1px border in the theme's line colour.
 inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line)"); }); }
+/// `themed()` — the everyday combo: page-bg, primary text, and a smooth colour
+/// transition so a LIVE theme switch animates instead of snapping. Put on the
+/// same node as `theme(t)` (typically the page root).
+inline Mod themed(){ return sty([](Style& s){
+    s.extra.emplace_back("background", "var(--wa-bg)");
+    s.extra.emplace_back("color", "var(--wa-text)");
+    s.extra.emplace_back("transition", "background-color .3s ease, color .3s ease");
+}); }
+/// `theme_transition()` — add to any themed node so its colours ease when the
+/// theme changes (cards, borders). One line for a polished live switch.
+inline Mod theme_transition(){ return sty([](Style& s){
+    s.extra.emplace_back("transition", "background-color .3s ease, color .3s ease, border-color .3s ease");
+}); }
 
 // ── memoization ─ skip rebuilding an expensive subtree when its inputs are same ─
 // The diff already skips UNCHANGED subtrees in O(depth) via the subtree hash, so
