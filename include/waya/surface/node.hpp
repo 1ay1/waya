@@ -774,6 +774,40 @@ inline const Mod mono     = sty([](Style& s){ s.extra.emplace_back("font-family"
 // ── image fit ───────────────────────────────────────────────────────────
 inline const Mod cover   = sty([](Style& s){ s.extra.emplace_back("object-fit","cover"); });
 inline const Mod contain = sty([](Style& s){ s.extra.emplace_back("object-fit","contain"); });
+/// `fit("cover"|"contain"|"fill"|"none"|"scale-down")` — explicit object-fit.
+inline Mod fit(std::string how){ return sty([=](Style& s){ s.extra.emplace_back("object-fit", how); }); }
+
+// ── completeness: the everyday properties, named so you never reach for css() ─
+// These fill the last gaps that used to force a raw css("…") in real UIs.
+/// `w_full` / `w_half` / `w_frac(n,d)` — fractional widths without a Len.
+inline const Mod w_full = sty([](Style& s){ s.w={100,Unit::pct}; });
+inline const Mod h_full = sty([](Style& s){ s.h={100,Unit::pct}; });
+inline const Mod w_half = sty([](Style& s){ s.w={50,Unit::pct}; });
+inline const Mod w_screen = sty([](Style& s){ s.extra.emplace_back("width","100vw"); });
+inline const Mod h_screen = sty([](Style& s){ s.extra.emplace_back("min-height","100vh"); });
+inline Mod w_frac(int num, int den){ return sty([=](Style& s){ s.w={100.f*num/den, Unit::pct}; }); }
+/// `square(px)` / `circle(px)` — equal-sided box; circle also rounds fully.
+inline Mod square(float px_){ return sty([=](Style& s){ s.w={px_,Unit::px}; s.h={px_,Unit::px}; }); }
+inline Mod circle(float px_){ return sty([=](Style& s){ s.w={px_,Unit::px}; s.h={px_,Unit::px}; s.radius={9999,Unit::px}; }); }
+/// text decoration — named, no css(). (`underline` already exists; these add the rest.)
+inline const Mod line_through = sty([](Style& s){ s.extra.emplace_back("text-decoration","line-through"); });
+inline const Mod no_underline = sty([](Style& s){ s.extra.emplace_back("text-decoration","none"); });
+inline const Mod pre_wrap      = sty([](Style& s){ s.extra.emplace_back("white-space","pre-wrap"); });
+inline const Mod break_word    = sty([](Style& s){ s.extra.emplace_back("overflow-wrap","anywhere"); });
+/// overflow control, named.
+inline const Mod clip_content = sty([](Style& s){ s.extra.emplace_back("overflow","hidden"); });
+inline const Mod overflow_visible = sty([](Style& s){ s.extra.emplace_back("overflow","visible"); });
+/// interaction / selection.
+inline const Mod select_none = sty([](Style& s){ s.extra.emplace_back("user-select","none"); });
+inline const Mod select_all  = sty([](Style& s){ s.extra.emplace_back("user-select","all"); });
+/// image filters, named (no filter: strings).
+inline Mod grayscale(int pct=100){ return sty([=](Style& s){ s.extra.emplace_back("filter","grayscale("+std::to_string(pct)+"%)"); }); }
+inline Mod brightness(int pct){ return sty([=](Style& s){ s.extra.emplace_back("filter","brightness("+std::to_string(pct)+"%)"); }); }
+inline Mod saturate(int pct){ return sty([=](Style& s){ s.extra.emplace_back("filter","saturate("+std::to_string(pct)+"%)"); }); }
+inline Mod contrast(int pct){ return sty([=](Style& s){ s.extra.emplace_back("filter","contrast("+std::to_string(pct)+"%)"); }); }
+inline Mod sepia(int pct=100){ return sty([=](Style& s){ s.extra.emplace_back("filter","sepia("+std::to_string(pct)+"%)"); }); }
+/// `font_family(stack)` — a named font stack (rarely needed; `mono` covers code).
+inline Mod font_family(std::string stack){ return sty([=](Style& s){ s.extra.emplace_back("font-family", stack); }); }
 
 // ── gradients (delightful sugar over the universal channel) ─────────────
 inline Mod gradient(std::uint32_t a, std::uint32_t b, int deg=90){
@@ -860,8 +894,30 @@ inline Mod frost(int blur_px=14, float alpha=0.05f){
         s.extra.emplace_back("-webkit-backdrop-filter", "blur("+std::to_string(blur_px)+"px)"); }); }
 
 // ── the universal channel — reach ANY css, nothing off-limits ────────────
+// The escape hatches. They keep the vocabulary open-ended — but a team that
+// wants to GUARANTEE its UI is built purely from the named vocabulary (never a
+// hand-written property or HTML attribute) can build with -DWAYA_NO_RAW_CSS,
+// which turns every use below into a COMPILE ERROR. That makes "you never touch
+// HTML/CSS" an enforceable invariant, not just a convention: if it compiles, no
+// raw web strings leaked in. (Named mods still cover the common 90%+; if you hit
+// a genuine gap, add a named mod for it rather than reopening the hatch.)
+#if defined(WAYA_NO_RAW_CSS)
+template <typename... A>
+[[deprecated("WAYA_NO_RAW_CSS: raw css() is disabled — use a named style mod (fg/pad/round/gradient/…) or add one")]]
+Mod css(A...){ static_assert(sizeof...(A)==999, "waya: css() is disabled under WAYA_NO_RAW_CSS — use a named mod"); return {}; }
+template <typename... A>
+[[deprecated("WAYA_NO_RAW_CSS: var() is disabled — use a named mod")]]
+Mod var(A...){ static_assert(sizeof...(A)==999, "waya: var() is disabled under WAYA_NO_RAW_CSS"); return {}; }
+#else
 inline Mod css(std::string prop, std::string value){ return sty([=](Style& s){ s.extra.emplace_back(prop, value); }); }
 inline Mod var(std::string name, std::string value){ return sty([=](Style& s){ s.extra.emplace_back("--"+name, value); }); }
+#endif
+// Library-internal raw-style helper: named mods (hover_lift, press, …) build on
+// this so they keep working even under WAYA_NO_RAW_CSS — the user called a NAMED
+// mod, not css(), so no abstraction leaked. Not part of the public vocabulary.
+namespace detail {
+inline Mod raw_css(std::string prop, std::string value){ return sty([=](Style& s){ s.extra.emplace_back(prop, value); }); }
+}
 
 // ── states & responsive — hover/focus/etc. and breakpoints, also Mods ─────
 enum class State : std::uint8_t { Hover, Focus, Active, Disabled };
@@ -921,22 +977,22 @@ inline Mod only_desktop(){ return hide_below(Break::Md); }
 /// interactive" cue). Bundles the transition + the :hover transform.
 inline Mod hover_lift(float px_=3){
     return transition("transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s ease")
-         | on(Hover, css("transform", "translateY(-"+std::to_string((int)px_)+"px)"));
+         | on(Hover, detail::raw_css("transform", "translateY(-"+std::to_string((int)px_)+"px)"));
 }
 /// `press()` — the node scales down slightly while held (tactile button feel).
 inline Mod press(float to=0.96f){
-    return on(Active, css("transform", "scale("+std::to_string(to)+")"));
+    return on(Active, detail::raw_css("transform", "scale("+std::to_string(to)+")"));
 }
 /// `hover_glow(color)` — a coloured halo blooms on hover (brand buttons, cards).
 inline Mod hover_glow(std::uint32_t color, int spread=26){
     auto h = detail::hexstr(color);
     return transition("box-shadow .22s ease, transform .18s ease")
-         | on(Hover, css("box-shadow", "0 0 "+std::to_string(spread)+"px "+h+"66"));
+         | on(Hover, detail::raw_css("box-shadow", "0 0 "+std::to_string(spread)+"px "+h+"66"));
 }
 /// `hover_bg(color, alpha)` — fill lightens on hover (ghost buttons, list rows).
 inline Mod hover_bg(std::uint32_t color=0xffffff, float alpha=0.08f){
     return transition("background-color .15s ease")
-         | on(Hover, css("background", detail::rgba_hex(color, alpha)));
+         | on(Hover, detail::raw_css("background", detail::rgba_hex(color, alpha)));
 }
 /// `interactive()` — the everyday combo: pointer cursor + lift + press.
 inline Mod interactive(){ return pointer | hover_lift(2) | press(); }

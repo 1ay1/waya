@@ -46,7 +46,7 @@ inline NodeRef divider(bool vertical=false){
 /// Pair with `tap(msg)` or `on("click", …)`.
 inline NodeRef link(std::string label){
     return text(std::move(label)) | fg_primary | pointer
-         | transition("opacity .15s ease") | on(Hover, css("text-decoration","underline"));
+         | transition("opacity .15s ease") | on(Hover, detail::raw_css("text-decoration","underline"));
 }
 
 /// `card(children…)` — the ubiquitous panel: themed surface + border + padding
@@ -67,27 +67,27 @@ enum class Variant { primary, secondary, ghost, danger };
 namespace impl {
 inline Mod button_base(){
     return pad_x(16) | pad_y(10) | round(10) | pointer | semibold
-         | css("border","1px solid transparent")
-         | css("font-size","14px") | css("line-height","1")
-         | css("white-space","nowrap") | css("user-select","none")
+         | detail::raw_css("border","1px solid transparent")
+         | detail::raw_css("font-size","14px") | detail::raw_css("line-height","1")
+         | detail::raw_css("white-space","nowrap") | detail::raw_css("user-select","none")
          | transition("transform .08s ease, background-color .15s ease, opacity .15s ease")
-         | on(Active, css("transform","translateY(1px)"));
+         | on(Active, detail::raw_css("transform","translateY(1px)"));
 }
 inline Mod button_skin(Variant v){
     switch (v){
     case Variant::primary:
         return bg_primary | fg_on_primary
-             | css("box-shadow","0 6px 18px -6px var(--wa-primary, #6366f1)")
-             | on(Hover, css("filter","brightness(1.08)"));
+             | detail::raw_css("box-shadow","0 6px 18px -6px var(--wa-primary, #6366f1)")
+             | on(Hover, detail::raw_css("filter","brightness(1.08)"));
     case Variant::secondary:
-        return bg_raised | fg_text | css("border","1px solid var(--wa-line, rgba(255,255,255,.12))")
-             | on(Hover, css("filter","brightness(1.12)"));
+        return bg_raised | fg_text | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.12))")
+             | on(Hover, detail::raw_css("filter","brightness(1.12)"));
     case Variant::ghost:
-        return css("background","transparent") | fg_text
-             | on(Hover, css("background","var(--wa-raised, rgba(255,255,255,.06))"));
+        return detail::raw_css("background","transparent") | fg_text
+             | on(Hover, detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.06))"));
     case Variant::danger:
-        return css("background","var(--wa-danger, #ef4444)") | css("color","#fff")
-             | on(Hover, css("filter","brightness(1.08)"));
+        return detail::raw_css("background","var(--wa-danger, #ef4444)") | detail::raw_css("color","#fff")
+             | on(Hover, detail::raw_css("filter","brightness(1.08)"));
     }
     return noop;
 }
@@ -118,11 +118,11 @@ NodeRef icon_button(std::string glyph, Msg msg, Variant v = Variant::ghost){
 /// `field("Email", control)` — a labelled control: a small muted label stacked
 /// above any input node. `hint` shows a helper/error line below when non-empty.
 inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
-    auto lab = text(std::move(label)) | fg_muted | css("font-size","12.5px") | semibold
-             | css("letter-spacing",".02em");
+    auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
+             | detail::raw_css("letter-spacing",".02em");
     auto col_ = col(std::move(lab), std::move(control)) | gap(6);
     if (!hint.empty())
-        col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | css("font-size","12px")) | gap(6);
+        col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | detail::raw_css("font-size","12px")) | gap(6);
     return col_;
 }
 
@@ -130,12 +130,12 @@ inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
 /// input()/textarea()/select() so all your fields match. Themed, focus-ringed.
 inline Mod input_skin(){
     return pad_x(12) | pad_y(10) | round(10) | fg_text
-         | css("background","var(--wa-bg, rgba(0,0,0,.25))")
-         | css("border","1px solid var(--wa-line, rgba(255,255,255,.14))")
-         | css("font-size","14px") | css("width","100%") | css("outline","none")
+         | detail::raw_css("background","var(--wa-bg, rgba(0,0,0,.25))")
+         | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.14))")
+         | detail::raw_css("font-size","14px") | detail::raw_css("width","100%") | detail::raw_css("outline","none")
          | transition("border-color .15s ease, box-shadow .15s ease")
-         | on(Focus, css("border-color","var(--wa-primary, #6366f1)"))
-         | on(Focus, css("box-shadow","0 0 0 3px color-mix(in srgb, var(--wa-primary, #6366f1) 30%, transparent)"));
+         | on(Focus, detail::raw_css("border-color","var(--wa-primary, #6366f1)"))
+         | on(Focus, detail::raw_css("box-shadow","0 0 0 3px color-mix(in srgb, var(--wa-primary, #6366f1) 30%, transparent)"));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,27 +158,27 @@ inline std::pair<const char*, const char*> tone_colors(Tone t){
 inline NodeRef badge(std::string label, Tone tone = Tone::neutral){
     auto [bgc, fgc] = impl::tone_colors(tone);
     return text(std::move(label)) | pad_x(9) | pad_y(3) | round(999)
-         | css("background", bgc) | css("color", fgc)
-         | css("font-size","12px") | semibold | css("white-space","nowrap")
-         | css("line-height","1.4");
+         | detail::raw_css("background", bgc) | detail::raw_css("color", fgc)
+         | detail::raw_css("font-size","12px") | semibold | detail::raw_css("white-space","nowrap")
+         | detail::raw_css("line-height","1.4");
 }
 
 /// `dot(tone)` — a tiny status dot (online/away/error).
 inline NodeRef dot(Tone tone = Tone::success){
     auto [c, _] = impl::tone_colors(tone); (void)_;
-    return box() | w(8) | h(8) | round(999) | css("background", c) | css("flex","0 0 auto");
+    return box() | w(8) | h(8) | round(999) | detail::raw_css("background", c) | detail::raw_css("flex","0 0 auto");
 }
 
 /// `avatar("AB")` — a circular initials avatar. `avatar_img(url)` for a photo.
 inline NodeRef avatar(std::string initials, float d = 36){
     return text(std::move(initials)) | size(d) | round(999) | center
          | bg_primary | fg_on_primary | semibold
-         | css("font-size", std::to_string((int)(d * 0.4f)) + "px")
-         | css("flex","0 0 auto") | css("text-transform","uppercase");
+         | detail::raw_css("font-size", std::to_string((int)(d * 0.4f)) + "px")
+         | detail::raw_css("flex","0 0 auto") | detail::raw_css("text-transform","uppercase");
 }
 inline NodeRef avatar_img(std::string url, float d = 36){
     return image(std::move(url)) | size(d) | round(999)
-         | css("object-fit","cover") | css("flex","0 0 auto");
+         | detail::raw_css("object-fit","cover") | detail::raw_css("flex","0 0 auto");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,9 +192,9 @@ inline NodeRef spinner(float d = 22, std::uint32_t stroke_col = 0){
     std::string col = stroke_col ? [&]{ char b[8]; std::snprintf(b,sizeof(b),"#%06x",stroke_col&0xFFFFFF); return std::string(b); }()
                                  : std::string("var(--wa-primary, #6366f1)");
     return box() | size(d) | round(999)
-         | css("border","2.5px solid var(--wa-line, rgba(255,255,255,.15))")
-         | css("border-top-color", col)
-         | css("animation","wa-ui-spin .7s linear infinite");
+         | detail::raw_css("border","2.5px solid var(--wa-line, rgba(255,255,255,.15))")
+         | detail::raw_css("border-top-color", col)
+         | detail::raw_css("animation","wa-ui-spin .7s linear infinite");
 }
 
 /// `skeleton(w, h)` — a shimmering placeholder block for loading content.
@@ -222,9 +222,9 @@ NodeRef tabs(int active, std::vector<std::pair<int,std::string>> items, ToMsg to
         bool on = (id == active);
         tab_nodes.push_back(
             text(label) | pad_x(14) | pad_y(10) | pointer | semibold
-              | css("font-size","14px")
+              | detail::raw_css("font-size","14px")
               | (on ? fg_text : fg_muted)
-              | css("border-bottom", on ? "2px solid var(--wa-primary, #6366f1)" : "2px solid transparent")
+              | detail::raw_css("border-bottom", on ? "2px solid var(--wa-primary, #6366f1)" : "2px solid transparent")
               | transition("color .15s ease, border-color .15s ease")
               | tap(to_msg(id)));
     }
@@ -241,7 +241,7 @@ NodeRef tabs(int active, std::vector<std::pair<int,std::string>> items, ToMsg to
 /// chrome + auto show/hide. Built on the core `anchored` primitive.
 inline NodeRef popover(bool open, NodeRef trigger, NodeRef panel, std::string place="bottom-right"){
     auto styled = open ? (panel | frost(14) | round(12) | pad(6) | elevation(4)
-                                | css("min-width","11rem") | pop_in(160))
+                                | detail::raw_css("min-width","11rem") | pop_in(160))
                        : box();
     return anchored(std::move(trigger), std::move(styled), place);
 }
@@ -253,14 +253,14 @@ inline NodeRef tooltip(NodeRef trigger, std::string tip, std::string place="top"
     assets().css(".wa-tip-wrap [data-wa-tip]{opacity:0;transition:opacity .15s ease}"
                  ".wa-tip-wrap:hover [data-wa-tip]{opacity:1}");
     auto bubble = text(std::move(tip))
-        | pad_x(9) | pad_y(6) | round(8) | css("font-size","12.5px")
-        | css("background","var(--wa-raised, #1e293b)") | fg_text
-        | css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
-        | css("box-shadow","0 8px 24px rgba(0,0,0,.4)")
-        | css("white-space","nowrap") | css("pointer-events","none")
+        | pad_x(9) | pad_y(6) | round(8) | detail::raw_css("font-size","12.5px")
+        | detail::raw_css("background","var(--wa-raised, #1e293b)") | fg_text
+        | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
+        | detail::raw_css("box-shadow","0 8px 24px rgba(0,0,0,.4)")
+        | detail::raw_css("white-space","nowrap") | detail::raw_css("pointer-events","none")
         | attr("data-wa-tip","");
     return anchored(std::move(trigger), std::move(bubble), place)
-         | attr("class","wa-tip-wrap") | css("cursor","default");
+         | attr("class","wa-tip-wrap") | detail::raw_css("cursor","default");
 }
 
 /// `dialog(open, close_msg, panel_children…)` — a complete modal: dimmed backdrop
@@ -271,10 +271,10 @@ NodeRef dialog(bool open, Msg close_msg, Cs... panel_children){
     if (!open) return box();
     auto panel = col(std::move(panel_children)...)
         | gap(16) | pad(28) | round(20)
-        | css("background", "var(--wa-surface, #141b2e)")
-        | css("border", "1px solid var(--wa-line, rgba(255,255,255,.10))")
-        | css("box-shadow", "0 24px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)")
-        | css("max-width", "28rem") | css("width", "100%")
+        | detail::raw_css("background", "var(--wa-surface, #141b2e)")
+        | detail::raw_css("border", "1px solid var(--wa-line, rgba(255,255,255,.10))")
+        | detail::raw_css("box-shadow", "0 24px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)")
+        | detail::raw_css("max-width", "28rem") | detail::raw_css("width", "100%")
         | stop() | pop_in(180);
     return overlay(std::move(panel)) | tap(close_msg);
 }
@@ -291,12 +291,12 @@ inline NodeRef toast_layer(std::vector<NodeRef> toasts){
 }
 /// `toast(text, tone)` — a single toast card for the layer above.
 inline NodeRef toast(std::string message, Tone tone = Tone::neutral){
-    return row(dot(tone), text(std::move(message)) | fg_text | css("font-size","14px"))
+    return row(dot(tone), text(std::move(message)) | fg_text | detail::raw_css("font-size","14px"))
         | gap(10) | center | pad_x(16) | pad_y(12) | round(12)
-        | css("background","var(--wa-surface, #141b2e)")
-        | css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
-        | css("box-shadow","0 10px 30px rgba(0,0,0,.4)")
-        | css("pointer-events","auto") | slide_in(220);
+        | detail::raw_css("background","var(--wa-surface, #141b2e)")
+        | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
+        | detail::raw_css("box-shadow","0 10px 30px rgba(0,0,0,.4)")
+        | detail::raw_css("pointer-events","auto") | slide_in(220);
 }
 
 } // namespace waya::ui

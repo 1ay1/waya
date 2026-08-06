@@ -47,7 +47,7 @@ inline NodeRef line_chart(const std::vector<float>& values, float w_ = 240, floa
 /// `sparkline(values)` — a compact inline line chart (no axes), for a table cell
 /// or a stat card. Same as line_chart, tuned small.
 inline NodeRef sparkline(const std::vector<float>& values, float w_ = 120, float h_ = 32) {
-    return line_chart(values, w_, h_) | css("display", "block");
+    return line_chart(values, w_, h_) | detail::raw_css("display", "block");
 }
 
 /// `area_chart(values)` — a filled line chart. The path is closed down to the
@@ -85,7 +85,7 @@ inline NodeRef bars(const std::vector<float>& values, float w_ = 240, float h_ =
         }
     }
     svg += "</svg>";
-    return markup(std::move(svg)) | w(w_) | h(h_) | css("line-height", "0");
+    return markup(std::move(svg)) | w(w_) | h(h_) | detail::raw_css("line-height", "0");
 }
 
 } // namespace waya::ui

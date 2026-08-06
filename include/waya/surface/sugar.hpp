@@ -291,7 +291,7 @@ template <typename... Cs> NodeRef app_shell(std::uint32_t bg_color, Cs... cs){
 
 /// `safe_area` — pad by the device's safe-area insets (iPhone notch / home bar).
 /// Put it on a full-bleed page so content isn't hidden under the notch.
-inline Mod safe_area(){ return css("padding",
+inline Mod safe_area(){ return detail::raw_css("padding",
     "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"); }
 
 /// `centered(max_rem, content)` — a column capped to `max_rem` wide and centred,

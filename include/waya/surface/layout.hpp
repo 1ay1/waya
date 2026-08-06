@@ -33,7 +33,7 @@ inline NodeRef spacer(){ auto n = box(); n->style.has_grow=true; n->style.grow=1
 /// bounds. `text("Hi") | fluid_font(24, 48)` grows on big screens, shrinks on
 /// small \u2014 no media queries.
 inline Mod fluid_font(float min_px, float max_px){
-    return css("font-size", "clamp(" + std::to_string((int)min_px) + "px,"
+    return detail::raw_css("font-size", "clamp(" + std::to_string((int)min_px) + "px,"
         + std::to_string(min_px/16.f) + "rem + 2vw," + std::to_string((int)max_px) + "px)");
 }
 /// `fluid(minLen, idealVw, maxLen)` \u2014 a general clamp() length for any prop.

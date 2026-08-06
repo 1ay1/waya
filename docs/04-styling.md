@@ -279,6 +279,38 @@ box(...) | css("background", "linear-gradient(135deg,#6366f1,#22d3ee)")
 
 `css()` is the pressure valve — you never get stuck. But reach for a named mod
 first: named mods carry intent, compose predictably, and stay backend-neutral.
+The named vocabulary is deliberately deep — it covers essentially every everyday
+property, so `css()` is genuinely rare. A partial map of what's already named
+(so you don't reinvent it):
+
+| You might reach for `css(…)` | The named mod |
+|------------------------------|---------------|
+| `width:100%` / `min-height:100vh` | `w_full` / `h_screen` (also `w_half`, `w_frac(n,d)`) |
+| `object-fit` | `cover` / `contain` / `fit(…)` |
+| `text-decoration` | `underline` / `line_through` / `no_underline` |
+| `filter: grayscale/brightness/…` | `grayscale()` / `brightness()` / `saturate()` / `sepia()` / `blur()` |
+| `overflow`, ellipsis, clamp | `clip_content`, `truncate`, `line_clamp(n)`, `scroll` |
+| `user-select`, `pointer-events` | `select_none` / `select_all`, `no_pointer` |
+| box shadow, glass, lift | `shadow()`, `glass()`, `hover_lift()`, `elevate(n)` |
+| gradients | `gradient(a, b, deg)` |
+
+### Enforce “no raw CSS” — `WAYA_NO_RAW_CSS`
+
+The whole point of waya is that you build UI **without knowing HTML or CSS**. A
+team that wants to *guarantee* that — no one ever slips a hand-written property
+or selector into the codebase — can build with `-DWAYA_NO_RAW_CSS=ON` (or
+`#define WAYA_NO_RAW_CSS`). That turns `css()` and `var()` into **compile
+errors**:
+
+```
+waya: css() is disabled under WAYA_NO_RAW_CSS — use a named mod
+```
+
+So if the project compiles, it's *provably* built from the named vocabulary
+alone — zero raw web strings leaked in. The component library and every named
+mod keep working (they don't use the public `css()`); only *your* direct use of
+the escape hatch is blocked. Hit a real gap? Add a named mod for it — that keeps
+the vocabulary complete for everyone instead of reopening the hatch.
 
 ## Semantics, attributes, and accessibility
 

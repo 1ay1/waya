@@ -52,6 +52,10 @@ option(WAYA_TSAN "Build waya's own targets with ThreadSanitizer" OFF)
 # (aborts with a spec-quoting message on the first bad view). Makes "impossible
 # UIs can't ship" literal. On for tests; opt-in for apps via -DWAYA_STRICT=ON.
 option(WAYA_STRICT "Abort on structural surface violations at render time" OFF)
+# Pure vocabulary only: make the raw css()/var() escape hatches COMPILE ERRORS,
+# so a team can guarantee its UI is built entirely from named mods — never a
+# hand-written CSS property or HTML string. If it compiles, no web leaked in.
+option(WAYA_NO_RAW_CSS "Disable the raw css()/var() escape hatches (compile error on use)" OFF)
 
 add_library(waya_dev_flags INTERFACE)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -76,6 +80,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 if(WAYA_STRICT)
     target_compile_definitions(waya_dev_flags INTERFACE WAYA_STRICT)
+endif()
+if(WAYA_NO_RAW_CSS)
+    target_compile_definitions(waya_dev_flags INTERFACE WAYA_NO_RAW_CSS)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

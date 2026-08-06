@@ -35,13 +35,13 @@ inline Len pct_(float v) { return {v, Unit::pct}; }
 template <typename Msg>
 NodeRef toggle(bool on, Msg msg) {
     auto knob = box() | w(18) | h(18) | round(999)
-        | css("background", "#fff")
-        | css("box-shadow", "0 1px 3px rgba(0,0,0,.4)")
-        | css("transform", on ? "translateX(20px)" : "translateX(0)")
+        | detail::raw_css("background", "#fff")
+        | detail::raw_css("box-shadow", "0 1px 3px rgba(0,0,0,.4)")
+        | detail::raw_css("transform", on ? "translateX(20px)" : "translateX(0)")
         | transition("transform .18s cubic-bezier(.2,.7,.2,1)");
     return box(knob)
         | w(44) | h(24) | round(999) | pad(3) | pointer
-        | css("background", on ? "var(--wa-primary, #6366f1)" : "var(--wa-line, #334155)")
+        | detail::raw_css("background", on ? "var(--wa-primary, #6366f1)" : "var(--wa-line, #334155)")
         | transition("background-color .18s ease")
         | role("switch") | aria("checked", on ? "true" : "false")
         | tap(msg);
@@ -58,12 +58,12 @@ inline NodeRef progress(float pct, Tone tone = Tone::primary) {
     // integer percent so the CSS reads "42%" not "42.000000%"
     long pw = (long)(p + 0.5f);
     auto bar = box() | h(8) | round(999)
-        | css("width", std::to_string(pw) + "%")
-        | css("background", fill)
+        | detail::raw_css("width", std::to_string(pw) + "%")
+        | detail::raw_css("background", fill)
         | transition("width .3s ease");
     return box(bar) | w(pct_(100)) | h(8) | round(999)
-        | css("background", "var(--wa-line, rgba(255,255,255,.12))")
-        | css("overflow", "hidden")
+        | detail::raw_css("background", "var(--wa-line, rgba(255,255,255,.12))")
+        | detail::raw_css("overflow", "hidden")
         | role("progressbar") | aria("valuenow", std::to_string((int)p));
 }
 
@@ -104,8 +104,8 @@ NodeRef menu_item(std::string label, Msg msg, std::string_view icon_name = "") {
         : box(icon(icon_name, 16) | fg_muted, text(label));
     return row_ | horizontal | gap(10) | center
         | pad_x(12) | pad_y(9) | round(8) | pointer | fg_text
-        | css("font-size", "14px") | css("white-space", "nowrap")
-        | on(Hover, css("background", "var(--wa-raised, rgba(255,255,255,.06))"))
+        | detail::raw_css("font-size", "14px") | detail::raw_css("white-space", "nowrap")
+        | on(Hover, detail::raw_css("background", "var(--wa-raised, rgba(255,255,255,.06))"))
         | tap(msg);
 }
 
@@ -117,7 +117,7 @@ inline NodeRef menu(bool open, NodeRef trigger, std::vector<NodeRef> items,
     if (open) {
         panel = box(); panel->kids = std::move(items); panel->style.flow = Flow::col; finalize(*panel);
         panel = panel | frost(14) | round(12) | pad(6) | elevation(4)
-              | css("min-width", "12rem") | pop_in(150);
+              | detail::raw_css("min-width", "12rem") | pop_in(150);
     }
     return anchored(std::move(trigger), std::move(panel), place);
 }
@@ -139,13 +139,13 @@ NodeRef accordion(int open_id, std::vector<std::pair<std::string, NodeRef>> pane
             text(panels[i].first) | semibold | fg_text,
             push(),
             icon("chevron-down", 18) | fg_muted
-                | css("transform", open ? "rotate(180deg)" : "rotate(0)")
+                | detail::raw_css("transform", open ? "rotate(180deg)" : "rotate(0)")
                 | transition("transform .2s ease"))
             | center | pad_y(14) | pad_x(4) | pointer | tap(on_toggle((int)i));
         auto body = open
-            ? (box(panels[i].second) | pad_y(4) | pad_x(4) | css("padding-bottom", "14px") | fade_in(160))
+            ? (box(panels[i].second) | pad_y(4) | pad_x(4) | detail::raw_css("padding-bottom", "14px") | fade_in(160))
             : box();
-        rows.push_back(col(header, body) | css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.10))"));
+        rows.push_back(col(header, body) | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.10))"));
     }
     auto acc = box(); acc->kids = std::move(rows); acc->style.flow = Flow::col; finalize(*acc);
     return acc;
@@ -171,14 +171,14 @@ NodeRef data_table(const std::vector<Row>& rows, std::vector<Column<Row>> cols) 
     // header
     for (auto& c : cols)
         cells.push_back(text(c.header) | semibold | fg_muted
-            | css("font-size", "12.5px") | css("letter-spacing", ".03em")
-            | pad_y(10) | css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.12))"));
+            | detail::raw_css("font-size", "12.5px") | detail::raw_css("letter-spacing", ".03em")
+            | pad_y(10) | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.12))"));
     // rows
     for (auto& r : rows)
         for (auto& c : cols)
             cells.push_back(box(c.cell(r)) | pad_y(10) | fg_text
-                | css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.06))")
-                | css("align-items", "center") | horizontal);
+                | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.06))")
+                | detail::raw_css("align-items", "center") | horizontal);
     auto g = box(); g->kids = std::move(cells); g->style.flow = Flow::grid;
     g->style.extra.emplace_back("grid-template-columns",
         "repeat(" + std::to_string(cols.size()) + ",minmax(0,auto))");

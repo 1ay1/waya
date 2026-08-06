@@ -70,6 +70,21 @@ int main() {
         check(np->kids.size() == 2 && np->kids[0]->hash != 0, "Building child finalized when nested");
     }
 
+    // ── completeness: named mods that used to require a raw css() ───────────
+    check(has(css_of(box() | w_full), "width:100%"), "w_full");
+    check(has(css_of(box() | h_screen), "100vh"), "h_screen");
+    check(has(css_of(box() | w_frac(1,3)), "33.") , "w_frac(1,3) is 33.3%");
+    check(has(css_of(box() | square(48)), "width:48") && has(css_of(box() | square(48)), "height:48"), "square");
+    check(has(css_of(box() | circle(40)), "border-radius"), "circle rounds fully");
+    check(has(css_of(text("x") | no_underline), "text-decoration:none"), "no_underline");
+    check(has(css_of(text("x") | line_through), "line-through"), "line_through");
+    check(has(css_of(box() | select_none), "user-select:none"), "select_none");
+    check(has(css_of(box() | clip_content), "overflow:hidden"), "clip_content");
+    check(has(css_of(image("/x") | grayscale()), "grayscale(100%)"), "grayscale");
+    check(has(css_of(image("/x") | brightness(120)), "brightness(120%)"), "brightness");
+    check(has(css_of(image("/x") | fit("contain")), "object-fit:contain"), "fit");
+    check(has(css_of(box() | break_word), "overflow-wrap"), "break_word");
+
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
