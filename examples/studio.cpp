@@ -1,6 +1,7 @@
 /// examples/studio.cpp — a design studio: live theme switching + every polish
-/// mod (motion, glass, glow, elevation, gradients, fluid type) on one gorgeous
-/// screen. Tap a palette and the whole app re-tints in one paint, smoothly.
+/// mod on one gorgeous screen. Tap a palette and the whole app re-tints in one
+/// paint, smoothly. Built from frost(), hover_lift(), the type scale, and theme
+/// tokens.
 ///
 ///   cmake --build build -j && ./build/studio     # http://localhost:8080
 
@@ -9,7 +10,6 @@
 
 #include <string>
 #include <variant>
-#include <vector>
 
 using namespace waya::surface;
 using namespace waya::surface::color;
@@ -39,18 +39,16 @@ struct Studio {
     static NodeRef swatch(const Model& m, std::string name, std::uint32_t a, std::uint32_t b) {
         bool active = m.name == name;
         return col(
-            box() | size(px(52)) | round(14)
-                  | css("background", "linear-gradient(135deg," + detail::hexstr(a) + "," + detail::hexstr(b) + ")")
-                  | css("box-shadow", "0 6px 16px " + detail::hexstr(a) + "55"),
+            box() | size(px(52)) | round(14) | gradient_bg(a, b, 135) | glow(a, 20),
             text(name) | fg_muted | caption | (active ? semibold : noop)
         ) | gap(8) | center | pad(12) | round(16)
-          | (active ? ring(a, 2) : noop) | tap(Pick{name}) | css("cursor", "pointer")
-          | transition() | on(Hover, css("transform", "translateY(-3px)"));
+          | (active ? ring(a, 2) : noop) | interactive() | tap(Pick{name});
     }
 
     static NodeRef view(const Model& m) {
         auto header = col(
-            text("waya studio") | fg_text | display | font_fluid(32, 52) | weight(Weight::black),
+            text("waya studio") | fg_text | display | font_fluid(32, 54) | weight(Weight::black)
+                | css("letter-spacing","-.02em"),
             text("design tokens, motion, glass \u2014 switch a theme, watch it flow")
                 | fg_muted | body
         ) | gap(8) | fade_up(500);
@@ -67,38 +65,35 @@ struct Studio {
         ) | fade_up(600) | delay(60);
 
         auto showcase = row(
-            // motion column
             card(
                 text("Motion") | fg_muted | label,
                 row(
                     box() | size(px(40)) | round(999) | bg_primary | spin(),
                     box() | size(px(40)) | round(12) | bg_accent | pulse(),
-                    box() | size(px(40)) | round(12) | css("background", "linear-gradient(90deg,transparent,var(--wa-primary),transparent)") | shimmer()
+                    box() | size(px(40)) | round(12) | shimmer()
                 ) | gap(16) | center
-            ) | grow(1) | css("min-width", "14rem"),
-            // typography column
+            ) | grow(1) | css("min-width", "14rem") | hover_lift(3),
             card(
                 text("Type") | fg_muted | label,
                 text("Display") | fg_text | display | font(28),
                 text("Heading") | fg_text | heading,
                 text("Body text flows nicely.") | fg_muted | body,
                 text("CAPTION \u00b7 MONO") | fg_muted | caption | mono
-            ) | grow(1) | css("min-width", "14rem")
+            ) | grow(1) | css("min-width", "14rem") | hover_lift(3)
         ) | gap(20) | wrap | fade_up(700) | delay(120);
 
         auto buttons = card(
             text("Buttons") | fg_muted | label,
             row(
-                text("Primary") | fg_on_primary | semibold | bg_primary | pad_x(20) | pad_y(11) | round(11) | glow(0x000000, 0) | theme_transition() | transition() | on(Hover, css("transform","translateY(-2px)")),
-                text("Accent")  | fg_on_primary | semibold | bg_accent  | pad_x(20) | pad_y(11) | round(11) | theme_transition(),
-                text("Glass")   | fg_text | semibold | glass(12) | pad_x(20) | pad_y(11) | round(11),
-                text("Ghost")   | fg_text | semibold | border_token() | pad_x(20) | pad_y(11) | round(11) | theme_transition()
+                text("Primary") | fg_on_primary | semibold | bg_primary | pad_x(20) | pad_y(11) | round(11) | interactive() | theme_transition(),
+                text("Accent")  | fg_on_primary | semibold | bg_accent  | pad_x(20) | pad_y(11) | round(11) | interactive() | theme_transition(),
+                text("Glass")   | fg_text | semibold | frost(12) | pad_x(20) | pad_y(11) | round(11) | interactive(),
+                text("Ghost")   | fg_text | semibold | border_token() | pad_x(20) | pad_y(11) | round(11) | interactive() | theme_transition()
             ) | gap(12) | wrap
         ) | fade_up(800) | delay(180);
 
-        return page(m.theme.bg,
-            centered(56, col(header, palette, showcase, buttons) | gap(28)) | center
-        ) | theme(m.theme) | themed();
+        return page(m.theme.bg, centered(56, col(header, palette, showcase, buttons) | gap(28)) | center)
+             | theme(m.theme) | themed();
     }
 };
 

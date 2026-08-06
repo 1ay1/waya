@@ -346,6 +346,9 @@ inline Mod max_h(Len l){ return sty([=](Style& s){ s.max_h=l; }); }
 inline Mod min_h(Len l){ return sty([=](Style& s){ s.min_h=l; }); }
 inline Mod round(Len l){ return sty([=](Style& s){ s.radius=l; }); }
 inline Mod round(float r){ return round(px(r)); }
+/// int overload so `round(10)` is never ambiguous with std::round (from <cmath>,
+/// which an app may pull in). Corner radius in px.
+inline Mod round(int r){ return round(px((float)r)); }
 inline const Mod pill = sty([](Style& s){ s.radius=px(9999); });
 inline Mod border(float width_, std::uint32_t color){ return sty([=](Style& s){ s.has_border=true; s.border_w=px(width_); s.border_c=color; }); }
 inline Mod aspect(float ratio){ return sty([=](Style& s){ s.extra.emplace_back("aspect-ratio", std::to_string(ratio)); }); }
@@ -494,6 +497,44 @@ inline Mod gradient_text(std::uint32_t a, std::uint32_t b, int deg=90){
         s.extra.emplace_back("background-clip","text");
         s.extra.emplace_back("color","transparent"); }); }
 
+// ── gorgeous backgrounds ─ one mod each, no hand-written css() ──────────────
+namespace detail {
+/// #rrggbbaa from a colour + 0..1 alpha (for translucent fills).
+inline std::string rgba_hex(std::uint32_t c, float a){
+    char buf[3]; std::snprintf(buf, sizeof(buf), "%02x", (int)(a*255+0.5f)); return hexstr(c)+buf; }
+}
+/// `radial(color, x%, y%)` — a soft radial glow bloom over a base, positioned at
+/// (x,y). The signature backdrop for hero sections. Fades to transparent.
+inline Mod radial(std::uint32_t color, int x=50, int y=-10, std::uint32_t base=0x090b14, int size=60){
+    return sty([=](Style& s){ s.extra.emplace_back("background",
+        "radial-gradient("+std::to_string(size)+"rem "+std::to_string(size-10)+"rem at "+std::to_string(x)+"% "+std::to_string(y)+"%,"
+        +detail::rgba_hex(color,0.18f)+", transparent 60%), "+detail::hexstr(base)); }); }
+/// `mesh(a, b, base)` — a two-blob mesh gradient (top-left + top-right), the
+/// modern "ambient light" backdrop. Beautiful behind a dark hero.
+inline Mod mesh(std::uint32_t a, std::uint32_t b, std::uint32_t base=0x090b14){
+    return sty([=](Style& s){ s.extra.emplace_back("background",
+        "radial-gradient(55rem 40rem at 15% -5%,"+detail::rgba_hex(a,0.20f)+", transparent 60%),"
+        "radial-gradient(50rem 40rem at 90% 10%,"+detail::rgba_hex(b,0.14f)+", transparent 55%), "+detail::hexstr(base)); }); }
+/// `gradient_bg(a, b, deg)` — a linear-gradient FILL (alias for gradient, reads
+/// clearer when you mean "the background").
+inline Mod gradient_bg(std::uint32_t a, std::uint32_t b, int deg=135){ return gradient(a,b,deg); }
+
+// ── translucent surfaces ─ the frosted-panel look, without rgba() by hand ────
+/// `tint(color, alpha)` — a translucent fill (default: faint white, .04). The
+/// "raised surface over a dark bg" look used on every card.
+inline Mod tint(std::uint32_t color=0xffffff, float alpha=0.04f){
+    return sty([=](Style& s){ s.extra.emplace_back("background", detail::rgba_hex(color, alpha)); }); }
+/// `hairline(color, alpha)` — a 1px translucent border (default faint white .10).
+inline Mod hairline(std::uint32_t color=0xffffff, float alpha=0.10f){
+    return sty([=](Style& s){ s.extra.emplace_back("border", "1px solid "+detail::rgba_hex(color, alpha)); }); }
+/// `frost(blur)` — tint + hairline + backdrop blur in one: an instant glass card.
+inline Mod frost(int blur_px=14, float alpha=0.05f){
+    return sty([=](Style& s){
+        s.extra.emplace_back("background", detail::rgba_hex(0xffffff, alpha));
+        s.extra.emplace_back("border", "1px solid "+detail::rgba_hex(0xffffff, 0.12f));
+        s.extra.emplace_back("backdrop-filter", "blur("+std::to_string(blur_px)+"px)");
+        s.extra.emplace_back("-webkit-backdrop-filter", "blur("+std::to_string(blur_px)+"px)"); }); }
+
 // ── the universal channel — reach ANY css, nothing off-limits ────────────
 inline Mod css(std::string prop, std::string value){ return sty([=](Style& s){ s.extra.emplace_back(prop, value); }); }
 inline Mod var(std::string name, std::string value){ return sty([=](Style& s){ s.extra.emplace_back("--"+name, value); }); }
@@ -550,6 +591,31 @@ inline Mod hide_above(Break b){ return at(b, hidden); }
 /// `only_phone()` / `only_desktop()` — show exclusively on that class of device.
 inline Mod only_phone(){ return hide_above(Break::Md); }
 inline Mod only_desktop(){ return hide_below(Break::Md); }
+
+// ── interaction polish ─ the gestures every pretty UI uses, one mod each ────
+/// `hover_lift(px)` — the node eases UP on hover (the universal "this is
+/// interactive" cue). Bundles the transition + the :hover transform.
+inline Mod hover_lift(float px_=3){
+    return transition("transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s ease")
+         | on(Hover, css("transform", "translateY(-"+std::to_string((int)px_)+"px)"));
+}
+/// `press()` — the node scales down slightly while held (tactile button feel).
+inline Mod press(float to=0.96f){
+    return on(Active, css("transform", "scale("+std::to_string(to)+")"));
+}
+/// `hover_glow(color)` — a coloured halo blooms on hover (brand buttons, cards).
+inline Mod hover_glow(std::uint32_t color, int spread=26){
+    auto h = detail::hexstr(color);
+    return transition("box-shadow .22s ease, transform .18s ease")
+         | on(Hover, css("box-shadow", "0 0 "+std::to_string(spread)+"px "+h+"66"));
+}
+/// `hover_bg(color, alpha)` — fill lightens on hover (ghost buttons, list rows).
+inline Mod hover_bg(std::uint32_t color=0xffffff, float alpha=0.08f){
+    return transition("background-color .15s ease")
+         | on(Hover, css("background", detail::rgba_hex(color, alpha)));
+}
+/// `interactive()` — the everyday combo: pointer cursor + lift + press.
+inline Mod interactive(){ return pointer | hover_lift(2) | press(); }
 
 // ── interactivity & identity — Mods that touch the node, not just its style ─
 // TYPED messages: `tap(Inc{})`, `on_input([](std::string v){ return SetName{v}; })`.

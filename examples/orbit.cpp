@@ -78,10 +78,8 @@ struct Orbit {
 
         auto btn = [](std::string label, Msg msg) {
             return text(std::move(label)) | fg(ink) | semibold | font(15)
-                 | pad_x(18) | pad_y(10) | round(10.f)
-                 | css("background", "rgba(255,255,255,.05)") | css("border", "1px solid rgba(255,255,255,.12)")
-                 | tap(msg) | css("cursor", "pointer") | transition()
-                 | on(Hover, css("background", "rgba(255,255,255,.10)"));
+                 | pad_x(18) | pad_y(10) | round(10) | tint() | hairline()
+                 | hover_bg() | interactive() | tap(msg);
         };
 
         return page(0x07090f,
@@ -90,13 +88,12 @@ struct Orbit {
                 text("a generative field, ticked 30×/s by a subscription") | fg(muted) | caption,
                 canvas | center,
                 row(
-                    btn(m.running ? "\u2758\u2758 pause" : "\u25b6 play", Toggle{}),
-                    btn("\u2212 ring", Less{}),
+                    btn(m.running ? "❘❘ pause" : "▶ play", Toggle{}),
+                    btn("− ring", Less{}),
                     btn("+ ring", More{})
                 ) | gap(12) | wrap | center
             ) | gap(24) | center) | center
-        ) | css("background",
-            "radial-gradient(50rem 50rem at 50% 50%, rgba(99,102,241,.10), transparent 70%), #07090f");
+        ) | radial(0x6366f1, 50, 50, 0x07090f, 50);
     }
 };
 

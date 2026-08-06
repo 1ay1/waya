@@ -100,7 +100,12 @@ private:
             if(s.has_lh){o+="line-height:";o+=n(s.line_height);o+=';';} if(s.has_ls){o+="letter-spacing:";o+=n(s.letter_spacing);o+="px;"; } }
         if(s.text_align!=Justify::none){ o+="text-align:"; o+= s.text_align==Justify::center?"center":s.text_align==Justify::end?"right":"left"; o+=';'; }
         // box model
-        if(s.has_bg){o+="background:";hex(o,s.bg);o+=';';}
+        // background: the solid bg(), UNLESS the extra channel also sets one (a
+        // gradient/mesh) — then we skip this so we don't emit two declarations.
+        if(s.has_bg){
+            bool extra_bg=false; for(auto&[k,v]:s.extra) if(k=="background"){ extra_bg=true; break; }
+            if(!extra_bg){ o+="background:"; hex(o,s.bg); o+=';'; }
+        }
         if(s.pad.set()){o+="padding:";len(o,s.pad);o+=';';}
         if(s.pad_x.set()){o+="padding-left:";len(o,s.pad_x);o+=";padding-right:";len(o,s.pad_x);o+=';';}
         if(s.pad_y.set()){o+="padding-top:";len(o,s.pad_y);o+=";padding-bottom:";len(o,s.pad_y);o+=';';}

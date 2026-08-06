@@ -269,7 +269,6 @@ template <typename... Cs> NodeRef page(std::uint32_t bg_color, Cs... cs){
     auto n = col(std::move(cs)...);
     n->style.has_bg = true; n->style.bg = bg_color;
     n->style.extra.emplace_back("min-height", "100dvh");   // dynamic vh: excludes mobile browser chrome
-    n->style.extra.emplace_back("min-width", "0");
     n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
     finalize(*n);
     return n;
@@ -286,7 +285,6 @@ template <typename... Cs> NodeRef app_shell(std::uint32_t bg_color, Cs... cs){
     n->style.extra.emplace_back("height", "100dvh");
     n->style.extra.emplace_back("max-height", "100dvh");
     n->style.extra.emplace_back("min-height", "0");
-    n->style.extra.emplace_back("min-width", "0");
     n->style.extra.emplace_back("overflow", "hidden");   // only scroll_fill() regions scroll
     n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
     finalize(*n);

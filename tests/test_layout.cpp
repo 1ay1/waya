@@ -250,6 +250,31 @@ int main() {
         CHECK(has(c, "box-shadow:0 1px 2px #000, 0 0 8px #f00"));
     }
 
+    // ── polish mods: backgrounds, surfaces, interaction ──────────────────
+    {
+        // no double-background: a solid bg() then a gradient/mesh → ONE background
+        auto c = css_of(box() | bg(0x090b14) | mesh(0x6366f1, 0x22d3ee, 0x090b14));
+        CHECK(c.find("background:") == c.rfind("background:"));   // exactly one
+        CHECK(has(c, "radial-gradient"));
+        // radial + gradient_bg
+        CHECK(has(css_of(box() | radial(0x6366f1)), "radial-gradient"));
+        CHECK(has(css_of(box() | gradient_bg(0x111111, 0x222222)), "linear-gradient(135deg"));
+        // translucent surface mods emit rgba(#rrggbbaa) fills/borders
+        CHECK(has(css_of(box() | tint()), "background:#ffffff0a"));       // .04 alpha
+        CHECK(has(css_of(box() | hairline()), "border:1px solid #ffffff1a")); // .10
+        auto f = css_of(box() | frost(12));
+        CHECK(has(f, "backdrop-filter:blur(12px)") && has(f, "1px solid"));
+    }
+    {
+        // interaction polish: hover_lift/press/hover_glow/interactive compose
+        auto c = css_of(box() | hover_lift(3));
+        CHECK(has(c, "transition:transform") && has(c, ":hover") && has(c, "translateY(-3px)"));
+        CHECK(has(css_of(box() | press()), ":active") );
+        CHECK(has(css_of(box() | hover_glow(0x6366f1)), ":hover"));
+        auto i = css_of(box() | interactive());
+        CHECK(has(i, "cursor:pointer") && has(i, ":hover") && has(i, ":active"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }
