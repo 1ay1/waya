@@ -23,6 +23,7 @@
 #include "wire.hpp"
 #include "binary.hpp"
 #include "effect.hpp"
+#include "meta.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -217,6 +218,14 @@ template <typename P, typename Model, typename Msg>
 Sub<Msg> subs_of(const Model& m){
     if constexpr (requires{ { P::subscribe(m) } -> std::convertible_to<Sub<Msg>>; }) return P::subscribe(m);
     else return Sub<Msg>::none();
+}
+
+/// program SEO metadata — P::meta(Model)->Meta if it exists, else a blank Meta
+/// (the shell then uses its default title and index,follow robots).
+template <typename P, typename Model>
+Meta meta_of(const Model& m){
+    if constexpr (requires{ { P::meta(m) } -> std::convertible_to<Meta>; }) return P::meta(m);
+    else return Meta{};
 }
 
 /// An error card — shown in place of the app when view()/update() throws, so a
@@ -751,6 +760,32 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     // The WebSocket then takes over live; its first full paint reconciles onto
     // this SSR'd DOM (same node structure → usually a no-op).
     std::string route = request_path(req);
+
+    // SEO plumbing files, served automatically. robots.txt tells crawlers they
+    // may index everything and where the sitemap is; sitemap.xml lists the
+    // routes the app declared (P::sitemap()). Both are optional — default robots
+    // allows all.
+    if (route == "/robots.txt" || route.rfind("/robots.txt?",0)==0) {
+        std::string body = "User-agent: *\nAllow: /\n";
+        if constexpr (requires { P::site_url(); }) body += "Sitemap: " + std::string(P::site_url()) + "/sitemap.xml\n";
+        std::string http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
+            std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+        ::send(conn, http.data(), http.size(), 0); ::close(conn); return;
+    }
+    if (route == "/sitemap.xml" || route.rfind("/sitemap.xml?",0)==0) {
+        std::string base; if constexpr (requires { P::site_url(); }) base = P::site_url();
+        std::vector<std::string> paths;
+        if constexpr (requires { P::sitemap(); }) paths = P::sitemap();
+        else paths = {"/"};
+        std::string body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">";
+        for (auto& p : paths){ body += "<url><loc>"; body += base + p; body += "</loc></url>"; }
+        body += "</urlset>";
+        std::string http = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-Length: " +
+            std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+        ::send(conn, http.data(), http.size(), 0); ::close(conn); return;
+    }
+
     auto [ssr_model, ssr_cmd] = detail::init_of<P, Model, Msg>();
     (void)ssr_cmd;
     // Route the model to the requested path so /about SSRs the about screen, etc.
@@ -766,15 +801,21 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     NodeRef ssr_root = detail::safe_view<P>(ssr_model);   // captures tokens into a fresh table
     auto ssr = DomBackend{}.render(*ssr_root);   // {html, css}
 
+    // Per-route SEO metadata, computed from the routed model.
+    Meta mt = detail::meta_of<P, Model>(ssr_model);
+    std::string head_seo = detail::render_head(mt, page_title);
+    std::string html_lang = mt.lang.empty() ? std::string("en") : mt.lang;
+
     // Initial HTML: the SSR'd surface in #root, the app's CSS inline (so it's
     // styled on first paint), and the client script that upgrades to live.
     char bghex[8]; std::snprintf(bghex, sizeof(bghex), "#%06x", page_bg & 0xFFFFFF);
     std::string bg = bghex;
     std::string doc =
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<!DOCTYPE html><html lang=\"" + html_lang + "\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">"
         "<meta name=\"theme-color\" content=\"" + bg + "\">"
-        "<title>" + [&]{ std::string t; for(const char* p=page_title; p&&*p; ++p){ char c=*p; if(c=='<')t+="&lt;"; else if(c=='>')t+="&gt;"; else if(c=='&')t+="&amp;"; else t+=c; } return t; }() + "</title>"
+        "<title>" + [&]{ std::string t; std::string src = mt.title.empty() ? std::string(page_title?page_title:"") : mt.title; for(char c:src){ if(c=='<')t+="&lt;"; else if(c=='>')t+="&gt;"; else if(c=='&')t+="&amp;"; else t+=c; } return t; }() + "</title>"
+        + head_seo +
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
         // Root fills the viewport; overscroll is contained on html itself so the

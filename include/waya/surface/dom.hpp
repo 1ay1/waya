@@ -215,7 +215,12 @@ private:
 
     void emit(std::string& o, const Node& nd){
         switch(nd.kind){
-            case Kind::text: o+="<span"; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</span>"; return;
+            case Kind::text: {
+                // A text is a <span> by default, or the semantic tag if `as(...)`
+                // set one (h1…h6, p, label). Layout unchanged; SEO/a11y improved.
+                const std::string& tg = nd.tag.empty() ? std::string("span") : nd.tag;
+                o+='<'; o+=tg; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</"; o+=tg; o+='>'; return;
+            }
             case Kind::image: o+="<img src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+='>'; return;
             case Kind::input: {
                 o+="<input type=\""; esc(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
@@ -289,8 +294,13 @@ private:
                 o+="\" stroke-width=\""; o+=n(sw);
                 o+="\" stroke-linejoin=\"round\" stroke-linecap=\"round\"";
                 o+=" vector-effect=\"non-scaling-stroke\" fill-opacity=\".15\"/></svg>"; return; }
-            case Kind::box: o+="<div"; open_attrs(o,nd); o+='>';
-                for(auto&k:nd.kids) emit(o,*k); o+="</div>"; return;
+            case Kind::box: {
+                // A box is a <div> by default, or the semantic element `as(...)`
+                // chose (main/nav/header/article/section…) — a real landmark.
+                const std::string& tg = nd.tag.empty() ? std::string("div") : nd.tag;
+                o+='<'; o+=tg; open_attrs(o,nd); o+='>';
+                for(auto&k:nd.kids) emit(o,*k); o+="</"; o+=tg; o+='>'; return;
+            }
         }
     }
 };

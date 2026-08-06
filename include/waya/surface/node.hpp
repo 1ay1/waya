@@ -175,6 +175,7 @@ struct Node {
     std::string     selected;          // select: the chosen option value
     std::vector<Pt> points; bool closed=false;
     std::string     key;
+    std::string     tag;               // override the HTML element (main/nav/h1/article…) for SEO/a11y
     int             on_tap=-1;         // click → message
     int             on_input=-1;       // input event → message (value sent up)
     int             on_change=-1;      // change event → message
@@ -218,7 +219,7 @@ inline void finalize(Node& n){
     for(auto&e:n.events){h=mix(h,e.event);h=mix(h,(std::int64_t)e.msg);h=mix(h,e.arg);}
     for(auto&a:n.attrs){h=mix(h,a.first);h=mix(h,a.second);}
     for(auto&p:n.points){h=mix(h,p.x);h=mix(h,p.y);} h=mix(h,n.closed);
-    h=mix(h,n.key); h=mix(h,(std::int64_t)n.on_tap); h=mix(h,(std::int64_t)n.on_input); h=mix(h,(std::int64_t)n.on_change);
+    h=mix(h,n.key); h=mix(h,n.tag); h=mix(h,(std::int64_t)n.on_tap); h=mix(h,(std::int64_t)n.on_input); h=mix(h,(std::int64_t)n.on_change);
     for(auto&k:n.kids) h=mix(h,k->hash);
     n.hash=h;
 }
@@ -647,5 +648,31 @@ inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
 inline Mod tab_index(int i){ return attr("tabindex", std::to_string(i)); }
 /// `focusable()` — sugar for tabindex 0 (a div that can receive keyboard focus).
 inline Mod focusable(){ return tab_index(0); }
+
+// ── semantic HTML ─ SEO + accessibility: render as a real element, not a div ─
+/// `as("main")` — render this box/text as a specific HTML element. Search engines
+/// and screen readers weight semantic tags (main/nav/header/article/h1…) heavily,
+/// so a landmark box should say what it IS. Layout/behaviour are unchanged.
+inline Mod as(std::string html_tag){ return {[=](Node& n){ n.tag=html_tag; }}; }
+// Landmark containers (put on a box):
+inline const Mod as_main    = as("main");
+inline const Mod as_nav     = as("nav");
+inline const Mod as_header  = as("header");
+inline const Mod as_footer  = as("footer");
+inline const Mod as_article = as("article");
+inline const Mod as_section = as("section");
+inline const Mod as_aside   = as("aside");
+/// `heading(1)`…`heading(6)` — render a text as an <h1>…<h6> (document outline).
+inline Mod heading_level(int level){ int l = level<1?1:level>6?6:level; return as("h"+std::to_string(l)); }
+/// `as_p()` — a text as a real <p> paragraph.
+inline const Mod as_p = as("p");
+
+/// `jsonld(schema)` — not a node mod: build a JSON-LD string for Meta.json_ld.
+/// (kept here for discoverability; assign the result to your Meta.)
+inline std::string jsonld(std::string type, std::vector<std::pair<std::string,std::string>> fields){
+    std::string o = "{\"@context\":\"https://schema.org\",\"@type\":\"" + type + "\"";
+    for(auto&[k,v]:fields){ o+=",\""+k+"\":\""; for(char c:v){ if(c=='"'||c=='\\')o+='\\'; o+=c; } o+="\""; }
+    o += "}"; return o;
+}
 
 } // namespace waya::surface

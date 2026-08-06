@@ -49,6 +49,29 @@ struct App {
 
     static Model init() { return {}; }
 
+    // ── SEO: crawlers get real HTML (SSR) + the right <head> per route ────────
+    static const char* site_url() { return "https://saas.example"; }
+    static std::vector<std::string> sitemap() { return {"/", "/users", "/settings"}; }
+    static Meta meta(const Model& m) {
+        std::string base = site_url();
+        switch (m.screen) {
+            case Users:    return { .title="Team · SaaS", .description="Everyone on the team and their roles.",
+                                    .canonical=base+"/users", .site_name="SaaS" };
+            case UserView: {
+                const User* u=nullptr; for(auto&x:m.users) if(std::to_string(x.id)==m.user_id) u=&x;
+                std::string who = u? u->name : "User";
+                return { .title=who+" · SaaS", .description=who+(u?", "+u->role:"")+" — team profile.",
+                         .canonical=base+"/users/"+m.user_id, .type="profile", .site_name="SaaS",
+                         .json_ld = u ? jsonld("Person", {{"name",u->name},{"jobTitle",u->role}}) : "" };
+            }
+            case Settings: return { .title="Settings · SaaS", .description="Manage your preferences.",
+                                    .canonical=base+"/settings", .robots="noindex" };  // private page
+            default:       return { .title="SaaS — ships software", .description="A tiny SaaS built with waya.",
+                                    .canonical=base+"/", .site_name="SaaS",
+                                    .json_ld = jsonld("Organization", {{"name","SaaS"},{"url",base}}) };
+        }
+    }
+
     // Route the URL → screen + params. One place, driven by the router table.
     static Sub<Msg> subscribe(const Model&) {
         return Sub<Msg>::on_route([](std::string){ return 0; });  // 0 = "route changed"
@@ -96,12 +119,12 @@ struct App {
         return row(
             text("SaaS") | fg_primary | heading,
             row(link("Home",0,Home), link("Users",1,Users), link("Settings",2,Settings)) | gap(4)
-        ) | between | wrap | pad_y(8) | css("border-bottom","1px solid #1f2937");
+        ) | between | wrap | pad_y(8) | as_nav | css("border-bottom","1px solid #1f2937");
     }
 
     static NodeRef home_screen(const Model& m) {
         return col(
-            text("Dashboard") | display | fg(ink) | fade_up(),
+            text("Dashboard") | display | fg(ink) | heading_level(1) | fade_up(),
             row(
                 card_stat("Users", std::to_string(m.users.size())),
                 card_stat("Plan", "Pro"),
@@ -117,7 +140,7 @@ struct App {
 
     static NodeRef users_screen(const Model& m) {
         return col(
-            text("Users") | display | fg(ink),
+            text("Users") | display | fg(ink) | heading_level(1),
             col_(each_i(m.users, [](const User& u, std::size_t i){
                 return row(
                     text(u.name) | fg(ink) | body | grow(1),
@@ -147,7 +170,7 @@ struct App {
                  | gap(16) | pad_y(12);
         };
         return col(
-            text("Settings") | display | fg(ink),
+            text("Settings") | display | fg(ink) | heading_level(1),
             card( toggle("Dark mode", m.dark, 0), toggle("Notifications", m.notify, 1) )
         ) | gap(20);
     }
@@ -161,7 +184,7 @@ struct App {
             {Settings, [&]{ return settings_screen(m); }},
             {NotFound, [&]{ return text("404 \u2014 not found") | fg(muted) | display; }},
         });
-        return page(bg0, centered(64, col(nav(m), body) | gap(28)));
+        return page(bg0, centered(64, col(nav(m), col(body) | as_main) | gap(28)));
     }
 };
 
