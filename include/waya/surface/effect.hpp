@@ -94,8 +94,16 @@ public:
     struct Navigate { std::string url; bool replace = false; };
     /// history.pushState the URL without triggering a route (deep-link sync).
     struct PushUrl  { std::string url; };
-    /// GET `url`; the response body becomes a Msg via `on_done`.
-    struct Fetch    { std::string url; std::function<Msg(std::string)> on_done; };
+    /// An HTTP request; the response BODY becomes a Msg via `on_done`. GET by
+    /// default; set method/headers/body for POST/PUT/auth'd JSON APIs. Runs on
+    /// a worker thread. https:// requires the runtime built with -DWAYA_TLS.
+    struct Fetch    {
+        std::string url;
+        std::function<Msg(std::string)> on_done;
+        std::string method = "GET";
+        std::vector<std::pair<std::string,std::string>> headers;
+        std::string body;
+    };
     /// Publish `payload` to everyone subscribed to `topic` (incl. self). The
     /// sender doesn't know or care who's listening — each receiver's
     /// `Sub::on_topic(topic, fn)` turns the payload into ITS own Msg. This is
@@ -121,6 +129,19 @@ public:
     static Cmd push_url(std::string url) { return Cmd(Alt{PushUrl{std::move(url)}}); }
     static Cmd fetch(std::string url, std::function<Msg(std::string)> on_done) {
         return Cmd(Alt{Fetch{std::move(url), std::move(on_done)}});
+    }
+    /// POST `body` (default JSON) to `url`; the response body becomes a Msg.
+    static Cmd post(std::string url, std::string body, std::function<Msg(std::string)> on_done,
+                    std::string content_type = "application/json") {
+        return Cmd(Alt{Fetch{std::move(url), std::move(on_done), "POST",
+                             {{"Content-Type", std::move(content_type)}}, std::move(body)}});
+    }
+    /// A full request: any method, headers (auth, etc.), and body.
+    static Cmd http(std::string method, std::string url,
+                    std::vector<std::pair<std::string,std::string>> headers,
+                    std::string body, std::function<Msg(std::string)> on_done) {
+        return Cmd(Alt{Fetch{std::move(url), std::move(on_done), std::move(method),
+                             std::move(headers), std::move(body)}});
     }
     /// Publish to a topic. Every session subscribed via Sub::on_topic(topic,..)
     /// — this one included — receives `payload` and maps it to its own Msg.
@@ -179,7 +200,7 @@ public:
                 });
             },
             [&](const Fetch& ft) -> Cmd<B> {
-                return Cmd<B>::fetch(ft.url,
+                return Cmd<B>::http(ft.method, ft.url, ft.headers, ft.body,
                     [on = ft.on_done, mapper = std::forward<F>(f)](std::string body) -> B {
                         return mapper(on(std::move(body)));
                     });

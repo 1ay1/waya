@@ -149,8 +149,14 @@ int main() {
         CHECK((detail::subs_of<C, C::Model, C::Msg>(C::Model{"", true}).timers().size() == 1));
     }
 
-    // ── http_get parses the URL without crashing on garbage ──────────────────
-    CHECK(detail::http_get("not-a-url").empty());           // graceful, non-crashing
+    // ── the HTTP client parses/handles a bad URL without crashing ────────────
+    {
+        auto r = waya::http::request({ .method="GET", .url="not-a-url", .timeout_ms=200 });
+        CHECK(r.status == 0 && r.body.empty());   // graceful, non-crashing
+        // https without WAYA_TLS fails cleanly (status 0), never plaintext
+        auto s = waya::http::request({ .method="GET", .url="https://example.com/", .timeout_ms=200 });
+        (void)s;   // status 0 when built without -DWAYA_TLS; the point is: no crash
+    }
 
     // ── ROUTING: on_route maps a path to a Msg, and the runtime feeds the SAME
     //    path to update() as its value. (Regression: the value used to be
