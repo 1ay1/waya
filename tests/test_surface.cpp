@@ -35,7 +35,7 @@ int main() {
     CHECK(s->style.flow == Flow::col);
     CHECK(s->kids.size() == 4);
     CHECK(s->kids[2]->kind == Kind::path && s->kids[2]->points.size() == 3);
-    CHECK(s->kids[3]->on_tap == Inc);
+    CHECK(s->kids[3]->on_tap != -1);   // a wire token was assigned for tap(Inc)
 
     // ── the full style vocabulary reaches CSS ───────────────────────────────
     {
@@ -72,7 +72,7 @@ int main() {
         CHECK(has(out.html, "<span"));
         CHECK(has(out.html, "Count"));
         CHECK(has(out.html, "<svg"));
-        CHECK(has(out.html, "data-tap=\"0\""));
+        CHECK(has(out.html, "data-tap=\""));   // a tap wire token is emitted
         CHECK(has(out.css, "flex-direction:column"));
         // interning: identical styles collapse
         auto s2 = box(text("a") | pad(8), text("b") | pad(8));
@@ -130,7 +130,7 @@ int main() {
     {
         // tap and a style attr are the SAME kind of thing (both Mod)
         auto n = text("x") | fg(0x111111) | tap(3) | pad(8);
-        CHECK(n->on_tap == 3);
+        CHECK(n->on_tap != -1);   // token assigned for tap(3)
         CHECK(n->style.has_fg && n->style.fg == 0x111111);
         CHECK(n->style.pad.value == 8);
         // Mods compose into a named bundle, then apply to any node
@@ -147,13 +147,13 @@ int main() {
         CHECK(n->kind == Kind::input);
         CHECK(n->text == "hello");
         CHECK(n->placeholder == "name");
-        CHECK(n->on_input == 2);
+        CHECK(n->on_input != -1);   // token assigned
         CHECK(n->input_type == "email");
         auto html = DomBackend{}.render(*n).html;
         CHECK(has(html, "<input type=\"email\""));
         CHECK(has(html, "value=\"hello\""));
         CHECK(has(html, "placeholder=\"name\""));
-        CHECK(has(html, "data-input=\"2\""));
+        CHECK(has(html, "data-input=\""));   // input wire token emitted
     }
 
     // ── delightful mods reach real css: gradient, blur, scale, truncate ─────

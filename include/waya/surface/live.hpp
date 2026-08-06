@@ -70,10 +70,13 @@ struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = t
 /// Surface `Msg` must be an integer or an integer-backed enum: taps travel over
 /// the WebSocket as integers, so the runtime converts Msg <-> int at the wire.
 /// (Use a `std::variant` Msg with the DOM `waya::app` runtime, not this one.)
+/// Surface `Msg` is the Program's own type — typically a `std::variant` of message
+/// structs (maya/Elm), carrying payloads and matched with std::visit. The runtime
+/// registers each wired Msg and maps it to an opaque wire token internally, so
+/// the app is fully type-safe; you never write an int message id.
 template <typename P>
 concept SurfaceProgram =
     requires { typename P::Model; typename P::Msg; }
-    && (std::integral<typename P::Msg> || std::is_enum_v<typename P::Msg>)
     && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; };
 
 namespace detail {
@@ -387,18 +390,29 @@ struct Session {
     std::deque<Deliver> queue;         // pending (msg,value) to dispatch
     std::atomic<bool> alive{true};
     std::mutex wm;                     // serializes socket writes
-    // Running interval subscriptions, keyed by (interval_ms, msg). Each has a
-    // generation flag so reconciliation can stop the ones no longer subscribed.
-    struct Timer { long ms; int msg; std::shared_ptr<std::atomic<bool>> run; };
+    // Running interval subscriptions. Each carries the typed Msg to deliver on
+    // tick, keyed for reconciliation by (interval_ms, Msg-token).
+    struct Timer { long ms; std::uint64_t key; std::any msg; std::shared_ptr<std::atomic<bool>> run; };
     std::vector<Timer> timers;
 
-    void push(int msg, std::string value = {}) {
-        { std::lock_guard<std::mutex> l(qm); queue.push_back({msg, std::move(value), {}}); }
+    /// Push a WIRE message: a token (looked up in the msg registry) + value.
+    void push_wire(int token, std::string value = {}) {
+        { std::lock_guard<std::mutex> l(qm); Deliver d; d.token=token; d.value=std::move(value); queue.push_back(std::move(d)); }
+        qcv.notify_one();
+    }
+    /// Push an already-typed Msg produced by an effect (emit/after/task/fetch).
+    void push_msg(std::any msg) {
+        { std::lock_guard<std::mutex> l(qm); Deliver d; d.msg=std::move(msg); queue.push_back(std::move(d)); }
+        qcv.notify_one();
+    }
+    /// Push a route change (value = path).
+    void push_route(std::string path) {
+        { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_route=true; d.value=std::move(path); queue.push_back(std::move(d)); }
         qcv.notify_one();
     }
     /// Deliver a topic broadcast: the owner loop resolves the on_topic handler.
     void push_topic(std::string topic, std::string payload) {
-        { std::lock_guard<std::mutex> l(qm); queue.push_back({kTopicMsg, std::move(payload), std::move(topic)}); }
+        { std::lock_guard<std::mutex> l(qm); Deliver d; d.topic=std::move(topic); d.value=std::move(payload); queue.push_back(std::move(d)); }
         qcv.notify_one();
     }
     std::optional<Deliver> pop() {
@@ -514,20 +528,20 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
         [](const typename Cmd<Msg>::None&) {},
         [&](const typename Cmd<Msg>::Quit&) { s->stop(); },
         [&](const typename Cmd<Msg>::Batch& b) { for (auto& c : b.cmds) perform(s, c); },
-        [&](const typename Cmd<Msg>::Emit& e) { s->push(static_cast<int>(e.msg)); },
+        [&](const typename Cmd<Msg>::Emit& e) { s->push_msg(std::any{e.msg}); },
         [&](const typename Cmd<Msg>::After& a) {
-            int m = static_cast<int>(a.msg); long ms = a.delay.count();
+            std::any m = a.msg; long ms = a.delay.count();
             std::weak_ptr<Session> ws_ = s;
-            std::thread([ws_, ms, m]{
+            std::thread([ws_, ms, m = std::move(m)]{
                 std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(m);
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(m);
             }).detach();
         },
         [&](const typename Cmd<Msg>::Task& t) {
             auto work = t.work; std::weak_ptr<Session> ws_ = s;
             std::thread([ws_, work]{
                 Msg r = work();
-                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(static_cast<int>(r));
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(std::any{r});
             }).detach();
         },
         [&](const typename Cmd<Msg>::Fetch& f) {
@@ -535,7 +549,7 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
             std::thread([ws_, url, on]{
                 std::string body = detail::http_get(url);
                 Msg r = on(std::move(body));
-                if (auto sp = ws_.lock(); sp && sp->alive) sp->push(static_cast<int>(r));
+                if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(std::any{r});
             }).detach();
         },
         [&](const typename Cmd<Msg>::Navigate& n) {
@@ -556,26 +570,28 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
 template <typename Msg>
 void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
     auto wanted = sub.timers();
+    // stable per-timer key = interval folded with the Msg token, so reconcile
+    // matches the same declared timer across renders.
+    auto keyof = [](const typename Sub<Msg>::Every& e){
+        return (std::uint64_t)e.interval.count() * 1099511628211ull ^ (std::uint64_t)(std::uint32_t)detail::value_token<Msg>(e.msg);
+    };
     std::vector<Session::Timer> next;
-    // Keep timers still wanted; mark which wanted ones are already running.
     std::vector<bool> matched(wanted.size(), false);
     for (auto& t : s->timers) {
         bool keep = false;
         for (std::size_t i = 0; i < wanted.size(); ++i) {
             if (matched[i]) continue;
-            if (wanted[i].interval.count() == t.ms && static_cast<int>(wanted[i].msg) == t.msg) {
-                matched[i] = true; keep = true; break;
-            }
+            if (keyof(wanted[i]) == t.key) { matched[i] = true; keep = true; break; }
         }
-        if (keep) next.push_back(t);
+        if (keep) next.push_back(std::move(t));
         else *t.run = false;   // signal the interval thread to exit
     }
-    // Start any wanted timer not already running.
     for (std::size_t i = 0; i < wanted.size(); ++i) {
         if (matched[i]) continue;
-        long ms = wanted[i].interval.count(); int m = static_cast<int>(wanted[i].msg);
+        long ms = wanted[i].interval.count();
+        std::any m = wanted[i].msg;
+        std::uint64_t key = keyof(wanted[i]);
         auto run = std::make_shared<std::atomic<bool>>(true);
-        next.push_back({ms, m, run});
         std::weak_ptr<Session> ws_ = s;
         std::thread([ws_, ms, m, run]{
             while (*run) {
@@ -583,9 +599,10 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
                 if (!*run) break;
                 auto sp = ws_.lock();
                 if (!sp || !sp->alive) break;
-                sp->push(m);
+                sp->push_msg(m);
             }
         }).detach();
+        next.push_back({ms, key, std::move(m), run});
     }
     s->timers = std::move(next);
 
@@ -614,6 +631,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         s->conn = conn;
 
         auto [model, init_cmd] = detail::init_of<P, Model, Msg>();
+        detail::begin_msg_capture();
         NodeRef prev = detail::safe_view<P>(model);
 
         // First frame: a full paint. Same shape as any later frame — a
@@ -649,20 +667,18 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                     // / "c<msg>|<value>"; route "@route|<path>" (special msg).
                     const std::string& raw = fr.payload;
                     if (raw.rfind("@route|", 0) == 0) {
-                        s->push(kRouteMsg, raw.substr(7));
+                        s->push_route(raw.substr(7));
                     } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e')) {
                         // i/c: input/change value; e: a generic wired event
-                        // (keyboard/focus/submit/drop) — all carry "<msg>|<payload>".
+                        // (keyboard/focus/submit/drop) — all carry "<token>|<payload>".
                         auto bar = raw.find('|');
-                        int m = std::atoi(raw.substr(1, bar-1).c_str());
-                        s->push(m, bar != std::string::npos ? raw.substr(bar+1) : std::string{});
+                        int tok = std::atoi(raw.substr(1, bar-1).c_str());
+                        s->push_wire(tok, bar != std::string::npos ? raw.substr(bar+1) : std::string{});
                     } else if (!raw.empty()) {
-                        // A bare tap is a signed integer msg id. Reject anything
-                        // non-numeric so a malformed frame can't masquerade as
-                        // msg 0 (atoi's silent failure).
+                        // A bare tap is a wire token. Reject non-numeric frames.
                         char* end = nullptr;
-                        long m = std::strtol(raw.c_str(), &end, 10);
-                        if (end && *end == '\0') s->push(static_cast<int>(m));
+                        long tok = std::strtol(raw.c_str(), &end, 10);
+                        if (end && *end == '\0') s->push_wire((int)tok);
                     }
                 }
             }
@@ -676,31 +692,38 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         while (auto d = s->pop()) {
             std::pair<Model, Cmd<Msg>> r;
             bool ok = true;
-            if (d->msg == kRouteMsg) {
-                // Route changes flow through the app's on_route subscription,
-                // computed from the CURRENT model (before this message). The
-                // path is delivered BOTH ways: on_route maps it to the app's
-                // Msg, and it rides along as the update `value` so a
-                // 3-arg update(Model, Msg, path) can read it directly.
+            bool handled = true;
+            if (d->is_route) {
+                // Route change: on_route maps the path to a Msg; the path also
+                // rides as the update value (3-arg update).
                 auto sub = detail::subs_of<P, Model, Msg>(model);
                 auto* rt = sub.route();
-                if (!rt) continue;   // app doesn't route: drop it
-                r = detail::safe_dispatch<P>(std::move(model), rt->route(d->value), d->value, ok);
-            } else if (d->msg == kTopicMsg) {
-                // A broadcast arrived on d->topic. Find the on_topic handler for
-                // that topic in the CURRENT subscription, map the payload to a
-                // Msg, and deliver the payload as the update value too.
+                if (!rt) { handled = false; }
+                else r = detail::safe_dispatch<P>(std::move(model), rt->route(d->value), d->value, ok);
+            } else if (!d->topic.empty()) {
+                // Broadcast: find the on_topic handler, map the payload to a Msg.
                 auto sub = detail::subs_of<P, Model, Msg>(model);
                 const typename Sub<Msg>::OnTopic* h = nullptr;
                 for (auto* t : sub.topics()) if (t->topic == d->topic) { h = t; break; }
-                if (!h) continue;    // no longer subscribed: drop it
-                r = detail::safe_dispatch<P>(std::move(model), h->on(d->value), d->value, ok);
+                if (!h) { handled = false; }
+                else r = detail::safe_dispatch<P>(std::move(model), h->on(d->value), d->value, ok);
+            } else if (d->has_msg()) {
+                // Effect-produced typed Msg (emit/after/task/fetch/interval).
+                if (auto* m = std::any_cast<Msg>(&d->msg))
+                    r = detail::safe_dispatch<P>(std::move(model), *m, d->value, ok);
+                else handled = false;
             } else {
-                r = detail::safe_dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value, ok);
+                // Wire message: resolve the token (+event value) to a typed Msg
+                // via the CURRENT render's registry.
+                if (auto m = detail::resolve_msg<Msg>(d->token, d->value))
+                    r = detail::safe_dispatch<P>(std::move(model), *m, d->value, ok);
+                else handled = false;   // stale token (pre-rerender) → drop
             }
+            if (!handled) { model = std::move(model); continue; }
             model = std::move(r.first);
             detail::perform<Msg>(s, r.second);
 
+            detail::begin_msg_capture();     // fresh msg registry for this render
             NodeRef next = detail::safe_view<P>(model);
             Patch patch = diff(prev, next);
             prev = next;
@@ -739,7 +762,8 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             ssr_model = std::move(r.first);
         }
     }
-    NodeRef ssr_root = detail::safe_view<P>(ssr_model);
+    detail::begin_msg_capture();
+    NodeRef ssr_root = detail::safe_view<P>(ssr_model);   // captures tokens into a fresh table
     auto ssr = DomBackend{}.render(*ssr_root);   // {html, css}
 
     // Initial HTML: the SSR'd surface in #root, the app's CSS inline (so it's

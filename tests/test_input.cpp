@@ -99,7 +99,7 @@ int main() {
         CHECK(n->kind == Kind::checkbox && n->checked);
         auto h = html_of(n);
         CHECK(has(h, "type=\"checkbox\"")); CHECK(has(h, " checked"));
-        CHECK(has(h, "data-change=\"3\"")); CHECK(has(h, "name=\"agree\""));
+        CHECK(has(h, "data-change=\"")); CHECK(has(h, "name=\"agree\""));
     }
     // an unchecked checkbox omits `checked`
     CHECK(!has(html_of(checkbox(false)), " checked"));
@@ -118,7 +118,7 @@ int main() {
         auto n = select({option("a","Apple"), option("b","Banana")}, "b") | on_change(5);
         CHECK(n->kind == Kind::select && n->selected == "b");
         auto h = html_of(n);
-        CHECK(has(h, "<select")); CHECK(has(h, "data-change=\"5\""));
+        CHECK(has(h, "<select")); CHECK(has(h, "data-change=\""));
         CHECK(has(h, "<option value=\"a\">Apple</option>"));
         CHECK(has(h, "<option value=\"b\" selected>Banana</option>"));
     }
@@ -129,7 +129,7 @@ int main() {
         CHECK(n->kind == Kind::textarea);
         auto h = html_of(n);
         CHECK(has(h, "<textarea")); CHECK(has(h, "placeholder=\"bio\""));
-        CHECK(has(h, "data-input=\"6\"")); CHECK(has(h, ">multi\nline</textarea>"));
+        CHECK(has(h, "data-input=\"")); CHECK(has(h, ">multi\nline</textarea>"));
     }
 
     // button renders <button> and wires tap
@@ -137,7 +137,7 @@ int main() {
         auto n = button("Save") | tap(7);
         CHECK(n->kind == Kind::button);
         auto h = html_of(n);
-        CHECK(has(h, "<button type=\"button\"")); CHECK(has(h, "data-tap=\"7\""));
+        CHECK(has(h, "<button type=\"button\"")); CHECK(has(h, "data-tap=\""));
         CHECK(has(h, ">Save</button>"));
     }
 
@@ -255,33 +255,33 @@ int main() {
         CHECK(keys(work) == (std::vector<std::string>{"3","1","2"}));
     }
 
-    // ═══ 3. INTERACTION EVENTS ─ keyboard / focus / submit / drag ══════════════
+    //  3. INTERACTION EVENTS ─ keyboard / focus / submit / drag
     enum { Save, Close, Blurred, Dropped };
-    // on_key emits data-ev-keydown="<msg>|<key>"
+    // on_key emits data-ev-keydown="<token>|<key>" — token is an opaque hash, but
+    // the KEY arg is stable, so we check the "|Enter" suffix.
     {
         auto h = html_of(box() | on_enter(Save));
-        CHECK(has(h, "data-ev-keydown=\"0|Enter\""));
+        CHECK(has(h, "data-ev-keydown=\"")); CHECK(has(h, "|Enter\""));
     }
-    CHECK(has(html_of(box() | on_escape(Close)), "data-ev-keydown=\"1|Escape\""));
-    CHECK(has(html_of(box() | on_key("ArrowDown", Save)), "data-ev-keydown=\"0|ArrowDown\""));
-    // focus / blur
-    CHECK(has(html_of(input("x") | on_blur(Blurred)), "data-ev-blur=\"2\""));
-    CHECK(has(html_of(box() | on_focus(Save)), "data-ev-focus=\"0\""));
-    // a generic on("event", msg)
-    CHECK(has(html_of(box() | on("pointerenter", Save)), "data-ev-pointerenter=\"0\""));
+    { auto h = html_of(box() | on_escape(Close)); CHECK(has(h, "data-ev-keydown=\"") && has(h, "|Escape\"")); }
+    { auto h = html_of(box() | on_key("ArrowDown", Save)); CHECK(has(h, "|ArrowDown\"")); }
+    // focus / blur / generic
+    CHECK(has(html_of(input("x") | on_blur(Blurred)), "data-ev-blur=\""));
+    CHECK(has(html_of(box() | on_focus(Save)), "data-ev-focus=\""));
+    CHECK(has(html_of(box() | on("pointerenter", Save)), "data-ev-pointerenter=\""));
     // draggable + on_drop
     {
         auto h = html_of(box() | draggable("card-7"));
         CHECK(has(h, "draggable=\"true\"")); CHECK(has(h, "name=\"card-7\""));
     }
-    CHECK(has(html_of(box() | on_drop(Dropped)), "data-ev-drop=\"3\""));
+    CHECK(has(html_of(box() | on_drop(Dropped)), "data-ev-drop=\""));
 
-    // ═══ form + on_submit ══════════════════════════════════════════
+    // form + on_submit
     {
         auto f = form(input("a") | name("user"), button("go")) | on_submit(Save);
         CHECK(f->kind == Kind::form);
         auto h = html_of(f);
-        CHECK(has(h, "<form")); CHECK(has(h, "data-ev-submit=\"0\""));
+        CHECK(has(h, "<form")); CHECK(has(h, "data-ev-submit=\""));
         CHECK(has(h, "name=\"user\""));
     }
 

@@ -37,6 +37,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <any>
 #include <vector>
 
 namespace waya::surface {
@@ -47,7 +48,20 @@ using namespace std::chrono_literals;
 /// message as an integer tap id; `value` is an optional string payload (input
 /// value, fetch body, route path, broadcast payload). `topic` is set only for a
 /// broadcast delivery, so the owner loop can find the matching on_topic handler.
-struct Deliver { int msg; std::string value; std::string topic; };
+/// A unit of work for the owner loop. Either:
+///   • a WIRE message from the browser: `token` (looked up in the msg registry)
+///     + `value` (an input's text, a dropped payload, a pressed key), or
+///   • an EFFECT-produced message: `msg` holds the already-typed Msg (std::any),
+///     no wire round-trip needed (Cmd::emit/after/task/fetch, broadcast).
+/// `topic` is set only for a broadcast delivery. `route` marks a route change.
+struct Deliver {
+    int token = 0;              // wire token (0 = none / not a wire msg)
+    std::string value;          // event value / route path / broadcast payload
+    std::string topic;          // set for broadcast deliveries
+    std::any msg;               // resolved typed Msg for effect-produced deliveries
+    bool is_route = false;      // this is a route change (value = path)
+    bool has_msg() const { return msg.has_value(); }
+};
 
 // ── overload helper (same trick maya uses for std::visit) ───────────────────
 template <class... Ts> struct overload : Ts... { using Ts::operator()...; };

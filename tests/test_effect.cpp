@@ -205,8 +205,8 @@ int main() {
         detail::Hub::instance().set_topics(s3, {"other"});   // NOT in room
         detail::Hub::instance().publish("room", "alice\nhi");
         auto d1 = s1->pop(); auto d2 = s2->pop();
-        CHECK(d1 && d1->msg == detail::kTopicMsg && d1->topic == "room" && d1->value == "alice\nhi");
-        CHECK(d2 && d2->msg == detail::kTopicMsg && d2->value == "alice\nhi");
+        CHECK(d1 && d1->topic == "room" && d1->value == "alice\nhi");
+        CHECK(d2 && d2->topic == "room" && d2->value == "alice\nhi");
         // s3 (different topic) got nothing — its queue is empty.
         { std::lock_guard<std::mutex> lk(s3->qm); CHECK(s3->queue.empty()); }
         // Leaving the topic stops delivery.

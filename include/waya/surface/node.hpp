@@ -29,6 +29,10 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <vector>
+
+#include "msg.hpp"
 #include <string_view>
 #include <type_traits>
 #include <tuple>
@@ -547,9 +551,30 @@ inline Mod only_phone(){ return hide_above(Break::Md); }
 inline Mod only_desktop(){ return hide_below(Break::Md); }
 
 // ── interactivity & identity — Mods that touch the node, not just its style ─
-inline Mod tap(int msg){ return {[=](Node& n){ n.on_tap=msg; }}; }
-inline Mod on_input(int msg){ return {[=](Node& n){ n.on_input=msg; }}; }
-inline Mod on_change(int msg){ return {[=](Node& n){ n.on_change=msg; }}; }
+// TYPED messages: `tap(Inc{})`, `on_input([](std::string v){ return SetName{v}; })`.
+// The app's Msg is its own variant (maya/Elm), NOT an int. At build time each
+// handler is registered in the per-render table and an opaque wire TOKEN is
+// stored on the node; the runtime resolves the token back to the real Msg on
+// the round-trip. The int in the node is a private wire detail, never authored.
+template <typename Msg> Mod tap(Msg m){ int tok = detail::register_msg<Msg>(std::move(m)); return {[=](Node& n){ n.on_tap=tok; }}; }
+/// `on_input(fn)` — fn maps the field's live text to a Msg: on_input([](std::string v){ return SetName{v}; }).
+template <typename Fn> requires (!std::is_integral_v<Fn> && !std::is_enum_v<Fn>)
+Mod on_input(Fn fn){
+    using Msg = std::invoke_result_t<Fn, std::string>;
+    int tok = detail::register_mapper<Msg>(std::function<Msg(std::string)>(std::move(fn)));
+    return {[=](Node& n){ n.on_input=tok; }};
+}
+/// int/enum overload: the field's value rides to update() as the 3rd arg.
+template <typename E> requires (std::is_integral_v<E> || std::is_enum_v<E>)
+Mod on_input(E msg){ int tok = detail::register_msg<E>(msg); return {[=](Node& n){ n.on_input=tok; }}; }
+template <typename Fn> requires (!std::is_integral_v<Fn> && !std::is_enum_v<Fn>)
+Mod on_change(Fn fn){
+    using Msg = std::invoke_result_t<Fn, std::string>;
+    int tok = detail::register_mapper<Msg>(std::function<Msg(std::string)>(std::move(fn)));
+    return {[=](Node& n){ n.on_change=tok; }};
+}
+template <typename E> requires (std::is_integral_v<E> || std::is_enum_v<E>)
+Mod on_change(E msg){ int tok = detail::register_msg<E>(msg); return {[=](Node& n){ n.on_change=tok; }}; }
 inline Mod placeholder(std::string p){ return {[=](Node& n){ n.placeholder=p; }}; }
 inline Mod type(std::string t){ return {[=](Node& n){ n.input_type=t; }}; }
 inline Mod name(std::string nm){ return {[=](Node& n){ n.name=nm; }}; }
@@ -558,44 +583,56 @@ inline Mod disabled(bool on=true){ return {[=](Node& n){ n.disabled=on; }}; }
 inline Mod key(std::string k){ return {[=](Node& n){ n.key=k; }}; }
 
 // ── the general event mod — wire any DOM event to a Msg ───────────────────
-/// `on("pointerenter", Show)` — the escape hatch: any DOM event name → Msg. The
-/// named helpers below are sugar over this. `arg` optionally narrows it (a key).
-inline Mod on(std::string event, int msg, std::string arg={}){
-    return {[=](Node& n){ n.events.push_back({event, msg, arg}); }};
+/// `on("pointerenter", Show{})` — the escape hatch: any DOM event name → Msg. For
+/// value-carrying events (keydown/drop) the event's value is IGNORED here (fixed
+/// Msg); use on_keydown/on_drop with a mapper to read it. `arg` narrows (a key).
+template <typename Msg> Mod on(std::string event, Msg m, std::string arg={}){
+    int tok = detail::register_msg<Msg>(std::move(m));
+    return {[=](Node& n){ n.events.push_back({event, tok, arg}); }};
+}
+/// value-carrying general event: fn maps the event value to a Msg.
+template <typename Fn> requires (!std::is_integral_v<Fn> && !std::is_enum_v<Fn>)
+Mod on_ev(std::string event, Fn fn, std::string arg={}){
+    using Msg = std::invoke_result_t<Fn, std::string>;
+    int tok = detail::register_mapper<Msg>(std::function<Msg(std::string)>(std::move(fn)));
+    return {[=](Node& n){ n.events.push_back({event, tok, arg}); }};
+}
+template <typename E> requires (std::is_integral_v<E> || std::is_enum_v<E>)
+Mod on_ev(std::string event, E msg, std::string arg={}){
+    int tok = detail::register_msg<E>(msg);
+    return {[=](Node& n){ n.events.push_back({event, tok, arg}); }};
 }
 
-// ── keyboard ────────────────────────────────────────────────────────────────
-/// `on_key("Enter", Submit)` — fire only when that key is pressed while focused.
-/// The key is the browser KeyboardEvent.key ("Enter","Escape","ArrowDown","a").
-inline Mod on_key(std::string k, int msg){ return on("keydown", msg, std::move(k)); }
-inline Mod on_enter(int msg){ return on_key("Enter", msg); }
-inline Mod on_escape(int msg){ return on_key("Escape", msg); }
-/// Any keydown — the pressed key name arrives as the update `value`.
-inline Mod on_keydown(int msg){ return on("keydown", msg); }
+// ── keyboard ────────────────────────────────────────────────────
+/// `on_key("Enter", Submit{})` — fire only when that key is pressed while focused.
+template <typename Msg> Mod on_key(std::string k, Msg m){ return on("keydown", std::move(m), std::move(k)); }
+template <typename Msg> Mod on_enter(Msg m){ return on_key("Enter", std::move(m)); }
+template <typename Msg> Mod on_escape(Msg m){ return on_key("Escape", std::move(m)); }
+/// `on_keydown(fn)` — any key; the pressed key name is mapped to a Msg by fn.
+template <typename Fn> Mod on_keydown(Fn fn){ return on_ev("keydown", std::move(fn)); }
 
-// ── focus ───────────────────────────────────────────────────────────────────
-inline Mod on_focus(int msg){ return on("focus", msg); }
-inline Mod on_blur(int msg){ return on("blur", msg); }
+// ── focus ─────────────────────────────────────────────────────
+template <typename Msg> Mod on_focus(Msg m){ return on("focus", std::move(m)); }
+template <typename Msg> Mod on_blur(Msg m){ return on("blur", std::move(m)); }
 
 // ── pointer / hover as EVENTS (distinct from :hover styling) ────────────────
-inline Mod on_enter_pointer(int msg){ return on("pointerenter", msg); }
-inline Mod on_leave_pointer(int msg){ return on("pointerleave", msg); }
-/// `on_hover(enterMsg, leaveMsg)` — the common pair (tooltips, previews).
-inline Mod on_hover(int enter_msg, int leave_msg){
-    return on("pointerenter", enter_msg) | on("pointerleave", leave_msg);
+template <typename Msg> Mod on_enter_pointer(Msg m){ return on("pointerenter", std::move(m)); }
+template <typename Msg> Mod on_leave_pointer(Msg m){ return on("pointerleave", std::move(m)); }
+/// `on_hover(Enter{}, Leave{})` — the common pair (tooltips, previews).
+template <typename Msg> Mod on_hover(Msg enter, Msg leave){
+    return on("pointerenter", std::move(enter)) | on("pointerleave", std::move(leave));
 }
 
-// ── forms ───────────────────────────────────────────────────────────────────
-/// `on_submit(Save)` on a `form(...)` — fires on Enter or a submit button; the
-/// runtime gathers the form's named fields as "a=1&b=2" into the update value.
-inline Mod on_submit(int msg){ return on("submit", msg); }
+// ── forms ─────────────────────────────────────────────────────────────
+/// `on_submit(fn)` on a `form(...)` — fn maps the gathered "a=1&b=2" field string
+/// to a Msg. Fires on Enter or a submit button.
+template <typename Fn> Mod on_submit(Fn fn){ return on_ev("submit", std::move(fn)); }
 
 // ── drag & drop ─────────────────────────────────────────────────────────────
 /// Mark a node draggable and give it a payload id (rides as the drag data).
 inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
-/// `on_drop(Move)` on a drop target — the dragged node's payload arrives as the
-/// update value, so the app knows WHAT was dropped WHERE.
-inline Mod on_drop(int msg){ return on("drop", msg); }
+/// `on_drop(fn)` on a drop target — fn maps the dropped payload to a Msg.
+template <typename Fn> Mod on_drop(Fn fn){ return on_ev("drop", std::move(fn)); }
 
 // ── arbitrary attributes & accessibility ──────────────────────────────
 /// `attr("title","Save")` — set ANY HTML attribute. The escape hatch for the
