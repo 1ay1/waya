@@ -200,11 +200,28 @@ private:
                 o+=" name=\""; esc_attr(o,nd.name); o+='"';
             }
         }
-        // arbitrary attributes (aria-*, role, title, data-*, controls…)
+        // arbitrary attributes (aria-*, role, title, data-*, controls…). The
+        // value is always attribute-escaped; additionally, any URL-BEARING
+        // attribute is run through safe_url so the raw attr("href",…) escape
+        // hatch can't smuggle a `javascript:`/`data:` scheme past the sanitiser
+        // that href()/link_to() apply. (These are the sink attributes the HTML
+        // spec treats as URLs.)
         for(auto& a : nd.attrs){
             o+=' '; o+=a.first;
-            if(!a.second.empty()){ o+="=\""; esc_attr(o,a.second); o+='"'; }
+            if(!a.second.empty()){
+                o+="=\"";
+                if(is_url_attr(a.first)) esc_attr(o, safe_url(a.second));
+                else                     esc_attr(o, a.second);
+                o+='"';
+            }
         }
+    }
+
+    /// Attributes whose value is a URL and must be scheme-sanitised.
+    static bool is_url_attr(std::string_view k){
+        return k=="href" || k=="src" || k=="action" || k=="formaction" ||
+               k=="poster" || k=="cite" || k=="data" || k=="background" ||
+               k=="ping" || k=="xlink:href" || k=="longdesc" || k=="manifest";
     }
 
     void open_attrs(std::string& o, const Node& nd){

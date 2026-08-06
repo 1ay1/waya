@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace waya::surface {
@@ -43,12 +44,24 @@ inline std::string child(const std::string& p, std::size_t i) {
 inline void diff_node(const Node& a, const Node& b, const std::string& path,
                       const NodeRef& bref, Patch& out);
 
-/// True when EVERY child on both sides carries a non-empty key. Only then can
-/// we reconcile by identity; a mixed list falls back to positional diffing.
+/// True when EVERY child on both sides carries a non-empty key AND all keys are
+/// UNIQUE within their list. Only then can we reconcile by identity; a mixed or
+/// duplicate-keyed list falls back to positional diffing. Uniqueness is
+/// essential: the keyed planner matches by `std::find`, which always returns the
+/// FIRST occurrence — so a repeated key would silently diff the wrong row and
+/// corrupt the client DOM. Falling back is always safe.
 inline bool fully_keyed(const std::vector<NodeRef>& a, const std::vector<NodeRef>& b) {
     if (a.empty() && b.empty()) return false;
-    for (auto& c : a) if (!c || c->key.empty()) return false;
-    for (auto& c : b) if (!c || c->key.empty()) return false;
+    std::unordered_set<std::string> seen;
+    for (auto& c : a) {
+        if (!c || c->key.empty()) return false;
+        if (!seen.insert(c->key).second) return false;   // duplicate key in old
+    }
+    seen.clear();
+    for (auto& c : b) {
+        if (!c || c->key.empty()) return false;
+        if (!seen.insert(c->key).second) return false;   // duplicate key in new
+    }
     return true;
 }
 

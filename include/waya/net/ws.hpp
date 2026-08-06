@@ -123,8 +123,16 @@ inline std::string encode_pong(std::string_view payload){
 /// One decoded incoming frame.
 struct Frame { int opcode = -1; std::string payload; bool ok = false; };
 
+/// The largest client frame payload we will decode. A frame declaring more than
+/// this is rejected outright (fr.ok stays false, and the caller drops the
+/// connection) BEFORE any allocation — so a hostile 64-bit length can't drive an
+/// OOM. 16 MiB is far above any legitimate live-runtime message.
+inline constexpr std::uint64_t kMaxFrame = 16u * 1024u * 1024u;
+
 /// Decode a single client→server frame from a buffer (client frames are masked).
-/// Returns {ok=false} if incomplete. `consumed` gets the bytes used.
+/// Returns {ok=false} if incomplete OR malformed/oversized. `consumed` gets the
+/// bytes used. On an oversized/overflowing length it sets fr.opcode = -2 as a
+/// distinct "protocol error, close the connection" signal.
 inline Frame decode(std::string_view buf, std::size_t& consumed){
     Frame fr; consumed = 0;
     if(buf.size() < 2) return fr;
@@ -134,6 +142,10 @@ inline Frame decode(std::string_view buf, std::size_t& consumed){
     std::size_t pos = 2;
     if(len == 126){ if(buf.size()<4) return fr; len=((unsigned char)buf[2]<<8)|(unsigned char)buf[3]; pos=4; }
     else if(len == 127){ if(buf.size()<10) return fr; len=0; for(int i=0;i<8;i++) len=(len<<8)|(unsigned char)buf[2+i]; pos=10; }
+    // Reject an oversized frame BEFORE allocating. This also makes the
+    // `buf.size() < pos+len` check below immune to uint64 overflow: len is now
+    // bounded well under SIZE_MAX, so pos+len cannot wrap.
+    if(len > kMaxFrame){ fr.opcode = -2; return fr; }
     unsigned char mask[4]={0,0,0,0};
     if(masked){ if(buf.size()<pos+4) return fr; for(int i=0;i<4;i++) mask[i]=buf[pos+i]; pos+=4; }
     if(buf.size() < pos+len) return fr;

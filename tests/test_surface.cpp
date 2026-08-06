@@ -101,6 +101,26 @@ int main() {
         CHECK(p.size() == 1 && p[0].op == Op::set_paint);
     }
 
+    // ── keyed diff is SAFE against duplicate keys ───────────────────────────
+    // Duplicate sibling keys would corrupt an identity-based reconcile (find
+    // returns the first match), so fully_keyed() must reject them and the diff
+    // falls back to positional — which is always sound.
+    {
+        auto uniq = col(text("a") | key("k1"), text("b") | key("k2"));
+        CHECK(detail::fully_keyed(uniq->kids, uniq->kids));   // clean keyed list
+        auto dup = col(text("a") | key("k1"), text("b") | key("k1"));
+        CHECK(!detail::fully_keyed(dup->kids, dup->kids));    // duplicates rejected
+        // diffing a duplicate-keyed list must still produce a usable patch, not
+        // crash or mis-address: change the second child's text.
+        auto a = col(text("a") | key("k1"), text("b") | key("k1"));
+        auto b = col(text("a") | key("k1"), text("c") | key("k1"));
+        auto p = diff(a, b);
+        CHECK(!p.empty());
+        bool touches_child1 = false;
+        for (auto& op : p) if (op.path.rfind("1", 0) == 0) touches_child1 = true;
+        CHECK(touches_child1);   // positional path "1" addressed, not corrupted
+    }
+
     // ── wire: patch JSON carries {css, ops} ─────────────────────────────────
     {
         auto j = patch_json(diff(view(1), view(2)));

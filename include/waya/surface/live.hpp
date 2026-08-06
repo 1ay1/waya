@@ -669,6 +669,9 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                 for (;;) {
                     std::size_t used = 0;
                     auto fr = ws::decode(acc, used);
+                    // A malformed/oversized frame (opcode -2) is a protocol
+                    // error: drop the whole connection instead of spinning.
+                    if (fr.opcode == -2) { s->stop(); return; }
                     if (!fr.ok) break;
                     acc.erase(0, used);
                     if (fr.opcode == 0x8) { s->stop(); return; }        // close
@@ -679,14 +682,26 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                     // Upstream messages: taps "<msg>"; inputs "i<msg>|<value>"
                     // / "c<msg>|<value>"; route "@route|<path>" (special msg).
                     const std::string& raw = fr.payload;
+                    // Cap a single message's value length: even within the frame
+                    // size limit, we won't feed an oversized string into the
+                    // model loop on every keystroke.
+                    constexpr std::size_t kMaxValue = 64u * 1024u;
                     if (raw.rfind("@route|", 0) == 0) {
-                        s->push_route(raw.substr(7));
+                        std::string path = raw.substr(7);
+                        if (path.size() <= kMaxValue) s->push_route(std::move(path));
                     } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e')) {
                         // i/c: input/change value; e: a generic wired event
                         // (keyboard/focus/submit/drop) — all carry "<token>|<payload>".
                         auto bar = raw.find('|');
-                        int tok = std::atoi(raw.substr(1, bar-1).c_str());
-                        s->push_wire(tok, bar != std::string::npos ? raw.substr(bar+1) : std::string{});
+                        if (bar == std::string::npos) continue;         // malformed: no separator
+                        // Checked token parse: a non-numeric token is dropped,
+                        // never silently coerced to 0 (which is a valid msg).
+                        char* end = nullptr;
+                        long tok = std::strtol(raw.c_str() + 1, &end, 10);
+                        if (!end || end != raw.c_str() + bar) continue; // token wasn't all digits
+                        std::string val = raw.substr(bar + 1);
+                        if (val.size() > kMaxValue) continue;           // oversized value: drop
+                        s->push_wire((int)tok, std::move(val));
                     } else if (!raw.empty()) {
                         // A bare tap is a wire token. Reject non-numeric frames.
                         char* end = nullptr;

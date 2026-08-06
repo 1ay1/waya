@@ -106,6 +106,17 @@ int main() {
     { auto h = html_of(text("go") | href("https://x.dev"));
       check(has(h, "href=\"https://x.dev\"") && has(h, "<a "), "href() sets a safe anchor"); }
 
+    // the raw attr() escape hatch must ALSO sanitise URL-bearing attributes,
+    // or it becomes an XSS bypass around href()/link_to().
+    { auto h = html_of(text("x") | attr("href", "javascript:evil()"));
+      check(!has(h, "javascript:"), "attr(href, javascript:) is neutralised"); }
+    { auto h = html_of(image("/ok.png") | alt("a") | attr("src", "javascript:evil()"));
+      check(!has(h, "data-ev") && !has(h, "\"javascript:evil()\""), "attr(src, javascript:) neutralised"); }
+    { auto h = html_of(box(text("x")) | attr("formaction", "javascript:evil()"));
+      check(!has(h, "javascript:"), "attr(formaction, javascript:) neutralised"); }
+    { auto h = html_of(box(text("x")) | attr("data-safe", "javascript:ok"));
+      check(has(h, "data-safe=\"javascript:ok\""), "non-URL attr keeps its value verbatim"); }
+
     std::cout << "test_safety: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
