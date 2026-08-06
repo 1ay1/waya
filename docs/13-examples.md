@@ -152,6 +152,31 @@ Key structure to study in `examples/blog.cpp`:
 - `meta` — per-route SEO.
 - Component functions: `post_card`, `featured_card`, `post_view`, `post_footer`.
 
+## `showcase` — the grand tour
+
+The one example that touches everything a real app needs, in ~200 lines of three
+pure functions. A small "Signups" admin with:
+
+- **Routing with query params** — `router()` plus `m.q("role")` / `m.q("q")`, so
+  the role facets and the text filter are just deep-linkable URLs
+  (`/?role=Admin`, `/?q=ada`).
+- **A real form** — `form(...) | on_submit(...)` gathers named controls into
+  `FormData`, with validation that surfaces as an assertive `alert(...)`.
+- **Effects with HTTP status** — `Cmd::fetch_full` delivers a full `Response`,
+  so the save handles `status == 0` (never completed) and non-2xx distinctly
+  from success, and rolls back the optimistic add on failure.
+- **Accessibility for live updates** — a `live_region()` wrapping `status(...)`
+  announces "Added Ada." to a screen reader with no extra work.
+
+```sh
+./build/showcase   # http://localhost:8080
+```
+
+Because it's pure, the whole app is drivable in a test with
+`test::harness<Showcase>()` and scrubbable with `debug::timeline<Showcase>()` —
+no browser required. Study `examples/showcase.cpp` for how routing, forms,
+effects, and a11y compose in one place.
+
 ## Building your own
 
 Start from the [counter in Getting Started](01-getting-started.md), then reach
@@ -162,5 +187,6 @@ for the example closest to your goal:
 - **Content / docs / blog:** `blog`.
 - **Graphics / visualisation:** `orbit`.
 - **Theming / design system:** `studio`.
+- **Everything at once (routing + forms + effects + a11y):** `showcase`.
 
 Each is small enough to read in one sitting and copy from.

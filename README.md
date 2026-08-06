@@ -125,6 +125,8 @@ cmake -S . -B build && cmake --build build -j
 ./build/orbit     # live generative art (a subscription ticks it)
 ./build/pulse     # a real-time collaborative dashboard (open two tabs)
 ./build/blog      # "hypertext" — a full content site: router, search, SEO, TOC
+./build/showcase  # the grand tour: routed screens, ?query filters, a validated
+                  #   form, async fetch with HTTP-status handling, aria-live
 ```
 
 ### Live reload
