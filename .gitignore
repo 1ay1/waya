@@ -3,6 +3,11 @@ build/
 out/
 *.o
 
+# MkDocs static site output
+site/
+_site/
+.cache/
+
 # Vendored reference sources (maya) — not part of waya
 reference/
 

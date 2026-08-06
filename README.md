@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <a href="https://1ay1.github.io/waya/">Documentation</a> ·
   <a href="DESIGN.md">Design</a> ·
   <a href="PLAN.md">Plan</a> ·
   <a href="spike/">Spike</a>

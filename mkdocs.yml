@@ -1,0 +1,85 @@
+site_name: waya
+site_description: A C++26 server-side web framework — describe a surface with a tiny vocabulary; waya renders it to the browser and streams only the delta on every interaction.
+site_url: https://1ay1.github.io/waya/
+repo_url: https://github.com/1ay1/waya
+repo_name: 1ay1/waya
+edit_uri: edit/master/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Introduction: 00-introduction.md
+      - Getting Started: 01-getting-started.md
+      - The Mental Model: 02-mental-model.md
+      - The Vocabulary: 03-vocabulary.md
+      - Styling: 04-styling.md
+      - Layout: 05-layout.md
+      - The Runtime — Elm Architecture: 06-runtime.md
+      - Events & Inputs: 07-events.md
+      - Effects & Subscriptions: 08-effects.md
+      - Routing & SEO: 09-routing-seo.md
+      - Scaling to Big Apps: 10-scaling.md
+  - Reference:
+      - API Reference: 11-api-reference.md
+      - Recipes & Patterns: 12-recipes.md
+      - Examples Walkthrough: 13-examples.md
+      - Glossary: glossary.md
+  - Internals:
+      - How It Works: internals/architecture.md
+      - The Wire Protocol: internals/wire-protocol.md

@@ -4,15 +4,20 @@
 ///
 /// A whole content site in one file: a real router (/, /post/:slug, /tag/:tag,
 /// /archive, /about), a seed corpus of nerdy posts with full metadata, LIVE
-/// search + tag filtering, a tag cloud, code-block styling, per-post SEO
-/// (Open Graph + Article JSON-LD), reading time, and a stats sidebar. Every
-/// route server-renders its own screen and is crawlable.
+/// search with a result count, a featured hero post, tag filtering, a tag cloud,
+/// monogram author avatars, per-post SEO (Open Graph + Article JSON-LD), reading
+/// time, a scroll-driven reading-progress bar, an auto-generated table of
+/// contents, related posts, and prev/next navigation. Every route
+/// server-renders its own screen and is crawlable.
 
 #include <waya/surface/live.hpp>
 #include <waya/surface/sugar.hpp>
 #include <waya/surface/router.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
 #include <string>
 #include <variant>
 #include <vector>
@@ -210,6 +215,50 @@ struct Blog {
     }
 
     // ── shared UI ──────────────────────────────────────────────────────────────
+
+    // A deterministic accent colour per author, so avatars/labels feel personal.
+    static std::uint32_t author_hue(const std::string& name) {
+        std::uint32_t h = 2166136261u;
+        for (char c : name) { h ^= (std::uint8_t)c; h *= 16777619u; }
+        static const std::uint32_t palette[] = {
+            0x818cf8, 0x22d3ee, 0xf472b6, 0x34d399, 0xfbbf24, 0xa78bfa, 0xfb7185, 0x60a5fa
+        };
+        return palette[h % (sizeof(palette)/sizeof(palette[0]))];
+    }
+
+    // A round monogram avatar (initials on a tinted disc) — zero images needed.
+    static NodeRef avatar(const std::string& name, int px_=34) {
+        std::string initials;
+        bool take = true;
+        for (char c : name) { if (c==' ') { take=true; continue; } if (take && initials.size()<2) { initials += (char)std::toupper((unsigned char)c); take=false; } }
+        std::uint32_t c = author_hue(name);
+        return stack(text(initials) | fg(0x0b0e18) | weight(Weight::black) | font(px_*0.42f))
+             | css("width", std::to_string(px_)+"px") | css("height", std::to_string(px_)+"px")
+             | round(999) | css("background", "linear-gradient(135deg," + hex(c) + "," + hex(c) + "aa)")
+             | css("flex","0 0 auto") | css("place-items","center");
+    }
+
+    static std::string hex(std::uint32_t c) {
+        char b[8]; std::snprintf(b, sizeof(b), "#%06x", c & 0xffffff); return b;
+    }
+
+    // A real <a href> anchor link (in-page nav to a heading, external URLs).
+    static NodeRef alink(const std::string& label, const std::string& href) {
+        return text(label) | as("a") | attr("href", href) | pointer
+             | on(Hover, css("text-decoration","underline"));
+    }
+
+    // A reading-progress bar pinned to the very top that fills as you scroll the
+    // page — pure CSS (scroll-driven animation), no JS. Degrades to hidden on
+    // browsers without animation-timeline.
+    static NodeRef reading_progress() {
+        return markup(
+            "<div style=\"position:fixed;top:0;left:0;right:0;height:3px;z-index:50;"
+            "transform-origin:0 50%;background:linear-gradient(90deg,#818cf8,#22d3ee,#f472b6);"
+            "animation:wa-blogscroll linear;animation-timeline:scroll(root);\"></div>"
+            "<style>@keyframes wa-blogscroll{from{transform:scaleX(0)}to{transform:scaleX(1)}}</style>");
+    }
+
     static NodeRef tag_chip(std::string t, bool active=false) {
         return link("#" + t) | caption | mono | pad_x(10) | pad_y(4) | round(999)
              | when_(active, tint(brand, 0.18f)) | when_(!active, tint(0xffffff, 0.05f))
@@ -249,20 +298,53 @@ struct Blog {
         auto chiprow = box_(std::move(chips)); chiprow->style.flow = Flow::row;
         chiprow->style.wrap = Wrap::wrap; finalize(*chiprow); chiprow = chiprow | gap(6);
         return col(
-            row(text(p.date) | fg(faint) | caption | mono, text("\u00b7") | fg(faint),
-                text(std::to_string(p.minutes) + " min") | fg(faint) | caption,
+            row(avatar(p.author, 28),
+                col(text(p.author) | fg(ink) | caption | semibold,
+                    row(text(p.date) | fg(faint) | caption | mono, text("\u00b7") | fg(faint),
+                        text(std::to_string(p.minutes) + " min") | fg(faint) | caption) | gap(6) | center
+                ) | gap(1),
                 push(),
                 row(text("\u2661") | fg(0xf472b6), text(std::to_string(p.likes)) | fg(muted) | caption) | gap(4) | center
-            ) | gap(8) | center,
-            text(p.title) | fg(ink) | subtitle | font(22) | weight(Weight::bold),
-            text(p.excerpt) | fg(muted) | body,
+            ) | gap(9) | center,
+            text(p.title) | fg(ink) | subtitle | font(22) | weight(Weight::bold) | leading(1.25f),
+            text(p.excerpt) | fg(muted) | body | leading(1.6f),
+            push(),
             chiprow
         ) | gap(12) | pad(22) | round(18)
           | tint(0xffffff, 0.025f) | hairline(0xffffff, 0.07f)
           | hover_lift(3) | pointer | tap(Nav{"/post/" + p.slug});
     }
 
-    // ── screens ────────────────────────────────────────────────────────────────
+    // A large, editorial "featured" card for the newest post at the top of feed.
+    static NodeRef featured_card(const Post& p) {
+        std::vector<NodeRef> chips;
+        for (auto& t : p.tags) chips.push_back(nav_tag(t));
+        auto chiprow = box_(std::move(chips)); chiprow->style.flow = Flow::row;
+        chiprow->style.wrap = Wrap::wrap; finalize(*chiprow); chiprow = chiprow | gap(6);
+        return col(
+            row(text("FEATURED") | fg(brand2) | caption | mono | weight(Weight::black)
+                    | css("letter-spacing",".2em"),
+                push(),
+                row(text("\u2661") | fg(0xf472b6), text(std::to_string(p.likes)) | fg(muted) | caption) | gap(4) | center
+            ) | center,
+            text(p.title) | fg(ink) | display | font_fluid(26, 40) | weight(Weight::black)
+                | leading(1.1f) | css("letter-spacing","-.02em"),
+            text(p.excerpt) | fg(0xcbd5e1) | body | font(18) | leading(1.6f) | css("max-width","46rem"),
+            row(avatar(p.author, 32),
+                col(text(p.author) | fg(ink) | caption | semibold,
+                    row(text(p.date) | fg(faint) | caption | mono, text("\u00b7") | fg(faint),
+                        text(std::to_string(p.minutes) + " min read") | fg(faint) | caption) | gap(6) | center
+                ) | gap(1),
+                push(),
+                text("Read \u2192") | fg(brand2) | semibold | font(15)
+            ) | gap(10) | center,
+            (chiprow | gap(6))
+        ) | gap(16) | pad_fluid(22, 34) | round(22)
+          | css("background", "linear-gradient(135deg, rgba(99,102,241,.14), rgba(34,211,238,.06))")
+          | hairline(0xffffff, 0.10f) | hover_lift(3) | pointer | tap(Nav{"/post/" + p.slug});
+    }
+
+    // ── screens ─────────────────────────────────────────────────────────
     static NodeRef feed(const Model& m) {
         // live search filter
         std::string q = m.query; for (auto& c : q) c = std::tolower(c);
@@ -273,12 +355,22 @@ struct Blog {
             for (auto& t : p.tags) hay += " " + t;
             return hay.find(q) != std::string::npos;
         };
+        bool searching = !q.empty();
+        std::vector<const Post*> hits;
+        for (auto& p : m.posts) if (matches(p)) hits.push_back(&p);
+
+        // When not searching, promote the newest post to a featured hero and grid
+        // the rest. When searching, just grid the matches.
+        const Post* featured = (!searching && !hits.empty()) ? hits.front() : nullptr;
         std::vector<NodeRef> cards;
-        int shown = 0;
-        for (auto& p : m.posts) if (matches(p)) { cards.push_back(post_card(p)); shown++; }
+        for (std::size_t i = 0; i < hits.size(); ++i) {
+            if (featured && hits[i] == featured) continue;
+            cards.push_back(post_card(*hits[i]));
+        }
         auto grid = box_(std::move(cards));
         grid->style.extra.emplace_back("display","grid");
         grid->style.extra.emplace_back("grid-template-columns","repeat(auto-fill,minmax(min(22rem,100%),1fr))");
+        grid->style.extra.emplace_back("grid-auto-rows","1fr");
         grid->style.gap = {20,Unit::px}; finalize(*grid);
 
         auto search = input(m.query)
@@ -286,6 +378,10 @@ struct Blog {
             | on_input([](std::string v){ return SetQuery{v}; })
             | fg(ink) | tint(0xffffff, 0.04f) | hairline(0xffffff, 0.10f)
             | pad_x(16) | pad_y(12) | round(12) | font(15) | css("width","100%");
+
+        std::string countline = searching
+            ? (std::to_string(hits.size()) + (hits.size()==1 ? " result" : " results") + " for \u201c" + m.query + "\u201d")
+            : (std::to_string(m.posts.size()) + " essays on the machine underneath the machine");
 
         return col(
             col(
@@ -295,9 +391,18 @@ struct Blog {
                     | fg(muted) | body
             ) | gap(8) | fade_up(400),
             search | fade_up(500) | delay(60),
-            (shown==0 ? (text("no posts match \u201c" + m.query + "\u201d") | fg(faint) | pad_y(40) | center)
-                      : (grid | fade_up(600) | delay(120)))
-        ) | gap(28);
+            text(countline) | fg(faint) | caption | mono,
+            (hits.empty()
+                ? (col(
+                      text("\U0001f50d") | font(40) | center,
+                      text("no posts match \u201c" + m.query + "\u201d") | fg(muted) | body | center,
+                      link("clear search") | caption | center | tap(Nav{"/"})
+                   ) | gap(10) | pad_y(48) | center)
+                : col(
+                      (featured ? (featured_card(*featured) | fade_up(560) | delay(90)) : fragment({})),
+                      grid | fade_up(620) | delay(140)
+                  ) | gap(20))
+        ) | gap(24);
     }
 
     static NodeRef code_block(std::string code) {
@@ -311,30 +416,107 @@ struct Blog {
     static NodeRef post_view(const Model& m) {
         auto* p = find(m, m.slug);
         if (!p) return not_found();
-        std::vector<NodeRef> body;
+
+        // Body + collect headings for a table of contents.
+        std::vector<NodeRef> blocks;
+        std::vector<std::pair<std::string,std::string>> toc; // (anchor, label)
+        int hi = 0;
         for (auto& [kind, txt] : p->body) {
-            if (kind == "h")     body.push_back(text(txt) | fg(ink) | heading | font(24) | as("h2") | pad_y(4));
-            else if (kind=="code") body.push_back(code_block(txt));
-            else if (kind=="quote") body.push_back(
+            if (kind == "h") {
+                std::string anchor = "h" + std::to_string(hi++);
+                toc.emplace_back(anchor, txt);
+                blocks.push_back(text(txt) | fg(ink) | heading | font(25) | as("h2")
+                    | attr("id", anchor) | pad_y(4) | css("scroll-margin-top","84px"));
+            }
+            else if (kind=="code") blocks.push_back(code_block(txt));
+            else if (kind=="quote") blocks.push_back(
                 text(txt) | fg(0xc7d2fe) | subtitle | italic | as("blockquote")
                     | css("border-left","3px solid #6366f1") | pad_x(18) | pad_y(4) | leading(1.6f));
-            else body.push_back(text(txt) | fg(0xcbd5e1) | body_txt() | leading(1.75f) | as("p"));
+            else blocks.push_back(text(txt) | fg(0xcbd5e1) | body_txt() | font(18) | leading(1.8f) | as("p"));
         }
         std::vector<NodeRef> chips; for (auto& t : p->tags) chips.push_back(nav_tag(t));
         auto chiprow = box_(std::move(chips)); chiprow->style.flow=Flow::row; chiprow->style.wrap=Wrap::wrap; finalize(*chiprow);
 
+        // Table of contents (only if there are 2+ headings).
+        NodeRef toc_box = fragment({});
+        if (toc.size() >= 2) {
+            std::vector<NodeRef> links;
+            links.push_back(text("ON THIS PAGE") | fg(faint) | caption | mono
+                | weight(Weight::black) | css("letter-spacing",".16em"));
+            for (auto& [anchor, label] : toc)
+                links.push_back(alink(label, "#" + anchor) | fg(muted) | caption
+                    | css("text-decoration","none"));
+            toc_box = col_(std::move(links)) | gap(9) | pad(18) | round(14)
+                | tint(0xffffff, 0.03f) | hairline(0xffffff, 0.07f);
+        }
+
         auto article = col(
             link("\u2190 all posts") | caption | tap(Nav{"/"}),
-            text(p->title) | fg(ink) | display | font_fluid(30, 48) | weight(Weight::black)
-                | css("letter-spacing","-.02em") | leading(1.1f),
-            row(text(p->author) | fg(ink) | semibold, text("\u00b7") | fg(faint),
-                text(p->date) | fg(muted) | caption | mono, text("\u00b7") | fg(faint),
-                text(std::to_string(p->minutes) + " min read") | fg(muted) | caption) | gap(8) | center | wrap,
             (chiprow | gap(6)),
+            text(p->title) | fg(ink) | display | font_fluid(30, 50) | weight(Weight::black)
+                | css("letter-spacing","-.02em") | leading(1.08f),
+            text(p->excerpt) | fg(0x94a3b8) | subtitle | font(20) | leading(1.5f),
+            row(avatar(p->author, 40),
+                col(text(p->author) | fg(ink) | body | semibold,
+                    row(text(p->date) | fg(muted) | caption | mono, text("\u00b7") | fg(faint),
+                        text(std::to_string(p->minutes) + " min read") | fg(muted) | caption) | gap(6) | center
+                ) | gap(2),
+                push(),
+                row(text("\u2661") | fg(0xf472b6) | font(18),
+                    text(std::to_string(p->likes)) | fg(muted) | caption) | gap(5) | center
+            ) | gap(12) | center | pad_y(4),
             divider(),
-            col_(std::move(body)) | gap(20)
+            toc_box,
+            col_(std::move(blocks)) | gap(22),
+            divider(),
+            post_footer(m, *p)
         ) | gap(18) | as_article;
-        return centered(46, article);
+        return fragment({reading_progress(), centered(46, article)});
+    }
+
+    // End-of-post: share of related posts (share a tag) + prev/next nav.
+    static NodeRef post_footer(const Model& m, const Post& p) {
+        // sort chronologically to find neighbours
+        auto sorted = m.posts;
+        std::sort(sorted.begin(), sorted.end(), [](const Post&a,const Post&b){ return a.date>b.date; });
+        const Post* prev=nullptr; const Post* next=nullptr;
+        for (std::size_t i=0;i<sorted.size();++i) if (sorted[i].slug==p.slug){
+            if (i>0) next=&sorted[i-1];              // newer
+            if (i+1<sorted.size()) prev=&sorted[i+1]; // older
+            break;
+        }
+        auto navcell = [&](const char* label, const Post* q, bool right)->NodeRef{
+            if (!q) return box() | grow(1);
+            auto inner = col(
+                text(label) | fg(faint) | caption | mono,
+                text(q->title) | fg(ink) | body | semibold | leading(1.3f)
+            ) | gap(4);
+            if (right) inner = inner | css("text-align","right") | css("align-items","flex-end");
+            return inner | grow(1) | pad(16) | round(14)
+                 | tint(0xffffff, 0.03f) | hairline(0xffffff, 0.07f)
+                 | hover_lift(2) | pointer | tap(Nav{"/post/" + q->slug});
+        };
+
+        // related: other posts sharing at least one tag, up to 3
+        std::vector<NodeRef> rel;
+        for (auto& o : m.posts) {
+            if (o.slug==p.slug) continue;
+            bool shares=false; for (auto& t:o.tags) for (auto& u:p.tags) if (t==u) shares=true;
+            if (shares) rel.push_back(post_card(o));
+            if (rel.size()>=3) break;
+        }
+
+        std::vector<NodeRef> out;
+        out.push_back(row(navcell("\u2190 Older", prev, false), navcell("Newer \u2192", next, true)) | gap(14) | wrap);
+        if (!rel.empty()) {
+            auto grid = box_(std::move(rel));
+            grid->style.extra.emplace_back("display","grid");
+            grid->style.extra.emplace_back("grid-template-columns","repeat(auto-fill,minmax(min(18rem,100%),1fr))");
+            grid->style.gap = {16,Unit::px}; finalize(*grid);
+            out.push_back(text("Related reading") | fg(ink) | heading | font(22) | pad_y(4));
+            out.push_back(grid);
+        }
+        return col_(std::move(out)) | gap(20);
     }
 
     static NodeRef archive(const Model& m) {
