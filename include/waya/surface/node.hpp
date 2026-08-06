@@ -963,6 +963,13 @@ template <typename Msg> Mod on_enter(Msg m){ return on_key("Enter", std::move(m)
 template <typename Msg> Mod on_escape(Msg m){ return on_key("Escape", std::move(m)); }
 /// `on_keydown(fn)` — any key; the pressed key name is mapped to a Msg by fn.
 template <typename Fn> Mod on_keydown(Fn fn){ return on_ev("keydown", std::move(fn)); }
+/// `on_shortcut("mod+k", Open{})` — a GLOBAL keyboard shortcut that fires from
+/// anywhere on the page (no focus needed). `mod` = Cmd on macOS / Ctrl elsewhere;
+/// combos like "ctrl+shift+p", "alt+ArrowDown". The Cmd+K command-palette move.
+/// Put it on any node that's mounted while the shortcut should be live.
+template <typename Msg> Mod on_shortcut(std::string combo, Msg m){ return on("shortcut", std::move(m), std::move(combo)); }
+/// `hotkey("?", ShowHelp{})` — alias for a single-key global shortcut.
+template <typename Msg> Mod hotkey(std::string k, Msg m){ return on("shortcut", std::move(m), std::move(k)); }
 
 // ── focus ─────────────────────────────────────────────────────
 template <typename Msg> Mod on_focus(Msg m){ return on("focus", std::move(m)); }
@@ -1044,6 +1051,51 @@ inline Mod optimistic(){ return attr("data-opt", "1"); }
 /// `role("dialog")`, `aria("label","Close")` — accessibility, first-class.
 inline Mod role(std::string r){ return attr("role", std::move(r)); }
 inline Mod aria(std::string k, std::string v){ return attr("aria-" + k, std::move(v)); }
+/// `aria_label("Close menu")` — the accessible name for an icon-only control.
+inline Mod aria_label(std::string l){ return attr("aria-label", std::move(l)); }
+/// `sr_only()` — visually hidden but read by screen readers (skip links, icon
+/// button labels, live-region status). The a11y hallmark, one word.
+inline const Mod sr_only = sty([](Style& s){
+    s.extra.emplace_back("position","absolute"); s.extra.emplace_back("width","1px");
+    s.extra.emplace_back("height","1px"); s.extra.emplace_back("padding","0");
+    s.extra.emplace_back("margin","-1px"); s.extra.emplace_back("overflow","hidden");
+    s.extra.emplace_back("clip","rect(0,0,0,0)"); s.extra.emplace_back("white-space","nowrap");
+    s.extra.emplace_back("border","0"); });
+/// `autofocus()` — focus this control when it mounts (a search box, the first
+/// field of a form, a command palette input).
+inline Mod autofocus(){ return attr("autofocus", ""); }
+/// `focus_ring(color)` — a clean keyboard-focus ring via :focus-visible (only
+/// shows for keyboard nav, not mouse clicks — the modern, non-annoying default).
+inline Mod focus_ring(std::uint32_t color=0x6366f1){
+    return on(State::Focus, sty([=](Style& s){
+        s.extra.emplace_back("outline", "2px solid " + detail::hexstr(color));
+        s.extra.emplace_back("outline-offset", "2px"); })); }
+/// `focus_within(...)` — style a CONTAINER while any descendant is focused (a
+/// form field group highlighting when its input has focus).
+template <typename... M> Mod focus_within(M... mods){
+    auto st = detail::sub_style(mods...);
+    return {[st](Node& n){ n.style.states.emplace_back(":focus-within", st); }}; }
+/// `group()` on a parent + `group_hover(...)` on a descendant — reveal/restyle a
+/// child when the PARENT is hovered (a card whose action buttons appear on
+/// hover, a row whose delete icon shows on hover). Registers one global rule.
+inline Mod group(){
+    assets().css(".wa-group:hover [data-wa-gh]{opacity:1;transform:none;pointer-events:auto}");
+    return attr("class", "wa-group"); }
+inline Mod group_hidden(){   // the child: hidden until the group is hovered
+    return {[](Node& n){ n.attrs.emplace_back("data-wa-gh", "");
+        n.style.extra.emplace_back("opacity","0");
+        n.style.extra.emplace_back("transform","translateY(4px)");
+        n.style.extra.emplace_back("pointer-events","none");
+        n.style.extra.emplace_back("transition","opacity .15s ease, transform .15s ease"); }}; }
+/// `ripple(color)` — a material-style click ripple emanating from the pointer.
+/// Pure CSS+one tiny client hook keyed on a marker; needs no state in your Model.
+inline Mod ripple(std::uint32_t color=0xffffff){
+    assets().css("[data-wa-ripple]{position:relative;overflow:hidden}"
+        "@keyframes wa-ripple{to{transform:scale(4);opacity:0}}"
+        ".wa-ripple-ink{position:absolute;border-radius:50%;transform:scale(0);animation:wa-ripple .6s linear;pointer-events:none}");
+    return {[color](Node& n){ n.attrs.emplace_back("data-wa-ripple", "");
+        char b[8]; std::snprintf(b,sizeof(b),"#%06x",color&0xFFFFFF);
+        n.attrs.emplace_back("data-wa-ripple-color", b); }}; }
 inline Mod title(std::string t){ return attr("title", std::move(t)); }
 inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
 /// `safe_url(s)` — neutralise a dangerous URL scheme. `javascript:`, `data:`,

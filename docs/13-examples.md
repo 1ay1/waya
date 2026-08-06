@@ -26,6 +26,20 @@ and how a rich screen still streams tiny deltas on each interaction.
 ./build/dash
 ```
 
+## `palette` — a Cmd+K command palette
+
+The "wait, C++ did that?" demo. A **global keyboard shortcut** (`mod+k`, from
+anywhere) opens a centered, **autofocused**, live-**filtered** command list with
+**arrow-key navigation** and Enter-to-run — all from three pure functions and
+the mod vocabulary, with zero client state.
+
+**Learn from it:** `on_shortcut` (global), `autofocus`/`on_key`/`on_enter`/
+`on_escape` (keyboard), a filtered+highlighted list driven purely by the Model.
+
+```bash
+./build/palette
+```
+
 ## `counter` — the smallest complete app (pure core)
 
 State, messages, a pure `update`, and a `view` built from `col`/`row`/`text`

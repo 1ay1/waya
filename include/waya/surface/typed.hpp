@@ -84,6 +84,12 @@ using waya::surface::clip;       using waya::surface::no_scrollbar; using waya::
 using waya::surface::translate;  using waya::surface::rotate;     using waya::surface::scale;
 using waya::surface::backdrop_blur; using waya::surface::blur;    using waya::surface::opacity;
 using waya::surface::line_clamp; using waya::surface::uppercase;  using waya::surface::lowercase;
+using waya::surface::on_key;     using waya::surface::on_enter;   using waya::surface::on_escape;
+using waya::surface::on_shortcut;using waya::surface::hotkey;     using waya::surface::on_keydown;
+using waya::surface::sr_only;    using waya::surface::autofocus;  using waya::surface::focus_ring;
+using waya::surface::focus_within; using waya::surface::aria_label; using waya::surface::role;
+using waya::surface::aria;       using waya::surface::group;      using waya::surface::group_hidden;
+using waya::surface::ripple;     using waya::surface::name;       using waya::surface::placeholder;
 
 // ── Layout contexts (phantom tags) ──────────────────────────────────────────
 namespace ctx {

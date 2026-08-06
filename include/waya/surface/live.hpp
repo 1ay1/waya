@@ -387,6 +387,14 @@ inline std::string client(int port) {
     // paint replaces/updates it. Makes a server round-trip feel instant.
     "if(t.hasAttribute('data-opt'))t.setAttribute('data-busy','1');"
     "ws.send(t.dataset.tap);}});"
+    // Ripple: on pointerdown of a [data-wa-ripple] element, spawn an ink circle
+    // at the pointer that scales+fades via the wa-ripple keyframe, then removes
+    // itself. No Model state — pure client polish.
+    "document.addEventListener('pointerdown',function(ev){var t=ev.target.closest&&ev.target.closest('[data-wa-ripple]');if(!t)return;"
+    "var r=t.getBoundingClientRect();var d=Math.max(r.width,r.height);var ink=document.createElement('span');ink.className='wa-ripple-ink';"
+    "ink.style.width=ink.style.height=d+'px';ink.style.left=(ev.clientX-r.left-d/2)+'px';ink.style.top=(ev.clientY-r.top-d/2)+'px';"
+    "ink.style.background=t.getAttribute('data-wa-ripple-color')||'#fff';ink.style.opacity='.35';"
+    "t.appendChild(ink);setTimeout(function(){ink.remove();},600);});"
     // input/change carry a payload. Checkboxes & radios send their checked
     // state ("true"/"false"); every other control sends its value. So one path
     // serves text, textarea, select, checkbox and radio uniformly.
@@ -401,10 +409,26 @@ inline std::string client(int port) {
     // serialises the form's named fields; drop carries the dragged payload.
     "function evattr(el,type){return el&&el.dataset?el.dataset['ev'+type[0].toUpperCase()+type.slice(1)]:null;}"
     "function sendev(spec,pl){if(!ws||ws.readyState!==1)return;var bar=spec.indexOf('|');var msg=bar<0?spec:spec.slice(0,bar);ws.send('e'+msg+'|'+pl);}"
-    "function evMatch(spec,key){var bar=spec.indexOf('|');if(bar<0)return true;return spec.slice(bar+1)===key;}"
+    // Key filter: "data-ev-keydown=<token>|<spec>". <spec> is a key name
+    // ("Enter") OR a combo like "mod+k", "ctrl+shift+p", "alt+ArrowDown". `mod`
+    // means Cmd on macOS / Ctrl elsewhere. Matching is case-insensitive on the
+    // final key so "mod+k" fires for K too.
+    "function evMatch(spec,ev){var bar=spec.indexOf('|');if(bar<0)return true;var s=spec.slice(bar+1);"
+    "if(s.indexOf('+')<0)return s===ev.key;"
+    "var parts=s.toLowerCase().split('+');var want=parts.pop();"
+    "var needMod=parts.indexOf('mod')>=0,needCtrl=parts.indexOf('ctrl')>=0,needShift=parts.indexOf('shift')>=0,needAlt=parts.indexOf('alt')>=0;"
+    "var isMac=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent);"
+    "var modOk=needMod?(isMac?ev.metaKey:ev.ctrlKey):true;"
+    "if(needMod&&!modOk)return false;if(needCtrl&&!ev.ctrlKey)return false;"
+    "if(needShift&&!ev.shiftKey)return false;if(needAlt&&!ev.altKey)return false;"
+    "return (ev.key||'').toLowerCase()===want;}"
     // keydown: walk up to the nearest node wiring keydown, honor the key filter.
     "document.addEventListener('keydown',function(ev){var t=ev.target;while(t&&t!==document){var s=evattr(t,'keydown');"
-    "if(s!=null&&evMatch(s,ev.key)){ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
+    "if(s!=null&&evMatch(s,ev)){ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
+    // Global shortcuts: an element tagged [data-ev-shortcut] fires from ANYWHERE
+    // (no focus needed) — for Cmd+K palettes etc. Registered at document level.
+    "document.addEventListener('keydown',function(ev){var els=document.querySelectorAll('[data-ev-shortcut]');"
+    "for(var i=0;i<els.length;i++){var s=els[i].getAttribute('data-ev-shortcut');if(s&&evMatch('|'+s.split('|')[1],ev)){ev.preventDefault();sendev(s.split('|')[0],ev.key);return;}}},true);"
     // focus/blur are non-bubbling → capture phase.
     "document.addEventListener('focus',function(ev){var s=evattr(ev.target,'focus');if(s!=null)sendev(s,payload(ev.target)||'');},true);"
     "document.addEventListener('blur',function(ev){var s=evattr(ev.target,'blur');if(s!=null)sendev(s,payload(ev.target)||'');},true);"
