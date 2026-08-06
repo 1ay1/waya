@@ -16,6 +16,7 @@
 /// shared: a broadcast lands in every session's log via on_topic.
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
 #include <string>
 #include <vector>
@@ -86,30 +87,37 @@ struct Chat {
         logbox = logbox | gap(8) | css("overflow-y", "auto") | css("flex", "1 1 auto")
                         | css("min-height", "0");
 
-        auto field = [](std::string v, int msg, std::string ph, std::string w) {
-            return input(std::move(v)) | placeholder(std::move(ph)) | on_input(msg)
+        auto field = [](std::string v, int msg, std::string ph, bool grow_) {
+            auto n = input(std::move(v)) | placeholder(std::move(ph)) | on_input(msg)
                  | fg(0xe2e8f0) | bg(0x0b1220) | pad_x(14) | pad_y(10)
-                 | round(10) | border(1, 0x1f2937) | font(15) | css("width", w);
+                 | round(10) | border(1, 0x1f2937) | font(15);
+            return grow_ ? (n | grow(1)) : n;   // the message field fills the row
         };
 
-        return col(
+        // The chat CARD — a readable column that fills the height it's given and
+        // caps its width for legibility. No fixed pixel size: it adapts.
+        auto card = col(
             row(
                 text("waya chat") | fg(0xe2e8f0) | font(24) | weight(Weight::black),
-                text("open a second tab \u2192 messages sync live") | fg(0x64748b) | font(13)
-            ) | gap(14) | css("align-items", "baseline"),
+                text("open a second tab → messages sync live") | fg(0x64748b) | font(13)
+            ) | gap(14) | wrap | css("align-items", "baseline"),
 
-            logbox,
+            logbox,   // grows to fill the middle (flex:1)
 
             row(
-                field(m.name,  SetName,  "name",  "8rem"),
-                field(m.draft, SetDraft, "message\u2026", "1"),
+                field(m.name,  SetName,  "name",  false) | css("width", "8rem"),
+                field(m.draft, SetDraft, "message…", true),
                 button("send") | fg(0xffffff) | bg(0x6366f1) | font(15) | semibold
                     | pad_x(20) | pad_y(10) | round(10) | tap(Send)
                     | transition() | on(Hover, opacity(0.85f))
-            ) | gap(10) | css("align-items", "stretch")
+            ) | gap(10) | wrap | css("align-items", "stretch")
 
-        ) | gap(16) | pad(28) | round(20) | bg(0x111827) | shadow() | border(1, 0x1f2937)
-          | css("width", "min(92vw, 40rem)") | css("height", "min(80vh, 34rem)");
+        ) | grow(1) | gap(16) | pad(24) | round(20) | bg(0x111827)
+          | shadow() | border(1, 0x1f2937);
+
+        // Responsive by construction: a full-viewport page hosting a centred,
+        // width-capped column. No fixed sizes, no media queries.
+        return page(color::bg0, centered(42, card));
     }
 };
 

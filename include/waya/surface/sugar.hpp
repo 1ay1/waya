@@ -131,4 +131,35 @@ inline NodeRef toast_layer(std::vector<NodeRef> toasts){
     return n;
 }
 
+// ── Responsive app shells ────────────────────────────────────────
+// The framework already makes every node fit its container (no overflow); these
+// give you a correct full-viewport page in one call, so "responsive" is the
+// path of least resistance rather than something you assemble by hand.
+
+/// `page(bg_color, content…)` — the app root: fills the whole viewport, paints
+/// its background edge-to-edge (no gutters), and pads fluidly (clamp). Drop your
+/// UI inside; it adapts to any screen with zero media queries.
+template <typename... Cs> NodeRef page(std::uint32_t bg_color, Cs... cs){
+    auto n = col(std::move(cs)...);
+    n->style.has_grow = true; n->style.grow = 1;
+    n->style.has_bg = true; n->style.bg = bg_color;
+    n->style.extra.emplace_back("min-height", "100vh");
+    n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
+    finalize(*n);
+    return n;
+}
+
+/// `centered(max_rem, content)` — a column capped to `max_rem` wide and centred,
+/// growing to fill available height. The classic "readable centred content"
+/// container (chat, article, form). Fluidly full-width below the cap.
+inline NodeRef centered(float max_rem, NodeRef content){
+    auto n = col(std::move(content));
+    n->style.has_grow = true; n->style.grow = 1;
+    n->style.extra.emplace_back("width", "100%");
+    n->style.extra.emplace_back("max-width", std::to_string((int)max_rem) + "rem");
+    n->style.extra.emplace_back("margin-inline", "auto");
+    finalize(*n);
+    return n;
+}
+
 } // namespace waya::surface
