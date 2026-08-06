@@ -36,9 +36,29 @@ int main() {
     // param capture
     { auto m = r.match("/users/42"); CHECK(m.matched && m.value==UserView && m.param("id")=="42"); }
     { auto m = r.match("/users/7/edit"); CHECK(m.value==UserEdit && m.param("id")=="7"); }
-    // query string + trailing slash ignored
+    // query string + trailing slash ignored for MATCHING
     CHECK(r.match("/users/9?tab=x").param("id") == "9");
     CHECK(r.match("/users/9/").param("id") == "9");
+    // … but the query is now PARSED and readable via q("key")
+    { auto m = r.match("/users/9?tab=profile&page=2");
+      CHECK(m.param("id") == "9");
+      CHECK(m.q("tab") == "profile");
+      CHECK(m.q("page") == "2");
+      CHECK(m.q("missing").empty());
+      CHECK(m.has_q("tab") && !m.has_q("nope")); }
+    // percent- and +-decoding, like a form body
+    { auto m = r.match("/search?q=hello+world&tag=c%2B%2B");
+      CHECK(m.q("q") == "hello world");
+      CHECK(m.q("tag") == "c++"); }
+    // a query with no key=... value, and a bare flag
+    { auto m = r.match("/x?debug&limit=10");
+      CHECK(m.has_q("debug") && m.q("debug").empty());
+      CHECK(m.q("limit") == "10"); }
+    // query survives even when NO route matches (app can still read it)
+    { auto m = r.match("/totally-unknown?ref=email");
+      CHECK(!m.matched && m.q("ref") == "email"); }
+    // fragment is dropped from the query
+    CHECK(r.match("/users/9?tab=x#section").q("tab") == "x");
     // wildcard tail
     { auto m = r.match("/docs/guide/intro"); CHECK(m.value==Docs && m.param("*")=="guide/intro"); }
     // no match

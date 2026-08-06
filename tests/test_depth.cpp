@@ -29,6 +29,16 @@ int main() {
     check(has(box() | role("dialog"), "role=\"dialog\""), "role");
     check(has(box() | aria("expanded", "true"), "aria-expanded=\"true\""), "aria(k,v)");
 
+    // ── live regions: announce dynamic (server-streamed) changes ─────────────
+    check(has(box(text("3 items")) | live_region(), "aria-live=\"polite\""), "live_region polite");
+    check(has(box() | live_region(true), "aria-live=\"assertive\""), "live_region assertive");
+    check(has(box() | live_region(), "aria-atomic=\"true\""), "live_region is atomic");
+    check(has(status("Saved"), "role=\"status\""), "status() has role=status");
+    check(has(status("Saved"), "aria-live=\"polite\""), "status() is a polite live region");
+    check(has(status("Saved"), "Saved"), "status() renders its text");
+    check(has(alert("Email taken"), "role=\"alert\""), "alert() has role=alert");
+    check(has(alert("Email taken"), "aria-live=\"assertive\""), "alert() is assertive");
+
     // ── focus management ─────────────────────────────────────────────────────
     check(has(input("") | autofocus(), "autofocus"), "autofocus attr");
     check(has(input("") | focus_ring(0x6366f1), "outline"), "focus_ring emits outline on focus");

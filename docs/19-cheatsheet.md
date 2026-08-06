@@ -113,6 +113,7 @@ If it's here, you don't need `css()`. (Everything takes a bare `px` number
 | `heading_level(n)` | h1–h6 |
 | `role("...")` `aria(k, v)` `aria_label("...")` | ARIA |
 | `sr_only` | visually hidden, read by screen readers |
+| `live_region(assertive)` `status(text)` `alert(text)` | announce dynamic changes to screen readers |
 | `autofocus()` `focus_ring(color)` `focus_within(mods…)` | focus management |
 | `tab_index(n)` `focusable()` | keyboard focusability |
 

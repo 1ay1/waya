@@ -305,6 +305,25 @@ image(url) | alt("A diagram of the render loop")
 Using semantic elements improves accessibility and SEO for free — the DOM
 backend emits real `<nav>`, `<main>`, `<article>` tags.
 
+### Announcing live updates
+
+waya streams DOM deltas so the page changes *silently* — which means a screen
+reader won't notice "3 items added", "Saved", or "Error: email taken" unless you
+mark the region that changes as **live**. This is the a11y counterpart to the
+whole live-update model:
+
+```cpp
+col(cart_rows) ,
+box(text(m.status)) | live_region()      // polite: announced after a pause
+status("Saved")                          // ready-made polite region (role=status)
+alert("Email already taken")             // assertive: interrupts (errors/alerts)
+```
+
+`live_region()` is `polite` by default (waits for a lull); pass `true` for
+`assertive` (interrupts immediately — reserve it for errors). `status()` and
+`alert()` are ready-made text regions with the right roles. Update their text
+from your `Model` and the announcement happens automatically on the next paint.
+
 ## The palette
 
 `sugar.hpp` ships a pleasant default palette so you can write intent, not hex:

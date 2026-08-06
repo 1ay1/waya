@@ -1108,6 +1108,38 @@ inline const Mod sr_only = sty([](Style& s){
     s.extra.emplace_back("margin","-1px"); s.extra.emplace_back("overflow","hidden");
     s.extra.emplace_back("clip","rect(0,0,0,0)"); s.extra.emplace_back("white-space","nowrap");
     s.extra.emplace_back("border","0"); });
+/// `live_region(assertive)` — mark a container whose text changes should be
+/// ANNOUNCED by a screen reader when they update. This is the a11y counterpart
+/// to waya's whole premise: the server streams a delta and the DOM changes
+/// silently, so without this a blind user never hears "3 items added", "saved",
+/// "error: email taken". `polite` (default) waits for a pause; `assertive`
+/// interrupts (use sparingly, for errors/alerts). Put it on a box that holds
+/// status text and update that text from your Model.
+inline Mod live_region(bool assertive=false){
+    return {[=](Node& n){
+        n.attrs.emplace_back("aria-live", assertive ? "assertive" : "polite");
+        n.attrs.emplace_back("aria-atomic", "true");   // read the whole region, not just the diff
+    }};
+}
+/// `status(text)` — a ready-made polite live region for transient status
+/// ("Saved", "Copied", "Loading…"). Renders visibly; pair with `sr_only` to make
+/// it screen-reader-only. `role=status` implies aria-live=polite.
+inline NodeRef status(std::string t){
+    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(t);
+    n->attrs.emplace_back("role", "status");
+    n->attrs.emplace_back("aria-live", "polite");
+    n->attrs.emplace_back("aria-atomic", "true");
+    finalize(*n); return n;
+}
+/// `alert(text)` — an assertive live region for errors/warnings that must be
+/// heard immediately. `role=alert` implies aria-live=assertive.
+inline NodeRef alert(std::string t){
+    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(t);
+    n->attrs.emplace_back("role", "alert");
+    n->attrs.emplace_back("aria-live", "assertive");
+    n->attrs.emplace_back("aria-atomic", "true");
+    finalize(*n); return n;
+}
 /// `autofocus()` — focus this control when it mounts (a search box, the first
 /// field of a form, a command palette input).
 inline Mod autofocus(){ return attr("autofocus", ""); }

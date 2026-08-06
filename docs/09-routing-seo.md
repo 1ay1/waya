@@ -44,6 +44,24 @@ m.param("slug");      // "hello"
 `Match` fields: `matched` (bool), `value` (int id), `params` (the captures),
 and the convenience `param(name)` (empty string if absent).
 
+### Query strings
+
+The `?a=1&b=2` portion is parsed for you — no manual string-splitting, ever.
+Read it with `q(name)`, and use `has_q(name)` to tell a bare flag (`?debug`)
+from an absent one:
+
+```cpp
+Match m = routes().match("/search?q=hello+world&page=2&debug");
+m.q("q");        // "hello world"   (percent- and +-decoded)
+m.q("page");     // "2"
+m.has_q("debug"); // true, even though its value is empty
+m.q("missing").empty();   // true
+```
+
+The query is available even when **no route matched**, so a landing path like
+`/unknown?ref=email` still lets you read `m.q("ref")`. Fragments (`#section`)
+are dropped.
+
 ## Wiring routes into the loop
 
 Routing is just state + effects. The pattern:
