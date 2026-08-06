@@ -28,7 +28,7 @@ namespace detail {
 using dsl::ElemNode;
 using dsl::TextNode;
 
-inline void walk(std::string& out, style::StyleSheet& sheet, const TextNode& t) {
+inline void walk(std::string& out, style::StyleSheet& /*sheet*/, const TextNode& t) {
     escape_text(out, t.value);
 }
 

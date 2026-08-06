@@ -19,7 +19,7 @@ add_executable(test_seo            test_seo.cpp)
 add_executable(test_input          test_input.cpp)
 
 foreach(t test_render test_content_model test_dynamic test_style_general test_layout test_attrs test_program test_diff test_diff_perf test_memo test_ws test_live_sound test_surface test_binary test_effect test_input test_scale test_seo)
-    target_link_libraries(${t} PRIVATE waya::waya)
+    target_link_libraries(${t} PRIVATE waya::waya waya_dev_flags)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
 

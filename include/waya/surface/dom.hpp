@@ -271,7 +271,7 @@ private:
                 o+='>'; esc(o,nd.text); o+="</button>"; return;
             }
             case Kind::form: o+="<form"; open_attrs(o,nd); o+='>';
-                for(auto&k:nd.kids) emit(o,*k); o+="</form>"; return;
+                for(auto&k:nd.kids){ emit(o,*k); } o+="</form>"; return;
             case Kind::video: o+="<video src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></video>"; return;
             case Kind::audio: o+="<audio src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
             case Kind::markup: o+="<div"; open_attrs(o,nd); o+='>'; o+=nd.text /*raw, trusted*/; o+="</div>"; return;
@@ -304,7 +304,7 @@ private:
                 // chose (main/nav/header/article/section…) — a real landmark.
                 const std::string& tg = nd.tag.empty() ? std::string("div") : nd.tag;
                 o+='<'; o+=tg; open_attrs(o,nd); o+='>';
-                for(auto&k:nd.kids) emit(o,*k); o+="</"; o+=tg; o+='>'; return;
+                for(auto&k:nd.kids){ emit(o,*k); } o+="</"; o+=tg; o+='>'; return;
             }
         }
     }

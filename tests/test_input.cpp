@@ -202,7 +202,7 @@ int main() {
             if (op.op==Op::remove) has_remove=true;
             if (op.op==Op::move)   has_move=true;
         }
-        CHECK(has_insert && has_remove);
+        CHECK(has_insert && has_remove && has_move);   // reorder produces a move too
         auto work = list({"a","b","c","d"});
         apply(work, p);
         CHECK(keys(work) == keys(b));
@@ -248,7 +248,7 @@ int main() {
     {
         auto a = list({"1","2","3"});
         auto b = box(text("3")|key("3"), text("ONE")|key("1"), text("2")|key("2"));
-        for (auto& c : b->kids) finalize(*c); finalize(*b);
+        for (auto& c : b->kids) { finalize(*c); } finalize(*b);
         auto p = diff(a, b);
         auto work = list({"1","2","3"});
         apply(work, p);

@@ -15,8 +15,8 @@ using namespace waya::surface;
 static int g_fail = 0, g_pass = 0;
 #define CHECK(c) do{ if(c) ++g_pass; else { ++g_fail; \
   std::cerr<<"FAIL "<<__FILE__<<':'<<__LINE__<<"  "#c"\n"; } }while(0)
-static bool has(const std::string& h, std::string_view n){ return h.find(n)!=std::string::npos; }
-static std::string css_of(const NodeRef& n){ return DomBackend{}.render(*n).css; }
+[[maybe_unused]] static bool has(const std::string& h, std::string_view n){ return h.find(n)!=std::string::npos; }
+[[maybe_unused]] static std::string css_of(const NodeRef& n){ return DomBackend{}.render(*n).css; }
 
 enum { Home, Users, UserView, UserEdit, Docs, NotFound };
 

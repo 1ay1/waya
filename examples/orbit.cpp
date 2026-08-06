@@ -38,7 +38,7 @@ struct Orbit {
     }
 
     // one orbiting ring: a polyline traced around a centre, phase-shifted by t.
-    static NodeRef ring(double t, int idx, int total) {
+    static NodeRef ring(double t, int idx, int /*total*/) {
         std::vector<Pt> pts;
         double r = 40 + idx * 26;                         // radius grows per ring
         double speed = 1.0 + idx * 0.18;

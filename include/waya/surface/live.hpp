@@ -759,7 +759,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                     r = detail::safe_dispatch<P>(std::move(model), *m, d->value, ok);
                 else handled = false;   // stale token (pre-rerender) → drop
             }
-            if (!handled) { model = std::move(model); continue; }
+            if (!handled) { continue; }   // stale/undecodable msg: model unchanged, skip
             model = std::move(r.first);
             detail::perform<Msg>(s, r.second);
 

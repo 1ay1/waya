@@ -26,6 +26,29 @@ target_link_libraries(waya INTERFACE Threads::Threads)
 target_compile_options(waya INTERFACE
     $<$<CXX_COMPILER_ID:GNU>:-ftemplate-backtrace-limit=1>)
 
+# ── Developer warning / sanitizer options ───────────────────────────────────
+# An INTERFACE target carrying strict warnings, linked by waya's OWN targets
+# (tests + examples) only — never forced on library consumers. Turn warnings
+# into errors in CI with -DWAYA_WERROR=ON.
+option(WAYA_WERROR "Treat warnings as errors for waya's own targets" OFF)
+option(WAYA_SANITIZE "Build waya's own targets with ASan+UBSan" OFF)
+
+add_library(waya_dev_flags INTERFACE)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(waya_dev_flags INTERFACE
+        -Wall -Wextra
+        # Designated-initializer app code (e.g. Meta{.title=...}) legitimately
+        # leaves later members defaulted; that's not a bug in this codebase.
+        -Wno-missing-field-initializers
+        $<$<BOOL:${WAYA_WERROR}>:-Werror>)
+    if(WAYA_SANITIZE)
+        target_compile_options(waya_dev_flags INTERFACE
+            -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(waya_dev_flags INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+endif()
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 option(WAYA_BUILD_TESTS "Build waya's test suite" ON)
 if(WAYA_BUILD_TESTS)
@@ -39,7 +62,7 @@ if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
     foreach(ex splash orbit studio pulse blog)
         add_executable(${ex} examples/${ex}.cpp)
-        target_link_libraries(${ex} PRIVATE waya::waya)
+        target_link_libraries(${ex} PRIVATE waya::waya waya_dev_flags)
     endforeach()
 
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
