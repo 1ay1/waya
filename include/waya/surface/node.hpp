@@ -23,6 +23,7 @@
 
 #include "../core/hash.hpp"
 #include "assets.hpp"
+#include "../color.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -64,6 +65,23 @@ inline Len pct(float v){ return {v, Unit::pct}; }
 inline Len rem(float v){ return {v, Unit::rem}; }
 inline Len vw(float v){ return {v, Unit::vw}; }
 inline Len vh(float v){ return {v, Unit::vh}; }
+
+/// Length literals — `12_px`, `1.5_rem`, `50_pct`, `100_vh`. Reads like maya's
+/// typed units and keeps a size self-documenting at the call site.
+namespace literals {
+inline Len operator""_px (long double v){ return {(float)v, Unit::px}; }
+inline Len operator""_px (unsigned long long v){ return {(float)v, Unit::px}; }
+inline Len operator""_rem(long double v){ return {(float)v, Unit::rem}; }
+inline Len operator""_rem(unsigned long long v){ return {(float)v, Unit::rem}; }
+inline Len operator""_em (long double v){ return {(float)v, Unit::em}; }
+inline Len operator""_pct(long double v){ return {(float)v, Unit::pct}; }
+inline Len operator""_pct(unsigned long long v){ return {(float)v, Unit::pct}; }
+inline Len operator""_vw (long double v){ return {(float)v, Unit::vw}; }
+inline Len operator""_vw (unsigned long long v){ return {(float)v, Unit::vw}; }
+inline Len operator""_vh (long double v){ return {(float)v, Unit::vh}; }
+inline Len operator""_vh (unsigned long long v){ return {(float)v, Unit::vh}; }
+inline Len operator""_fr (unsigned long long v){ return {(float)v, Unit::fr}; }
+} // namespace literals
 inline Len fr(float v){ return {v, Unit::fr}; }
 inline constexpr Len fill{100, Unit::fill};
 inline constexpr Len hug {0,   Unit::hug};
@@ -308,6 +326,15 @@ Mod maybe(const std::optional<T>& o, Fn make){ return o ? make(*o) : noop; }
 // ── colour & text ──────────────────────────────────────────────────────────────
 inline Mod fg(std::uint32_t c){ return sty([=](Style& s){ s.has_fg=true; s.fg=c; }); }
 inline Mod bg(std::uint32_t c){ return sty([=](Style& s){ s.has_bg=true; s.bg=c; }); }
+/// Typed-Color overloads: `fg(indigo)`, `bg(rgba(0,0,0,.4))`. An opaque Color
+/// uses the fast interned fg/bg path; a translucent one rides the css() channel
+/// so alpha is preserved.
+inline Mod fg(Color c){ return c.has_alpha()
+    ? sty([v=c.css()](Style& s){ s.extra.emplace_back("color", v); })
+    : sty([c](Style& s){ s.has_fg=true; s.fg=c.opaque(); }); }
+inline Mod bg(Color c){ return c.has_alpha()
+    ? sty([v=c.css()](Style& s){ s.extra.emplace_back("background", v); })
+    : sty([c](Style& s){ s.has_bg=true; s.bg=c.opaque(); }); }
 inline Mod font(Len sz){ return sty([=](Style& s){ s.font_size=sz; }); }
 inline Mod font(float px_){ return font(px(px_)); }
 /// `font_fluid(min_px, max_px)` — responsive type: the size scales with the
@@ -333,6 +360,21 @@ inline Mod leading(float lh){ return sty([=](Style& s){ s.has_lh=true; s.line_he
 inline Mod tracking(float ls){ return sty([=](Style& s){ s.has_ls=true; s.letter_spacing=ls; }); }
 inline const Mod nowrap_text = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); });
 inline const Mod truncate = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); s.extra.emplace_back("overflow","hidden"); s.extra.emplace_back("text-overflow","ellipsis"); });
+/// `line_clamp(n)` — truncate multi-line text to n lines with an ellipsis.
+inline Mod line_clamp(int lines){ return sty([=](Style& s){
+    s.extra.emplace_back("display","-webkit-box");
+    s.extra.emplace_back("-webkit-line-clamp", std::to_string(lines));
+    s.extra.emplace_back("-webkit-box-orient","vertical");
+    s.extra.emplace_back("overflow","hidden"); }); }
+inline const Mod uppercase  = sty([](Style& s){ s.extra.emplace_back("text-transform","uppercase"); });
+inline const Mod lowercase  = sty([](Style& s){ s.extra.emplace_back("text-transform","lowercase"); });
+inline const Mod capitalize = sty([](Style& s){ s.extra.emplace_back("text-transform","capitalize"); });
+/// `tabular_nums` — fixed-width digits so numbers don't jitter (counters, tables).
+inline const Mod tabular_nums = sty([](Style& s){ s.extra.emplace_back("font-variant-numeric","tabular-nums"); });
+/// `no_select` — text isn't selectable (buttons, chrome).
+inline const Mod no_select = sty([](Style& s){ s.extra.emplace_back("user-select","none"); s.extra.emplace_back("-webkit-user-select","none"); });
+/// `no_pointer` — the node ignores pointer events (overlays that pass clicks through).
+inline const Mod no_pointer = sty([](Style& s){ s.extra.emplace_back("pointer-events","none"); });
 
 // ── box model ────────────────────────────────────────────────────────────────
 inline Mod pad(Len l){ return sty([=](Style& s){ s.pad=l; }); }
