@@ -10,9 +10,15 @@
 #     target     CMake target / binary to run   (default: counter)
 #     build-dir  CMake build directory          (default: build)
 #
-# Portable POSIX sh: runs on macOS, Linux, and the BSDs. Uses fswatch or
-# inotifywait for instant reload when present, else falls back to portable
-# mtime polling. (Windows: use scripts/dev.ps1.)
+# Environment:
+#   WAYA_PORT   port the app serves on   (passed through to the app)
+#   WAYA_HOST   host the app binds       (passed through to the app)
+#   JOBS        parallel build jobs      (default: auto-detected core count)
+#
+# Portability: pure POSIX sh. Runs on Linux, macOS, the BSDs, and Windows
+# under MSYS2 / Git-Bash / Cygwin (handles the .exe suffix and multi-config
+# build layouts). Uses fswatch or inotifywait for instant reload when present,
+# else falls back to portable mtime polling. (Native Windows: scripts/dev.ps1.)
 #
 # NOTE: this file is intentionally pure ASCII. A non-ASCII byte inside a
 # double-quoted string breaks parameter parsing under `set -u` on BSD sh.
@@ -24,108 +30,201 @@ BUILD="${2:-build}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-# Only watch directories that actually exist (src/ may be absent).
+# ── Colours (only on a TTY, so piped/CI logs stay clean) ─────────────────────
+if [ -t 1 ]; then C='\033[36m'; B='\033[1m'; R='\033[31m'; Y='\033[33m'; Z='\033[0m'
+else C=''; B=''; R=''; Y=''; Z=''; fi
+log()  { printf '%bwaya dev%b %b\n' "$C" "$Z" "$*"; }
+die()  { printf '%bwaya dev%b %berror%b %b\n' "$C" "$Z" "$R" "$Z" "$*" >&2; exit 1; }
+warn() { printf '%bwaya dev%b %bwarn%b  %b\n'  "$C" "$Z" "$Y" "$Z" "$*" >&2; }
+
+# ── Preflight: the tools we cannot run without ───────────────────────────────
+command -v cmake >/dev/null 2>&1 || die "cmake not found on PATH - install CMake >= 3.28."
+
+# ── Parallel job count (auto-detect; overridable via JOBS) ───────────────────
+if [ -n "${JOBS:-}" ]; then
+    :
+elif command -v nproc >/dev/null 2>&1; then
+    JOBS="$(nproc 2>/dev/null)"
+elif command -v sysctl >/dev/null 2>&1; then
+    JOBS="$(sysctl -n hw.ncpu 2>/dev/null)"   # macOS / BSD
+fi
+case "${JOBS:-}" in ''|*[!0-9]*) JOBS=4 ;; esac   # sane fallback
+
+# ── Directories worth watching (some may be absent) ──────────────────────────
 WATCH=""
-for d in include examples tests; do
+for d in include examples tests src; do
     [ -d "$d" ] && WATCH="$WATCH $d"
 done
 WATCH="${WATCH# }"
+[ -n "$WATCH" ] || die "nothing to watch: no include/ examples/ tests/ src/ under $ROOT."
 
 SERVER_PID=""
 FIRST_DONE=""
 TMP="${TMPDIR:-/tmp}/waya_build.$$.log"
 
-# Colour only when stdout is a TTY (so piped/CI logs stay clean).
-if [ -t 1 ]; then C='\033[36m'; B='\033[1m'; R='\033[31m'; Z='\033[0m'; else C=''; B=''; R=''; Z=''; fi
-log() { printf '%bwaya dev%b %b\n' "$C" "$Z" "$*"; }
+# ── Configure the build dir if needed (surface configure errors!) ────────────
+ensure_configured() {
+    [ -f "$BUILD/CMakeCache.txt" ] && return 0
+    log "configuring ${B}${BUILD}${Z} (first run)..."
+    if ! cmake -S . -B "$BUILD" >"$TMP" 2>&1; then
+        tail -n 25 "$TMP" 2>/dev/null
+        die "cmake configure failed (see above). Fix the error, then re-run."
+    fi
+}
 
-log "target: ${B}${TARGET}${Z}   (pass a target to pick another: scripts/dev.sh <name>)"
+# ── Locate the produced binary across layouts / platforms ────────────────────
+#   single-config:  build/<target>            (Unix Makefiles, single Ninja)
+#   multi-config:   build/<cfg>/<target>      (Ninja Multi-Config, VS, Xcode)
+#   windows:        any of the above + .exe suffix
+find_binary() {
+    for cand in \
+        "$BUILD/$TARGET" "$BUILD/$TARGET.exe" \
+        "$BUILD"/*/"$TARGET" "$BUILD"/*/"$TARGET.exe"
+    do
+        [ -f "$cand" ] && [ -x "$cand" ] && { printf '%s' "$cand"; return 0; }
+    done
+    # Last resort: search the tree for an executable of that name.
+    _b="$(find "$BUILD" \( -name "$TARGET" -o -name "$TARGET.exe" \) -type f 2>/dev/null | head -1)"
+    [ -n "$_b" ] && [ -x "$_b" ] && { printf '%s' "$_b"; return 0; }
+    return 1
+}
 
-# Ensure the build dir is configured.
-[ -f "$BUILD/CMakeCache.txt" ] || cmake -S . -B "$BUILD" >/dev/null
+# ── Validate the target is real, with a helpful list on typo ─────────────────
+validate_target() {
+    # `cmake --build --target help` isn't portable across generators; instead we
+    # trust the first build to tell us. But we can catch the obvious typo early
+    # by checking known example targets declared in CMakeLists.txt.
+    known="$(grep -oE 'foreach\(ex [^)]*' CMakeLists.txt 2>/dev/null | sed 's/foreach(ex //')"
+    [ -n "$known" ] || return 0                       # can't introspect; skip
+    for t in $known; do [ "$t" = "$TARGET" ] && return 0; done
+    # Not a known example - could still be a custom target, so warn (don't die).
+    warn "'${B}${TARGET}${Z}' is not a known example target."
+    warn "known targets: ${known}"
+    warn "continuing anyway in case it's a custom target..."
+}
 
 rebuild_and_run() {
-    log "building ${TARGET}..."
+    log "building ${B}${TARGET}${Z}..."
     # Build FIRST, while the old server keeps running; only swap servers if the
     # build actually succeeded - a failed build must never leave the browser
-    # without a server to reconnect to. cmake's exit status is the source of
-    # truth (captured before the pipe to tee, via a status file).
-    if cmake --build "$BUILD" --target "$TARGET" -j >"$TMP" 2>&1; then
-        :
-    else
+    # without a server to reconnect to.
+    if ! cmake --build "$BUILD" --target "$TARGET" -j "$JOBS" >"$TMP" 2>&1; then
         log "${R}build failed${Z} - keeping the last good server up; errors:"
-        # show the tail of the log so the error is visible
-        tail -n 20 "$TMP" 2>/dev/null || cat "$TMP"
+        tail -n 25 "$TMP" 2>/dev/null || cat "$TMP"
         return 1
     fi
 
-    BIN="$BUILD/$TARGET"
-    if [ ! -x "$BIN" ]; then
-        # -perm is GNU/BSD-incompatible; just take the first matching regular file.
-        BIN="$(find "$BUILD" -name "$TARGET" -type f 2>/dev/null | head -1)"
-    fi
-    if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-        log "${R}no binary produced${Z} - keeping the last good server up."
+    BIN="$(find_binary)" || {
+        log "${R}no binary produced${Z} for '${TARGET}' - keeping the last good server up."
         return 1
-    fi
+    }
 
     # Build succeeded - now (and only now) swap the server. The old socket drops,
     # the browser's WS client reconnects to the fresh process and reloads.
-    if [ -n "$SERVER_PID" ]; then
-        kill "$SERVER_PID" 2>/dev/null
-        wait "$SERVER_PID" 2>/dev/null   # ensure the port is released before rebind
-    fi
+    stop_server
     if [ -z "$FIRST_DONE" ]; then
         "$BIN" &
         FIRST_DONE=1
     else
-        WAYA_NO_OPEN=1 "$BIN" &
+        WAYA_NO_OPEN=1 "$BIN" &   # don't reopen the browser on every reload
     fi
     SERVER_PID=$!
     log "running ${B}${TARGET}${Z} (pid $SERVER_PID) - edit & save to reload"
 }
 
+# ── Stop the running server and wait for the port to be released ─────────────
+stop_server() {
+    [ -n "$SERVER_PID" ] || return 0
+    kill "$SERVER_PID" 2>/dev/null
+    # Give it a moment; escalate to KILL if it ignores TERM (e.g. blocked in a
+    # syscall) so the port is definitely free before we rebind.
+    i=0
+    while kill -0 "$SERVER_PID" 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -ge 20 ] && kill -9 "$SERVER_PID" 2>/dev/null && break
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+    wait "$SERVER_PID" 2>/dev/null
+    SERVER_PID=""
+}
+
 cleanup() {
-    [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+    stop_server
     rm -f "$TMP" 2>/dev/null
     exit 0
 }
-trap cleanup INT TERM
+trap cleanup INT TERM HUP
+trap 'stop_server; rm -f "$TMP" 2>/dev/null' EXIT
 
-rebuild_and_run
+# ── Go ───────────────────────────────────────────────────────────────────────
+log "target: ${B}${TARGET}${Z}   jobs: ${JOBS}   (pass a target: scripts/dev.sh <name>)"
+ensure_configured
+validate_target
 
-# ---- watch loop -------------------------------------------------------------
+rebuild_and_run || die "initial build failed - fix the errors above and re-run."
+
+# ── Watch loop ────────────────────────────────────────────────────────────────
 # Prefer a native watcher; fall back to portable mtime polling everywhere else.
 if command -v fswatch >/dev/null 2>&1; then
     # fswatch: macOS (brew install fswatch) and Linux. -o batches events.
     log "watching ${WATCH} (fswatch)...  Ctrl-C to stop"
+    # Feed events through a FIFO instead of a pipe: a `cmd | while` puts the
+    # loop in a subshell, so rebuild_and_run's SERVER_PID / FIRST_DONE updates
+    # would be lost (stale pid on Ctrl-C, browser reopened every reload). The
+    # FIFO keeps the loop in THIS shell where that state persists.
+    FIFO="${TMPDIR:-/tmp}/waya_fswatch.$$.fifo"
+    mkfifo "$FIFO" 2>/dev/null || die "could not create FIFO for fswatch at $FIFO"
+    trap 'stop_server; rm -f "$TMP" "$FIFO" 2>/dev/null' EXIT
     # shellcheck disable=SC2086
-    fswatch -o -r $WATCH | while read -r _; do
+    fswatch -o -r $WATCH > "$FIFO" &
+    FSWATCH_PID=$!
+    while read -r _; do
         rebuild_and_run
-    done
+    done < "$FIFO"
+    kill "$FSWATCH_PID" 2>/dev/null
 elif command -v inotifywait >/dev/null 2>&1; then
     # inotifywait: Linux (apt install inotify-tools).
     log "watching ${WATCH} (inotify)...  Ctrl-C to stop"
     # shellcheck disable=SC2086
-    while inotifywait -qq -r -e modify,create,delete,move $WATCH 2>/dev/null; do
+    while inotifywait -qq -r -e modify,create,delete,move,close_write $WATCH 2>/dev/null; do
         rebuild_and_run
     done
 else
-    # Portable polling: a fingerprint of file count + newest mtime. Works on
-    # macOS/BSD/Linux with no GNU-only find flags (no -printf, no -newer ref).
+    # Portable polling: a fingerprint of file count + newest mtime. No GNU-only
+    # find flags. `stat` output format differs by platform, so we probe once and
+    # cache which variant works (avoids a failed exec per file every second).
     log "watching ${WATCH} (polling; install fswatch or inotify-tools for instant reload)...  Ctrl-C to stop"
+
+    STAT_MODE=""
+    probe_stat() {
+        _t="$(find $WATCH -type f 2>/dev/null | head -1)"
+        [ -n "$_t" ] || { STAT_MODE="none"; return; }
+        if stat -f %m "$_t" >/dev/null 2>&1;   then STAT_MODE="bsd"
+        elif stat -c %Y "$_t" >/dev/null 2>&1; then STAT_MODE="gnu"
+        else STAT_MODE="none"; fi
+    }
+    file_mtime() {
+        case "$STAT_MODE" in
+            bsd) stat -f %m "$1" 2>/dev/null ;;
+            gnu) stat -c %Y "$1" 2>/dev/null ;;
+            *)   echo 0 ;;
+        esac
+    }
+    # shellcheck disable=SC2086
     fingerprint() {
-        # count of source files + the newest mtime among them. `stat` differs
-        # by platform, so try BSD (-f %m) then GNU (-c %Y).
-        files=$(find $WATCH -type f \( -name '*.hpp' -o -name '*.cpp' \) 2>/dev/null)
-        n=$(printf '%s\n' "$files" | grep -c . 2>/dev/null)
-        newest=0
-        for f in $files; do
-            m=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
-            [ "$m" -gt "$newest" ] 2>/dev/null && newest=$m
+        n=0; newest=0
+        # Read NUL-safe-ish: source files rarely contain newlines in their names.
+        for f in $(find $WATCH -type f \( -name '*.hpp' -o -name '*.cpp' -o -name '*.h' -o -name '*.cc' \) 2>/dev/null); do
+            n=$((n + 1))
+            m="$(file_mtime "$f")"
+            case "$m" in ''|*[!0-9]*) m=0 ;; esac
+            [ "$m" -gt "$newest" ] && newest="$m"
         done
         printf '%s:%s' "$n" "$newest"
     }
+
+    probe_stat
+    [ "$STAT_MODE" = "none" ] && warn "stat unsupported here; polling on file-count only."
     LAST="$(fingerprint)"
     while :; do
         sleep 1
