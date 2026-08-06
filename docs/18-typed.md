@@ -116,3 +116,23 @@ compose freely — a typed `Row` can contain an untyped `card(...)`, and a typed
 node drops straight into `live<App>()`. Use the dialect where you want the
 guarantees; reach for plain `waya::surface` where you don't. Same runtime either
 way.
+
+## Zero-cost styling
+
+maya interns styles to a `uint16_t` at compile time so a mod costs nothing at
+render. waya's `view()` is dynamic (it depends on the model), so it can't fully
+intern — but it gets the same *practical* property two ways, both in the core
+`Mod`/`|` machinery you already use (typed or not):
+
+- **No per-mod heap allocation.** A `Mod` is a small-buffer callable: the tiny
+  closures the vocabulary produces are stored inline, never on the heap. (Only
+  an oversized custom closure falls back to `operator new`.)
+- **One finalize per chain, not per mod.** `node | a | b | c` used to re-hash the
+  node after every pipe — O(mods) hashing per element. Now `|` returns a
+  `Building` proxy that applies mods without re-hashing and finalizes exactly
+  once, when the node is consumed (nested as a child, returned, or rendered).
+
+The effect is measurable: applying six mods to a node went from ~1.5 µs to
+~0.3 µs — barely more than building the bare node — and a realistic view builds
+~2× faster. The hash a chain produces is byte-for-byte identical to the old
+per-mod path, so the diff engine is unaffected.

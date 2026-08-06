@@ -140,7 +140,7 @@ Gate<Req> gated(Mod m) { return Gate<Req>{ std::move(m) }; }
 // A plain Mod on a Styled node applies in any context and preserves the tag.
 template <typename Ctx>
 Styled<Ctx> operator|(Styled<Ctx> s, const Mod& m) {
-    if (m.apply) m.apply(*s.node);
+    m.apply(*s.node);
     finalize(*s.node);
     return s;
 }
@@ -150,7 +150,7 @@ Styled<Ctx> operator|(Styled<Ctx> s, const Mod& m) {
 template <typename Ctx, typename Req>
     requires (Req::template satisfied_by<Ctx>)
 Styled<Ctx> operator|(Styled<Ctx> s, const Gate<Req>& g) {
-    if (g.mod.apply) g.mod.apply(*s.node);
+    g.mod.apply(*s.node);
     finalize(*s.node);
     return s;
 }

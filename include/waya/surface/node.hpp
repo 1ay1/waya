@@ -301,16 +301,115 @@ inline NodeRef markup(std::string html){ auto n=std::make_shared<Node>(); n->kin
 //  Compose freely; they read like one clean sentence.
 // ═══════════════════════════════════════════════════════════════════════════
 
-struct Mod { std::function<void(Node&)> apply; };
-inline NodeRef operator|(NodeRef n, const Mod& m){ if(m.apply) m.apply(*n); finalize(*n); return n; }
+// ObjectMod — a Node-mutating modifier stored WITHOUT a heap allocation for the
+// common case. maya interns styles at compile time; waya's view() is dynamic, so
+// we can't fully intern, but we CAN avoid the per-mod std::function heap alloc
+// that dominated the old cost. A Mod holds a small inline buffer (fits any of
+// waya's mod closures — they capture a few POD values) plus a function pointer;
+// only an oversized closure falls back to the heap. Same value semantics, same
+// API, ~zero allocation.
+class Mod {
+    static constexpr std::size_t Buf = 40;   // fits the vocabulary's closures
+    // vtable-ish: invoke, copy, destroy — as raw function pointers (no RTTI).
+    using Invoke  = void(*)(const void*, Node&);
+    using CopyFn  = void(*)(void*, const void*);
+    using MoveFn  = void(*)(void*, void*);
+    using KillFn  = void(*)(void*);
+
+    alignas(std::max_align_t) unsigned char buf_[Buf]{};
+    void* heap_ = nullptr;         // set only when the closure doesn't fit inline
+    std::size_t size_ = 0;         // sizeof the stored closure (for heap re-alloc)
+    Invoke invoke_ = nullptr;
+    CopyFn copy_   = nullptr;
+    MoveFn move_   = nullptr;
+    KillFn kill_   = nullptr;
+
+    void* obj()             { return heap_ ? heap_ : (void*)buf_; }
+    const void* obj() const { return heap_ ? heap_ : (const void*)buf_; }
+
+public:
+    Mod() = default;   // the identity (no-op) mod
+
+    /// Construct from any callable f(Node&). Stored inline when it fits.
+    template <typename F>
+        requires (!std::is_same_v<std::decay_t<F>, Mod> && std::is_invocable_v<F&, Node&>)
+    Mod(F f) {
+        using D = std::decay_t<F>;
+        size_   = sizeof(D);
+        invoke_ = [](const void* p, Node& n){ (*const_cast<D*>(static_cast<const D*>(p)))(n); };
+        copy_   = [](void* dst, const void* src){ new (dst) D(*static_cast<const D*>(src)); };
+        move_   = [](void* dst, void* src){ new (dst) D(std::move(*static_cast<D*>(src))); };
+        kill_   = [](void* p){ static_cast<D*>(p)->~D(); };
+        if constexpr (sizeof(D) <= Buf && alignof(D) <= alignof(std::max_align_t))
+            new (buf_) D(std::move(f));
+        else { heap_ = ::operator new(sizeof(D)); new (heap_) D(std::move(f)); }
+    }
+
+    Mod(const Mod& o) { copy_from(o); }
+    Mod(Mod&& o) noexcept { move_from(o); }
+    Mod& operator=(const Mod& o){ if(this!=&o){ reset(); copy_from(o);} return *this; }
+    Mod& operator=(Mod&& o) noexcept { if(this!=&o){ reset(); move_from(o);} return *this; }
+    ~Mod(){ reset(); }
+
+    /// Apply the mod to a node. No-op when empty.
+    void apply(Node& n) const { if (invoke_) invoke_(obj(), n); }
+    explicit operator bool() const { return invoke_ != nullptr; }
+
+private:
+    void reset(){
+        if (invoke_) { kill_(obj()); if (heap_) ::operator delete(heap_); }
+        heap_ = nullptr; size_ = 0; invoke_ = nullptr; copy_ = nullptr; move_ = nullptr; kill_ = nullptr;
+    }
+    void copy_from(const Mod& o){
+        invoke_=o.invoke_; copy_=o.copy_; move_=o.move_; kill_=o.kill_; size_=o.size_;
+        if(!o.invoke_) return;
+        if(o.heap_){ heap_ = ::operator new(o.size_); copy_(heap_, o.obj()); }
+        else       { copy_(buf_, o.obj()); }
+    }
+    void move_from(Mod& o){
+        invoke_=o.invoke_; copy_=o.copy_; move_=o.move_; kill_=o.kill_; size_=o.size_;
+        if(!o.invoke_) return;
+        if(o.heap_){
+            // steal the heap block; clear the source's vtable so its destructor
+            // does NOT run kill_ on a now-empty inline buffer.
+            heap_=o.heap_; o.heap_=nullptr;
+            o.invoke_=nullptr; o.copy_=nullptr; o.move_=nullptr; o.kill_=nullptr; o.size_=0;
+        } else {
+            move_(buf_, o.obj());   // move-construct into our inline buffer
+            o.reset();              // destroy the moved-from inline object
+        }
+    }
+};
 /// Mods compose: `a | b` is a Mod that applies a then b (so you can name bundles).
-inline Mod operator|(Mod a, Mod b){ return {[=](Node& n){ a.apply(n); b.apply(n); }}; }
+inline Mod operator|(Mod a, Mod b){ return Mod([a=std::move(a), b=std::move(b)](Node& n){ a.apply(n); b.apply(n); }); }
 
 // A style-only mod — the common case. `sfn` takes a Style& mutator.
-inline Mod sty(std::function<void(Style&)> f){ return {[f=std::move(f)](Node& n){ f(n.style); }}; }
+template <typename F> Mod sty(F f){ return Mod([f=std::move(f)](Node& n){ f(n.style); }); }
 /// A do-nothing Mod — the identity for `|`. Makes conditional styling clean:
 ///   text(x) | (active ? bold : noop)
-inline const Mod noop = {[](Node&){}};
+inline const Mod noop = Mod([](Node&){});
+
+// ── Deferred finalize ───────────────────────────────────────────────
+// finalize() re-hashes a node's whole field set; doing it after EVERY piped mod
+// (`x | a | b | c` → 3 hashes) was the dominant per-frame cost. `Building` is a
+// tiny proxy returned by `node | mod`: it applies mods WITHOUT re-hashing and
+// finalizes exactly ONCE, lazily, when the node is consumed (converted to a
+// NodeRef — as a child, a return value, or at render). maya's deferred style
+// resolution, transposed. The API is unchanged: a Building IS-A node handle.
+struct Building {
+    NodeRef n;
+    bool dirty = false;
+    explicit Building(NodeRef node) : n(std::move(node)) {}
+    /// finalize-on-consume: hand back a fully-hashed NodeRef.
+    operator NodeRef() { if (dirty) { finalize(*n); dirty = false; } return n; }
+    Node& operator*()  const { return *n; }
+    Node* operator->() const { return n.get(); }
+    NodeRef done() { if (dirty) { finalize(*n); dirty = false; } return n; }
+};
+/// `node | mod` — apply and DEFER the hash. Chained pipes stay a Building, so a
+/// whole chain costs one finalize (on consume), not one per mod.
+inline Building operator|(NodeRef n, const Mod& m){ m.apply(*n); Building b{std::move(n)}; b.dirty = true; return b; }
+inline Building operator|(Building b, const Mod& m){ m.apply(*b.n); b.dirty = true; return b; }
 
 // ── conditional mods ─ apply a mod only when a condition holds ──────────────
 // Kills the `cond ? someMod : noop` ternary that litters real views. Reads as
