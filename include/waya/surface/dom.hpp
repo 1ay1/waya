@@ -36,6 +36,12 @@ private:
         std::string s=std::to_string(f); while(s.size()&&s.back()=='0')s.pop_back(); if(s.size()&&s.back()=='.')s.pop_back(); return s; }
     static void esc(std::string& o, std::string_view s){ for(char c:s) switch(c){
         case '&':o+="&amp;";break; case '<':o+="&lt;";break; case '>':o+="&gt;";break; default:o+=c; } }
+    // Attribute context also needs the quote characters escaped, or a value
+    // containing a double-quote could break out of the attribute and inject
+    // markup. Every attribute value below goes through this, not plain esc().
+    static void esc_attr(std::string& o, std::string_view s){ for(char c:s) switch(c){
+        case '&':o+="&amp;";break; case '<':o+="&lt;";break; case '>':o+="&gt;";break;
+        case '"':o+="&quot;";break; case '\'':o+="&#39;";break; default:o+=c; } }
 
     static void len(std::string& o, const Len& l){
         switch(l.unit){ case Unit::px:o+=n(l.value);o+="px";break; case Unit::pct:o+=n(l.value);o+="%";break;
@@ -63,6 +69,9 @@ private:
             // cell (overlaid), centred by default. For badges, overlays, hero
             // text on an image. The child-overlap rule is emitted in intern().
             case Flow::stack:o+="display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;";break;
+            // grid = a real CSS grid; grid-template-columns/rows/areas come in
+            // through the extra channel via grid_cols()/grid_rows()/grid_areas().
+            case Flow::grid:o+="display:grid;";break;
             case Flow::none:break; }
         // Flex correctness: min-width:0 lets a flex CHILD shrink below its
         // content size. CSS defaults flex items to min-width:auto, which causes
@@ -182,21 +191,19 @@ private:
     void event_attrs(std::string& o, const Node& nd){
         for(auto& e : nd.events){
             o+=" data-ev-"; o+=e.event; o+="=\""; o+=std::to_string(e.msg);
-            if(!e.arg.empty()){ o+='|'; esc(o,e.arg); }
+            if(!e.arg.empty()){ o+='|'; esc_attr(o,e.arg); }
             o+='"';
         }
         if(nd.draggable){ o+=" draggable=\"true\"";
-            // the drag payload rides in name; emit it here for non-control nodes
-            // (control_attrs already emits name for form controls).
             if(!nd.name.empty() && nd.kind!=Kind::input && nd.kind!=Kind::textarea &&
                nd.kind!=Kind::checkbox && nd.kind!=Kind::radio && nd.kind!=Kind::select){
-                o+=" name=\""; esc(o,nd.name); o+='"';
+                o+=" name=\""; esc_attr(o,nd.name); o+='"';
             }
         }
         // arbitrary attributes (aria-*, role, title, data-*, controls…)
         for(auto& a : nd.attrs){
             o+=' '; o+=a.first;
-            if(!a.second.empty()){ o+="=\""; esc(o,a.second); o+='"'; }
+            if(!a.second.empty()){ o+="=\""; esc_attr(o,a.second); o+='"'; }
         }
     }
 
@@ -211,7 +218,7 @@ private:
     void control_attrs(std::string& o, const Node& nd){
         auto cls = intern(nd.style, nd.kind, false);
         if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
-        if(!nd.name.empty()){ o+=" name=\""; esc(o,nd.name); o+='"'; }
+        if(!nd.name.empty()){ o+=" name=\""; esc_attr(o,nd.name); o+='"'; }
         if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
         if(nd.on_change>=0){ o+=" data-change=\""; o+=std::to_string(nd.on_change); o+='"'; }
         if(nd.disabled) o+=" disabled";
@@ -226,17 +233,17 @@ private:
                 const std::string& tg = nd.tag.empty() ? std::string("span") : nd.tag;
                 o+='<'; o+=tg; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</"; o+=tg; o+='>'; return;
             }
-            case Kind::image: o+="<img src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+='>'; return;
+            case Kind::image: o+="<img src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+='>'; return;
             case Kind::input: {
-                o+="<input type=\""; esc(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
-                o+=" value=\""; esc(o,nd.text); o+='"';
-                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc(o,nd.placeholder); o+='"'; }
+                o+="<input type=\""; esc_attr(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
+                o+=" value=\""; esc_attr(o,nd.text); o+='"';
+                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc_attr(o,nd.placeholder); o+='"'; }
                 control_attrs(o,nd);
                 o+=">"; return;
             }
             case Kind::textarea: {
                 o+="<textarea";
-                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc(o,nd.placeholder); o+='"'; }
+                if(!nd.placeholder.empty()){ o+=" placeholder=\""; esc_attr(o,nd.placeholder); o+='"'; }
                 control_attrs(o,nd);
                 o+='>'; esc(o,nd.text); o+="</textarea>"; return;
             }
@@ -247,7 +254,7 @@ private:
                 o+=">"; return;
             }
             case Kind::radio: {
-                o+="<input type=\"radio\" value=\""; esc(o,nd.text); o+='"';
+                o+="<input type=\"radio\" value=\""; esc_attr(o,nd.text); o+='"';
                 if(nd.checked) o+=" checked";
                 control_attrs(o,nd);
                 o+=">"; return;
@@ -255,7 +262,7 @@ private:
             case Kind::select: {
                 o+="<select"; control_attrs(o,nd); o+='>';
                 for(auto&opt:nd.options){
-                    o+="<option value=\""; esc(o,opt.value); o+='"';
+                    o+="<option value=\""; esc_attr(o,opt.value); o+='"';
                     if(opt.value==nd.selected) o+=" selected";
                     o+='>'; esc(o,opt.label); o+="</option>";
                 }
@@ -272,8 +279,8 @@ private:
             }
             case Kind::form: o+="<form"; open_attrs(o,nd); o+='>';
                 for(auto&k:nd.kids){ emit(o,*k); } o+="</form>"; return;
-            case Kind::video: o+="<video src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></video>"; return;
-            case Kind::audio: o+="<audio src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
+            case Kind::video: o+="<video src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+="></video>"; return;
+            case Kind::audio: o+="<audio src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
             case Kind::markup: o+="<div"; open_attrs(o,nd); o+='>'; o+=nd.text /*raw, trusted*/; o+="</div>"; return;
             case Kind::path: {
                 // Compute the points' bounds → a viewBox, so the SVG SCALES to fit

@@ -24,6 +24,8 @@
 #include "binary.hpp"
 #include "effect.hpp"
 #include "meta.hpp"
+#include "assets.hpp"
+#include "validate.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -246,9 +248,24 @@ inline std::string error_html(std::string_view what){
 /// return an error card node instead of letting the exception unwind into the
 /// detached thread (which would std::terminate the whole process). Keeps the
 /// server and every other session alive.
+/// A build id unique to this compiled binary (the compile timestamp). Used by
+/// the dev hot-reload beacon: a rebuild produces a new id, so a reconnecting
+/// client can tell "the server was rebuilt" apart from "the network blipped."
+inline const char* build_id(){ return __DATE__ " " __TIME__; }
+
 template <typename P, typename Model>
 NodeRef safe_view(const Model& m){
-    try { return P::view(m); }
+    try {
+        NodeRef r = P::view(m);
+#ifndef NDEBUG
+        // Debug builds catch malformed trees LOUDLY on first render (WHATWG
+        // content-model violations: unnamed form controls, nested interactive
+        // nodes, void elements with children, missing alt text). Release builds
+        // skip the walk entirely — zero cost in production.
+        if (r) { auto vs = check(*r); for (auto& v : vs) std::fprintf(stderr, "waya: %s\n", v.message().c_str()); }
+#endif
+        return r;
+    }
     catch (const std::exception& e) { return markup(error_html(e.what())); }
     catch (...) { return markup(error_html("unknown error in view()")); }
 }
@@ -336,14 +353,18 @@ inline std::string client(int port) {
     "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"/?r='+encodeURIComponent(location.pathname+location.search));"
     "ws.binaryType='arraybuffer';"
     "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
-    // Text frames are runtime control messages (navigation); binary frames are
-    // paints. This keeps one socket doing input, output, and effects.
+    // Text frames are runtime control messages (navigation, dev hot-reload);
+    // binary frames are paints. This keeps one socket doing input, output, effects.
     "ws.onmessage=function(ev){if(typeof ev.data==='string'){ctl(ev.data);return;}paint(readFrame(ev.data));};"
     "ws.onclose=function(){setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
     // control: "@nav|<url>" pushes history + re-routes; "@url|<url>" only syncs
-    // the address bar (deep-link) without a route.
+    // the address bar (deep-link) without a route; "@build|<id>" is the dev
+    // hot-reload signal — if the server's build id changed since we first
+    // connected, a rebuild happened, so hard-reload to pick up new shell/JS/CSS.
+    "var _build=null;"
     "function ctl(s){var b=s.indexOf('|'),k=s.slice(0,b),v=s.slice(b+1);"
-    "if(k==='@nav'){history.pushState({},'',v);route();}"
+    "if(k==='@build'){if(_build===null)_build=v;else if(_build!==v)location.reload();}"
+    "else if(k==='@nav'){history.pushState({},'',v);route();}"
     "else if(k==='@rep'){history.replaceState({},'',v);route();}"
     "else if(k==='@url'){history.pushState({},'',v);}}"
     "window.addEventListener('popstate',route);"
@@ -677,6 +698,11 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         // First frame: a full paint. Same shape as any later frame — a
         // reconnecting client is resynced by another full paint.
         s->send_binary(ws::encode_binary(encode_full(*prev)));
+        // Dev hot-reload beacon: a build id unique to this binary. When the dev
+        // script rebuilds and restarts the server, the client reconnects, sees a
+        // different id, and hard-reloads to pick up new shell/CSS/JS. In
+        // production (WAYA_DEV unset) this is a stable constant and never fires.
+        s->send_text(std::string("@build|") + detail::build_id());
         detail::perform<Msg>(s, init_cmd);
         detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
 
@@ -846,7 +872,8 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">"
         "<meta name=\"theme-color\" content=\"" + bg + "\">"
         "<title>" + [&]{ std::string t; std::string src = mt.title.empty() ? std::string(page_title?page_title:"") : mt.title; for(char c:src){ if(c=='<')t+="&lt;"; else if(c=='>')t+="&gt;"; else if(c=='&')t+="&amp;"; else t+=c; } return t; }() + "</title>"
-        + head_seo +
+        + head_seo
+        + assets().head_html() +
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
         // Root fills the viewport; overscroll is contained on html itself so the
@@ -905,6 +932,10 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "@keyframes wa-sheen{0%{transform:translateX(-120%) skewX(-20deg)}60%,100%{transform:translateX(220%) skewX(-20deg)}}"
         // Respect the user's reduced-motion preference — accessibility, by default.
         "@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}"
+        // User- and component-library-registered document assets: :root design
+        // tokens, custom @keyframes, @font-face, and global rules (::selection,
+        // scrollbars, resets). Emitted LAST so they win over the defaults above.
+        + assets().style_css() +
         "</style>"
         "<style id=\"wsheet\">" + ssr.css + "</style>"
         "</head><body><div id=\"root\">" + ssr.html + "</div>" + client(port) + "</body></html>";

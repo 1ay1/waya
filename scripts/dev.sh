@@ -7,13 +7,13 @@
 #
 # Usage:
 #   scripts/dev.sh [target] [build-dir]
-#     target     CMake target / binary to run   (default: hello)
+#     target     CMake target / binary to run   (default: counter)
 #     build-dir  CMake build directory          (default: build)
 #
 # Requires: cmake. Uses inotifywait if available (instant), else polls mtimes.
 
 set -u
-TARGET="${1:-hello}"
+TARGET="${1:-counter}"
 BUILD="${2:-build}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 1

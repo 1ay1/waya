@@ -22,6 +22,7 @@
 /// the same clean way.
 
 #include "../core/hash.hpp"
+#include "assets.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -43,7 +44,7 @@
 namespace waya::surface {
 
 // ── Enums for the common layout/typography choices ──────────────────────────
-enum class Flow    : std::uint8_t { none, row, col, stack };
+enum class Flow    : std::uint8_t { none, row, col, stack, grid };
 enum class Justify : std::uint8_t { none, start, center, end, between, around, evenly };
 enum class Align   : std::uint8_t { none, start, center, end, stretch, baseline };
 enum class Wrap    : std::uint8_t { none, wrap, nowrap };
@@ -236,6 +237,11 @@ template <typename... Cs> NodeRef box(Cs... cs){ auto n=std::make_shared<Node>()
 template <typename... Cs> NodeRef row(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::row; finalize(*n); return n; }
 template <typename... Cs> NodeRef col(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
 template <typename... Cs> NodeRef stack(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::stack; finalize(*n); return n; }
+/// `grid(children...)` — a real CSS grid container. Shape it with `grid_cols`,
+/// `grid_rows`, `grid_areas`, and `gap`; place children with `col_span`/
+/// `row_span`/`area`. The layout tool for dashboards, galleries, and any 2-D UI
+/// that flex can only fake. e.g. grid(a,b,c,d) | grid_cols("1fr 1fr") | gap(16).
+template <typename... Cs> NodeRef grid(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::grid; finalize(*n); return n; }
 
 inline NodeRef text(std::string s){ auto n=std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(s); finalize(*n); return n; }
 inline NodeRef text(long long v){ return text(std::to_string(v)); }
@@ -380,6 +386,30 @@ inline const Mod center = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::
 // an existing container's axis — essential for responsive `on_phone(column)`).
 inline const Mod column     = sty([](Style& s){ s.flow=Flow::col; });
 inline const Mod horizontal = sty([](Style& s){ s.flow=Flow::row; });
+// ── grid placement ──────────────────────────────────────────────────────────
+// Turn a container into a grid and shape its tracks. These set display:grid
+// implicitly, so `box(...) | grid_cols("1fr 1fr")` just works without grid().
+/// `grid_cols("1fr 2fr")` or `grid_cols(3)` for N equal columns.
+inline Mod grid_cols(std::string tracks){ return sty([=](Style& s){ s.flow=Flow::grid; s.extra.emplace_back("grid-template-columns", tracks); }); }
+inline Mod grid_cols(int n){ return grid_cols("repeat(" + std::to_string(n) + ",minmax(0,1fr))"); }
+/// `grid_template("2fr 1fr 1fr")` — alias for grid_cols(tracks) (explicit tracks).
+inline Mod grid_template(std::string tracks){ return grid_cols(std::move(tracks)); }
+/// `grid_rows("auto 1fr")` or `grid_rows(2)` for N equal rows.
+inline Mod grid_rows(std::string tracks){ return sty([=](Style& s){ s.flow=Flow::grid; s.extra.emplace_back("grid-template-rows", tracks); }); }
+inline Mod grid_rows(int n){ return grid_rows("repeat(" + std::to_string(n) + ",minmax(0,1fr))"); }
+/// `grid_areas("'nav main' 'nav foot'")` — named template areas; place children
+/// with `area("nav")`. The whole holy-grail layout in two lines.
+inline Mod grid_areas(std::string tmpl){ return sty([=](Style& s){ s.flow=Flow::grid; s.extra.emplace_back("grid-template-areas", tmpl); }); }
+/// `auto_grid(min_px)` — a responsive gallery: as many equal columns as fit at
+/// >= min_px each, wrapping automatically. The one-liner for card grids.
+inline Mod auto_grid(float min_px){ return sty([=](Style& s){ s.flow=Flow::grid;
+    s.extra.emplace_back("grid-template-columns",
+        "repeat(auto-fit,minmax(min(" + std::to_string((int)min_px) + "px,100%),1fr))"); }); }
+/// `col_span(n)` / `row_span(n)` — a grid CHILD spanning n tracks.
+inline Mod col_span(int n){ return sty([=](Style& s){ s.extra.emplace_back("grid-column", "span " + std::to_string(n)); }); }
+inline Mod row_span(int n){ return sty([=](Style& s){ s.extra.emplace_back("grid-row", "span " + std::to_string(n)); }); }
+/// `area("nav")` — place a grid CHILD into a named area from grid_areas().
+inline Mod area(std::string name){ return sty([=](Style& s){ s.extra.emplace_back("grid-area", name); }); }
 /// `between` — push children to opposite ends.
 inline const Mod between = sty([](Style& s){ s.justify=Justify::between; });
 inline Mod overflow(std::string v){ return sty([=](Style& s){ s.extra.emplace_back("overflow", v); }); }
@@ -423,6 +453,18 @@ inline Mod stroke(std::uint32_t color, float width_=2){ return sty([=](Style& s)
 inline Mod animate(std::string keyframes, int ms=400, std::string ease="cubic-bezier(.2,.7,.2,1)", std::string fill="both"){
     return sty([=](Style& s){ s.extra.emplace_back("animation",
         keyframes + " " + std::to_string(ms) + "ms " + ease + " " + fill); });
+}
+/// `custom_animation(name, spec, ms)` — define AND apply a brand-new keyframe in
+/// one call. `spec` is the @keyframes body, e.g. "0%{transform:none}50%{transform:
+/// rotate(6deg)}100%{transform:none}". The keyframe is registered on the document
+/// (deduped by name across every use), so a component can ship its own animation
+/// without touching the shell. This is the seam that makes the motion vocabulary
+/// open-ended: anything you can write in CSS keyframes, you can animate here.
+inline Mod custom_animation(std::string name, std::string spec, int ms=600,
+                            std::string ease="ease", std::string fill="both", std::string iter="1"){
+    assets().keyframes(name, spec);
+    return sty([=](Style& s){ s.extra.emplace_back("animation",
+        name + " " + std::to_string(ms) + "ms " + ease + " " + iter + " " + fill); });
 }
 // Entrances (play once): the polish that makes new content feel alive.
 inline Mod fade_in(int ms=300){ return animate("wa-fade", ms); }
@@ -749,6 +791,51 @@ template <typename Msg> Mod on_hover(Msg enter, Msg leave){
 /// to a Msg. Fires on Enter or a submit button.
 template <typename Fn> Mod on_submit(Fn fn){ return on_ev("submit", std::move(fn)); }
 
+/// The parsed fields of a submitted form. `on_submit` hands your `fn` the raw
+/// "a=1&b=2" (URL-encoded) string; `FormData::parse(s)` turns it into a keyed
+/// lookup so you read fields by name instead of hand-parsing:
+///
+///   on_submit([](std::string body){
+///       auto f = FormData::parse(body);
+///       return SignUp{ f.get("email"), f.get("password") };
+///   })
+struct FormData {
+    std::vector<std::pair<std::string,std::string>> fields;
+
+    static std::string url_decode(std::string_view s){
+        std::string o; o.reserve(s.size());
+        auto hex = [](char c)->int{ if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10;
+                                    if(c>='A'&&c<='F')return c-'A'+10; return 0; };
+        for(std::size_t i=0;i<s.size();++i){
+            char c=s[i];
+            if(c=='+') o+=' ';
+            else if(c=='%' && i+2<s.size()){ o+=(char)(hex(s[i+1])*16+hex(s[i+2])); i+=2; }
+            else o+=c;
+        }
+        return o;
+    }
+    static FormData parse(std::string_view body){
+        FormData d; std::size_t i=0;
+        while(i<body.size()){
+            std::size_t amp=body.find('&', i); if(amp==std::string_view::npos) amp=body.size();
+            std::string_view pair=body.substr(i, amp-i);
+            std::size_t eq=pair.find('=');
+            std::string k=url_decode(eq==std::string_view::npos?pair:pair.substr(0,eq));
+            std::string v=eq==std::string_view::npos?std::string{}:url_decode(pair.substr(eq+1));
+            if(!k.empty()) d.fields.emplace_back(std::move(k), std::move(v));
+            i=amp+1;
+        }
+        return d;
+    }
+    /// Value for `key` (first match), or `fallback` if absent.
+    std::string get(std::string_view key, std::string fallback={}) const {
+        for(auto&[k,v]:fields) if(k==key) return v; return fallback;
+    }
+    bool has(std::string_view key) const { for(auto&[k,v]:fields){(void)v; if(k==key) return true;} return false; }
+    /// A checkbox reads as present/"on"/"true" → true.
+    bool checked(std::string_view key) const { auto v=get(key); return v=="on"||v=="true"||v=="1"; }
+};
+
 // ── drag & drop ─────────────────────────────────────────────────────────────
 /// Mark a node draggable and give it a payload id (rides as the drag data).
 inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
@@ -764,6 +851,25 @@ inline Mod role(std::string r){ return attr("role", std::move(r)); }
 inline Mod aria(std::string k, std::string v){ return attr("aria-" + k, std::move(v)); }
 inline Mod title(std::string t){ return attr("title", std::move(t)); }
 inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
+/// `safe_url(s)` — neutralise a dangerous URL scheme. `javascript:`, `data:`,
+/// and `vbscript:` in an href/src are a script-injection vector even after HTML
+/// escaping; this returns "#" for those so a user-supplied link can't run code.
+inline std::string safe_url(std::string u){
+    std::string lc; for(char c: u){ if(c=='\t'||c=='\n'||c=='\r'||c==' ') continue; lc += (char)((c>='A'&&c<='Z')?c+32:c); }
+    auto starts = [&](const char* p){ std::size_t i=0; for(; p[i]; ++i){ if(i>=lc.size()||lc[i]!=p[i]) return false; } return true; };
+    if(starts("javascript:") || starts("data:") || starts("vbscript:")) return "#";
+    return u;
+}
+/// `href(url)` — set a link target, URL-scheme-sanitised. Use this for ANY href
+/// built from data you don't fully control; it's the safe default over
+/// `attr("href", …)`. Renders the node as an <a> if it isn't already.
+inline Mod href(std::string url){ return {[u=safe_url(std::move(url))](Node& n){
+    if(n.tag.empty() || n.tag=="span") n.tag="a"; n.attrs.emplace_back("href", u); }}; }
+/// `link_to(label, url)` — a real, safe anchor in one call.
+inline NodeRef link_to(std::string label, std::string url){
+    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(label);
+    n->tag="a"; n->attrs.emplace_back("href", safe_url(std::move(url))); finalize(*n); return n;
+}
 /// `tab_index(0)` — make any node keyboard-focusable (so on_key works on it).
 inline Mod tab_index(int i){ return attr("tabindex", std::to_string(i)); }
 /// `focusable()` — sugar for tabindex 0 (a div that can receive keyboard focus).
