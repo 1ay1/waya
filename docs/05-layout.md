@@ -213,6 +213,45 @@ col(
 ) | h(vh(100))
 ```
 
+Other scroll mods: `scroll` (both axes), `scroll_x` / `scroll_y` (one axis),
+`clip` (hide overflow), and `no_scrollbar` (scroll works, chrome hidden — for
+carousels).
+
+## Positioning — no raw CSS needed
+
+The everyday position patterns have named mods, so you never drop to
+`css("position", …)` / `css("top", …)`:
+
+```cpp
+// a sticky header (the single most common one) — one word
+header | sticky_top()          // sticks to the top of the scroll container
+header | sticky_top(64)         // … 64px down (below a fixed bar)
+
+// a badge pinned to a card corner
+box(content, badge | pin_top_right(8)) | positioned()
+//   positioned() makes the box the anchor; pin_* corners: pin_top_right,
+//   pin_top_left, pin_bottom_right, pin_bottom_left.
+
+// a full-screen fixed overlay
+modal | fixed | pin()          // pin() = inset:0, fills the viewport
+
+// individual edges + stacking
+el | absolute() | top(0) | right(0) | z(50)
+```
+
+`sticky` / `fixed` / `absolute()` / `relative` set the mode; `top`/`bottom`/
+`left`/`right` take a bare px number or a `Len` (`right(rem(1))`); `z(n)` sets
+stacking order.
+
+!!! tip "css() is the escape hatch, not the everyday tool"
+    Sizing (`min_w`/`max_w`/`min_h`/`max_h` — all take a bare number *or* a
+    `Len`), transforms (`translate`/`rotate`/`scale`), filters (`blur`/
+    `backdrop_blur`), text (`line_clamp`/`uppercase`/`tabular_nums`) — all named.
+    A normal view shouldn't contain `css("prop", "value")`; when you *do* reach
+    for it (a genuinely one-off value like `min(80vw, 600px)`), it's still
+    interned and diffed like any other mod. Nothing is off-limits, but the
+    common 90% reads clean.
+
 ## Putting it together: a responsive app shell
 
 ```cpp

@@ -250,6 +250,14 @@ inline void push(std::vector<NodeRef>&){}
 template<typename... R> void push(std::vector<NodeRef>& v, NodeRef n, R... r){ v.push_back(std::move(n)); push(v,std::move(r)...); }
 /// #rrggbb string from a 0xRRGGBB int — used by many colour-taking mods.
 inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; }
+/// Serialize a Len to CSS (px/%/rem/…) — used by edge-offset mods.
+inline std::string lenstr(Len l){
+    auto n=[](float f){ long i=(long)f; return (float)i==f? std::to_string(i) : std::to_string(f); };
+    switch(l.unit){ case Unit::px:return n(l.value)+"px"; case Unit::pct:return n(l.value)+"%";
+        case Unit::rem:return n(l.value)+"rem"; case Unit::em:return n(l.value)+"em";
+        case Unit::vw:return n(l.value)+"vw"; case Unit::vh:return n(l.value)+"vh";
+        case Unit::fr:return n(l.value)+"fr"; case Unit::fill:return "100%"; case Unit::hug:return "auto"; }
+    return n(l.value)+"px"; }
 }
 template <typename... Cs> NodeRef box(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
 template <typename... Cs> NodeRef row(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::row; finalize(*n); return n; }
@@ -500,9 +508,13 @@ inline Mod h(float v){ return h(px(v)); }
 inline Mod size(Len side){ return sty([=](Style& s){ s.w=side; s.h=side; }); }   // square
 inline Mod size(float side){ return size(px(side)); }
 inline Mod max_w(Len l){ return sty([=](Style& s){ s.max_w=l; }); }
+inline Mod max_w(float v){ return max_w(px(v)); }
 inline Mod min_w(Len l){ return sty([=](Style& s){ s.min_w=l; }); }
+inline Mod min_w(float v){ return min_w(px(v)); }
 inline Mod max_h(Len l){ return sty([=](Style& s){ s.max_h=l; }); }
+inline Mod max_h(float v){ return max_h(px(v)); }
 inline Mod min_h(Len l){ return sty([=](Style& s){ s.min_h=l; }); }
+inline Mod min_h(float v){ return min_h(px(v)); }
 inline Mod round(Len l){ return sty([=](Style& s){ s.radius=l; }); }
 inline Mod round(float r){ return round(px(r)); }
 /// int overload so `round(10)` is never ambiguous with std::round (from <cmath>,
@@ -555,13 +567,47 @@ inline Mod area(std::string name){ return sty([=](Style& s){ s.extra.emplace_bac
 inline const Mod between = sty([](Style& s){ s.justify=Justify::between; });
 inline Mod overflow(std::string v){ return sty([=](Style& s){ s.extra.emplace_back("overflow", v); }); }
 inline const Mod scroll = sty([](Style& s){ s.extra.emplace_back("overflow","auto"); });
+inline const Mod scroll_x = sty([](Style& s){ s.extra.emplace_back("overflow-x","auto"); s.extra.emplace_back("overflow-y","hidden"); });
+inline const Mod scroll_y = sty([](Style& s){ s.extra.emplace_back("overflow-y","auto"); s.extra.emplace_back("overflow-x","hidden"); });
 inline const Mod clip   = sty([](Style& s){ s.extra.emplace_back("overflow","hidden"); });
+/// `no_scrollbar` — scroll still works, the scrollbar chrome is hidden (carousels).
+/// Uses the standard `scrollbar-width` (widely supported in modern browsers).
+inline const Mod no_scrollbar = sty([](Style& s){
+    s.extra.emplace_back("scrollbar-width","none");
+    s.extra.emplace_back("-ms-overflow-style","none"); });
 
-// ── position ──────────────────────────────────────────────────────────────
+// ── position ────────────────────────────────────────────────────
 inline Mod absolute(Len top_={}, Len left_={}){ return sty([=](Style& s){ s.pos=Pos::absolute; s.top=top_; s.left=left_; }); }
 inline const Mod fixed  = sty([](Style& s){ s.pos=Pos::fixed; });
 inline const Mod sticky = sty([](Style& s){ s.pos=Pos::sticky; });
 inline const Mod relative = sty([](Style& s){ s.pos=Pos::relative; });
+/// `positioned()` — make this box the positioning ANCHOR for its absolutely-
+/// positioned children (pin_top_right, absolute, …). Without it, `position:
+/// absolute` children resolve against the viewport, not the box — the classic
+/// web surprise. Put it on the container: `box(content, badge|pin_top_right()) |
+/// positioned()`.
+inline const Mod positioned = sty([](Style& s){ if(s.pos==Pos::none) s.pos=Pos::relative; });
+// Individual edge offsets — emitted via the extra channel so an explicit 0 works
+// (the top/left/… fields treat Len{0} as "unset"). Accept a Len or a bare px number.
+inline Mod top(Len l){ return sty([=](Style& s){ s.extra.emplace_back("top", detail::lenstr(l)); }); }
+inline Mod top(float v){ return top(px(v)); }
+inline Mod bottom(Len l){ return sty([=](Style& s){ s.extra.emplace_back("bottom", detail::lenstr(l)); }); }
+inline Mod bottom(float v){ return bottom(px(v)); }
+inline Mod left(Len l){ return sty([=](Style& s){ s.extra.emplace_back("left", detail::lenstr(l)); }); }
+inline Mod left(float v){ return left(px(v)); }
+inline Mod right(Len l){ return sty([=](Style& s){ s.extra.emplace_back("right", detail::lenstr(l)); }); }
+inline Mod right(float v){ return right(px(v)); }
+/// `sticky_top(offset)` — the ubiquitous sticky header: sticks to the top of the
+/// scroll container at `offset` (default 0). One word for the most common
+/// position pattern on the web.
+inline Mod sticky_top(float offset=0){ return sty([=](Style& s){ s.pos=Pos::sticky; s.extra.emplace_back("top", std::to_string((int)offset)+"px"); }); }
+inline Mod sticky_bottom(float offset=0){ return sty([=](Style& s){ s.pos=Pos::sticky; s.extra.emplace_back("bottom", std::to_string((int)offset)+"px"); }); }
+/// Pin an absolutely-positioned child to a CORNER of its positioned ancestor —
+/// the classic "badge on a card" / "close button" placement.
+inline Mod pin_top_right(float o=8){ return sty([=](Style& s){ s.pos=Pos::absolute; auto p=std::to_string((int)o)+"px"; s.extra.emplace_back("top",p); s.extra.emplace_back("right",p); }); }
+inline Mod pin_top_left(float o=8){ return sty([=](Style& s){ s.pos=Pos::absolute; auto p=std::to_string((int)o)+"px"; s.extra.emplace_back("top",p); s.extra.emplace_back("left",p); }); }
+inline Mod pin_bottom_right(float o=8){ return sty([=](Style& s){ s.pos=Pos::absolute; auto p=std::to_string((int)o)+"px"; s.extra.emplace_back("bottom",p); s.extra.emplace_back("right",p); }); }
+inline Mod pin_bottom_left(float o=8){ return sty([=](Style& s){ s.pos=Pos::absolute; auto p=std::to_string((int)o)+"px"; s.extra.emplace_back("bottom",p); s.extra.emplace_back("left",p); }); }
 inline Mod inset(Len t, Len r, Len b, Len l){
     // Emit the CSS `inset` shorthand via the extra channel, so an explicit 0
     // works (Len{0} would be treated as "unset" by the top/left/… path).
@@ -583,6 +629,9 @@ inline Mod blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("filt
 inline Mod backdrop_blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("backdrop-filter","blur("+std::to_string((int)px_)+"px)"); }); }
 inline Mod scale(float f){ return sty([=](Style& s){ s.extra.emplace_back("transform","scale("+std::to_string(f)+")"); }); }
 inline Mod rotate(float deg){ return sty([=](Style& s){ s.extra.emplace_back("transform","rotate("+std::to_string((int)deg)+"deg)"); }); }
+/// `translate(x, y)` — nudge a node by px on each axis (offsets, tooltips, art).
+inline Mod translate(float x, float y=0){ return sty([=](Style& s){ s.extra.emplace_back("transform",
+    "translate("+std::to_string((int)x)+"px,"+std::to_string((int)y)+"px)"); }); }
 inline Mod stroke(std::uint32_t color, float width_=2){ return sty([=](Style& s){ s.has_fg=true; s.fg=color; s.has_stroke_w=true; s.stroke_w=width_; }); }
 
 // ── motion ─ composable animation mods over the shell's @keyframes library ───

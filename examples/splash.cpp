@@ -29,7 +29,7 @@ struct Splash {
             text(desc)  | fg(muted) | body
         ) | gap(10) | pad(24) | round(20)
           | gradient_border(a, b, 1)                       // glowing edge
-          | grow(1) | css("min-width", "15rem")
+          | grow(1) | min_w(rem(15))
           | hover_lift(5) | hover_glow(a, 30)
           | fade_up(600) | delay(delay_ms);
     }
@@ -48,7 +48,7 @@ struct Splash {
                 | aurora_text(0x818cf8, 0x22d3ee, 0xf472b6, 7) | fade_up(700),
             text("Describe what to render \u2014 waya owns how. Server-rendered, "
                  "keyed-diffed, themeable, and beautiful by default.")
-                | fg(0x94a3b8) | font_fluid(16, 21) | css("max-width", "40rem")
+                | fg(0x94a3b8) | font_fluid(16, 21) | max_w(rem(40))
                 | leading(1.6f) | fade_up(800) | delay(80),
             row(
                 text("Get started \u2192") | fg(white) | semibold | font(16)

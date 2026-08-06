@@ -72,6 +72,18 @@ using waya::surface::max_h;   using waya::surface::aspect;
 using waya::surface::transition; using waya::surface::hover_lift; using waya::surface::press;
 using waya::surface::overload;   using waya::surface::round;      using waya::surface::pad_x;
 using waya::surface::pad_y;
+using waya::surface::sticky;     using waya::surface::sticky_top; using waya::surface::sticky_bottom;
+using waya::surface::fixed;      using waya::surface::absolute;   using waya::surface::relative;
+using waya::surface::positioned; using waya::surface::pin;        using waya::surface::inset;
+using waya::surface::top;        using waya::surface::bottom;     using waya::surface::left;
+using waya::surface::right;      using waya::surface::z;
+using waya::surface::pin_top_right;   using waya::surface::pin_top_left;
+using waya::surface::pin_bottom_right; using waya::surface::pin_bottom_left;
+using waya::surface::scroll;     using waya::surface::scroll_x;   using waya::surface::scroll_y;
+using waya::surface::clip;       using waya::surface::no_scrollbar; using waya::surface::overflow;
+using waya::surface::translate;  using waya::surface::rotate;     using waya::surface::scale;
+using waya::surface::backdrop_blur; using waya::surface::blur;    using waya::surface::opacity;
+using waya::surface::line_clamp; using waya::surface::uppercase;  using waya::surface::lowercase;
 
 // ── Layout contexts (phantom tags) ──────────────────────────────────────────
 namespace ctx {
