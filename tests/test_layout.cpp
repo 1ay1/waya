@@ -302,6 +302,20 @@ int main() {
                !has(DomBackend{}.render(*popover(false, text("t"), text("p"))).css, "backdrop-filter"));
     }
 
+    // ── flashy mods: aurora / glow_text / float / breathe / gradient_border ───
+    {
+        auto a = css_of(box() | aurora(0x818cf8, 0x22d3ee, 0xf472b6));
+        CHECK(has(a, "animation:wa-aurora") && has(a, "background-size:300% 300%"));
+        auto at = css_of(text("x") | aurora_text(0x818cf8, 0x22d3ee, 0xf472b6));
+        CHECK(has(at, "animation:wa-aurora") && has(at, "background-clip:text") && has(at, "color:transparent"));
+        CHECK(has(css_of(text("x") | glow_text(0x818cf8)), "text-shadow:0 0"));
+        CHECK(has(css_of(box() | float_()), "animation:wa-float"));
+        CHECK(has(css_of(box() | breathe()), "animation:wa-breathe"));
+        // gradient_border draws a padding-box + border-box double background
+        auto gb = css_of(box() | gradient_border(0x818cf8, 0x22d3ee, 1));
+        CHECK(has(gb, "padding-box") && has(gb, "border-box") && has(gb, "1px solid transparent"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

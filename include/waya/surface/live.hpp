@@ -896,6 +896,13 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "@keyframes wa-slide-left{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}"
         "@keyframes wa-slide-right{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}"
         "@keyframes wa-pop{0%{opacity:0;transform:scale(.92)}60%{transform:scale(1.02)}100%{opacity:1;transform:none}}"
+        // "cool" library: an aurora background that drifts, a gradient-text hue
+        // shift, a gentle float, and a breathing glow. Used by the flashy mods.
+        "@keyframes wa-aurora{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}"
+        "@keyframes wa-hue{to{filter:hue-rotate(360deg)}}"
+        "@keyframes wa-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}"
+        "@keyframes wa-breathe{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}"
+        "@keyframes wa-sheen{0%{transform:translateX(-120%) skewX(-20deg)}60%,100%{transform:translateX(220%) skewX(-20deg)}}"
         // Respect the user's reduced-motion preference — accessibility, by default.
         "@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}"
         "</style>"

@@ -89,10 +89,11 @@ struct Pulse {
             metric("memory", m.mem, 0x22d3ee),
             metric("network", m.net, 0x34d399),
             row(
-                text(std::to_string(m.ops)) | fg(ink) | display | font(40) | css("font-variant-numeric","tabular-nums"),
+                text(std::to_string(m.ops)) | fg(0xc7d2fe) | display | font(44) | glow_text(0x818cf8, 18)
+                    | css("font-variant-numeric","tabular-nums"),
                 text("ops/sec") | fg(muted) | caption
             ) | gap(10) | css("align-items","baseline")
-        );
+        ) | gradient_border(0x6366f1, 0x22d3ee, 1);
 
         std::vector<NodeRef> rows;
         for (auto& e : m.feed)

@@ -84,7 +84,8 @@ struct Orbit {
 
         return page(0x07090f,
             centered(48, col(
-                text("orbit") | fg(ink) | display | mono | css("letter-spacing", ".3em"),
+                text("orbit") | display | mono | css("letter-spacing", ".3em")
+                    | aurora_text(0x818cf8, 0x22d3ee, 0xf472b6, 6) | glow_text(0x818cf8, 16),
                 text("a generative field, ticked 30×/s by a subscription") | fg(muted) | caption,
                 canvas | center,
                 row(

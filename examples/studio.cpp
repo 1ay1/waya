@@ -42,7 +42,7 @@ struct Studio {
     static NodeRef swatch(const Model& m, std::string name, std::uint32_t a, std::uint32_t b) {
         bool active = m.name == name;
         return col(
-            box() | size(px(52)) | round(14) | gradient_bg(a, b, 135) | glow(a, 20),
+            box() | size(px(52)) | round(14) | gradient_bg(a, b, 135) | glow(a, 20) | when_(active, float_(3)),
             text(name) | fg_muted | caption | (active ? semibold : noop)
         ) | gap(8) | center | pad(12) | round(16)
           | (active ? ring(a, 2) : noop) | interactive() | tap(Pick{name});
@@ -52,7 +52,7 @@ struct Studio {
         auto header = row(
             col(
                 text("waya studio") | fg_text | display | font_fluid(32, 54) | weight(Weight::black)
-                    | css("letter-spacing","-.02em"),
+                    | css("letter-spacing","-.02em") | aurora_text(0x8b5cf6, 0x22d3ee, 0xf472b6, 8),
                 text("design tokens, motion, glass — switch a theme, watch it flow")
                     | fg_muted | body
             ) | gap(8),

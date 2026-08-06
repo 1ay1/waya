@@ -531,6 +531,40 @@ inline Mod mesh(std::uint32_t a, std::uint32_t b, std::uint32_t base=0x090b14){
 /// clearer when you mean "the background").
 inline Mod gradient_bg(std::uint32_t a, std::uint32_t b, int deg=135){ return gradient(a,b,deg); }
 
+// ── flashy backgrounds ─ animated, alive ──────────────────────────────
+/// `aurora(a, b, c)` — a slow, drifting three-colour gradient. The living
+/// backdrop behind a hero. Set on the page root.
+inline Mod aurora(std::uint32_t a, std::uint32_t b, std::uint32_t c, int secs=18){
+    return sty([=](Style& s){
+        s.extra.emplace_back("background","linear-gradient(120deg,"+detail::hexstr(a)+","+detail::hexstr(b)+","+detail::hexstr(c)+","+detail::hexstr(a)+")");
+        s.extra.emplace_back("background-size","300% 300%");
+        s.extra.emplace_back("animation","wa-aurora "+std::to_string(secs)+"s ease infinite"); }); }
+/// `aurora_text(a, b, c)` — gradient text whose hue slowly rotates. Living headline.
+inline Mod aurora_text(std::uint32_t a, std::uint32_t b, std::uint32_t c, int secs=8){
+    return sty([=](Style& s){
+        s.extra.emplace_back("background","linear-gradient(90deg,"+detail::hexstr(a)+","+detail::hexstr(b)+","+detail::hexstr(c)+")");
+        s.extra.emplace_back("background-size","200% auto");
+        s.extra.emplace_back("-webkit-background-clip","text");
+        s.extra.emplace_back("background-clip","text");
+        s.extra.emplace_back("color","transparent");
+        s.extra.emplace_back("animation","wa-aurora "+std::to_string(secs)+"s ease infinite"); }); }
+/// `glow_text(color, blur)` — a coloured bloom behind text (neon headline).
+inline Mod glow_text(std::uint32_t color, int blur=24){
+    return sty([=](Style& s){ s.extra.emplace_back("text-shadow",
+        "0 0 "+std::to_string(blur)+"px "+detail::rgba_hex(color,0.6f)+", 0 0 "+std::to_string(blur*2)+"px "+detail::rgba_hex(color,0.3f)); }); }
+/// `float_()` — the node gently bobs up and down (hero art, badges).
+inline Mod float_(int secs=4){ return sty([=](Style& s){ s.extra.emplace_back("animation","wa-float "+std::to_string(secs)+"s ease-in-out infinite"); }); }
+/// `breathe()` — a slow opacity+scale breath (ambient glows, live dots).
+inline Mod breathe(int secs=3){ return sty([=](Style& s){ s.extra.emplace_back("animation","wa-breathe "+std::to_string(secs)+"s ease-in-out infinite"); }); }
+/// `gradient_border(a, b, width)` — the popular glowing-edge card: a gradient
+/// ring drawn with a mask so only the border shows. width in px.
+inline Mod gradient_border(std::uint32_t a, std::uint32_t b, int width=1, int deg=135){
+    return sty([=](Style& s){
+        s.extra.emplace_back("border", std::to_string(width)+"px solid transparent");
+        s.extra.emplace_back("background",
+            "linear-gradient(var(--wa-surface,#141b2e),var(--wa-surface,#141b2e)) padding-box,"
+            "linear-gradient("+std::to_string(deg)+"deg,"+detail::hexstr(a)+","+detail::hexstr(b)+") border-box"); }); }
+
 // ── translucent surfaces ─ the frosted-panel look, without rgba() by hand ────
 /// `tint(color, alpha)` — a translucent fill (default: faint white, .04). The
 /// "raised surface over a dark bg" look used on every card.
