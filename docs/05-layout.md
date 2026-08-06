@@ -84,17 +84,20 @@ tags, chips, button groups, nav pills. Centered, 12px gap by default.
 cluster(tag("rust"), tag("c++"), tag("simd"), tag("gpu"))
 ```
 
-### `grid` — a responsive card grid
+### `auto_grid` — a responsive card grid
 
 ```cpp
-template <typename... Cs> NodeRef grid(Len min_col, Cs... cells);
+Mod auto_grid(float min_px);
 ```
 
-Lays cells into as many equal columns as fit at ≥ `min_col` wide, reflowing
-automatically. The one-liner responsive card grid (auto-fit + minmax).
+Turns a container into a grid with as many equal columns as fit at ≥ `min_px`
+wide, reflowing automatically. The one-liner responsive card grid (auto-fit +
+minmax), and it never overflows on a narrow phone.
 
 ```cpp
-grid(rem(20), card1, card2, card3, card4)   // 1–4 columns depending on width
+grid(card1, card2, card3, card4) | auto_grid(320)   // 1–4 columns by width
+// or apply it to any container:
+box(card1, card2, card3) | auto_grid(320) | gap(16)
 ```
 
 ### `switcher` — row that becomes a column
@@ -149,19 +152,32 @@ sections.
 hero(headline, subtitle, cta) | gap(24)
 ```
 
-## Real grids (tables that align)
+## Real grids (tables, dashboards, any 2-D layout)
 
 Faking columns with per-row `row(grow(1)…)` never aligns — each row splits its
 own free space independently. For content that must line up **down** the page
-(tables, aligned card grids), use a real CSS grid, where every cell shares a
-column track:
+(tables, aligned card grids) or any true 2-D layout (dashboards, the holy-grail
+sidebar/header/footer), use a real CSS grid via `grid()` and its mods:
 
 ```cpp
-Mod grid_cols(int n);                 // make a container an n-column grid
-Mod grid_template(std::string tracks);// explicit tracks, e.g. "2fr 1fr 1fr"
+template <typename... Cs> NodeRef grid(Cs... cells);  // a grid container
+
+Mod grid_cols(int n);                 // n equal columns
+Mod grid_cols(std::string tracks);    // explicit tracks, e.g. "2fr 1fr 1fr"
+Mod grid_rows(int n);                 // n equal rows
+Mod grid_rows(std::string tracks);    // explicit row tracks
+Mod grid_areas(std::string tmpl);     // named template areas
+Mod auto_grid(float min_px);          // responsive auto-fit columns
+
 Mod col_span(int n);                  // a child spans n columns
+Mod row_span(int n);                  // a child spans n rows
+Mod area(std::string name);           // place a child into a named area
+
 template <typename... Cs> NodeRef columns(int n, Cs... cells);  // n-col grid box
 ```
+
+Any of the `grid_*`/`auto_grid` mods turn their container into a grid — you
+don't need `grid()` first — so `box(...) | grid_cols(3)` just works.
 
 ```cpp
 // a 3-column table: header row + data rows, all columns aligned
@@ -172,11 +188,16 @@ columns(3,
 | gap(8)
 
 // unequal columns
-col(...) | grid_template("240px 1fr")
-```
+grid(a, b) | grid_cols("240px 1fr")
 
-`grid_cols`/`grid_template`/`col_span` are mods you can put on any container;
-`columns(n, …)` is the builder shortcut that also collects the cells.
+// the holy-grail layout in two lines
+grid(nav, header, main, footer)
+    | grid_areas("'nav header' 'nav main' 'nav footer'")
+    | grid_cols("200px 1fr") | grid_rows("auto 1fr auto")
+// then place children:
+//   nav    | area("nav")
+//   header | area("header")   ...
+```
 
 ## Scrollable regions
 

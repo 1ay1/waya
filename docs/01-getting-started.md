@@ -101,6 +101,13 @@ cmake -S . -B build && cmake --build build
 Open <http://localhost:8080>. You should see the heading. The server auto-opens
 your browser unless you set `WAYA_NO_OPEN=1`.
 
+!!! tip "Hot reload while you build"
+    Run `scripts/dev.sh <target>` instead of building by hand. It watches the
+    source tree, rebuilds on every save, and restarts the server; your browser
+    reconnects and reloads itself a moment later — no manual rebuild, no manual
+    refresh. (The client detects a new build id over the same WebSocket and
+    hard-reloads only when the server was actually rebuilt.)
+
 ## A real, interactive app
 
 The `Hello` app is static. Here is a counter — the smallest app with state and
@@ -177,6 +184,13 @@ When you click `+`, the browser sends a tiny token over the socket. The
 runtime calls `update(model, Inc{})`, calls `view(new_model)`, diffs the new
 surface against the old one, and streams back only the changed text node. The
 number updates; nothing else re-renders.
+
+!!! tip "Batteries, when you want them"
+    You just built a button from primitives — that's the point: the core lets
+    you build anything. When you'd rather not, `#include <waya/ui.hpp>` gives
+    you a ready-made component library (`button`, `card`, `field`, `dialog`,
+    `tabs`, `badge`, theme presets…), all built on the same core. See
+    [The Component Library](14-components.md).
 
 ## The `main` entry point
 

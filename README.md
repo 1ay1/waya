@@ -163,9 +163,31 @@ The machinery beneath the surface, all tested:
 See the [internals](https://1ay1.github.io/waya/internals/architecture/) docs
 for the full picture and the [wire protocol](https://1ay1.github.io/waya/internals/wire-protocol/).
 
+## Performance
+
+After the first paint, an interaction streams **only the nodes that changed** —
+not a re-render. Measured on a live dashboard (`bench/frames.cpp`,
+`cmake -DWAYA_BUILD_BENCH=ON`):
+
+| Interaction | 10 rows | 100 rows | 1000 rows |
+|---|--:|--:|--:|
+| Full first paint | 7.3 KB | 49 KB | 470 KB |
+| Highlight a row (a click) | **279 B** | **279 B** | **279 B** |
+| Counter tick (one text node) | **22 B** | **22 B** | **22 B** |
+| Diff + encode time | ~1 µs | ~1 µs | ~1 µs |
+
+The delta is proportional to **what changed**, not to page size — so a one-field
+update on a 1000-row table is the same 22 bytes as on a 10-row one, computed in
+about a microsecond (the subtree-hash fast path skips every unchanged branch).
+At 1000 rows a click sends **~1700× less** than a full render.
+
 ## Quality
 
 - **Tests:** `ctest --test-dir build` — the suite is green on every push (CI).
+- **Correct HTML by construction:** debug builds validate the surface against
+  the WHATWG content model on every render (unnamed form controls, nested
+  interactive nodes, void elements with children, missing alt text all get
+  caught loudly). Attribute values are context-escaped and URLs scheme-sanitised.
 - **Warnings:** the whole tree builds `-Werror` clean (`cmake -DWAYA_WERROR=ON`).
 - **Sanitizers:** all tests pass under ASan+UBSan (`cmake -DWAYA_SANITIZE=ON`);
   the concurrent live runtime is TSan-clean under load.

@@ -76,6 +76,9 @@ nav:
       - Effects & Subscriptions: 08-effects.md
       - Routing & SEO: 09-routing-seo.md
       - Scaling to Big Apps: 10-scaling.md
+      - The Component Library: 14-components.md
+      - Assets & Global CSS: 15-assets.md
+      - Correctness & Safety: 16-safety.md
   - Reference:
       - API Reference: 11-api-reference.md
       - Recipes & Patterns: 12-recipes.md

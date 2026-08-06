@@ -8,6 +8,37 @@ cmake -S . -B build && cmake --build build -j
 ./build/blog      # then open http://localhost:8080
 ```
 
+`counter`, `splash`, and `orbit` use only the **core** (`waya/surface/*`).
+`studio`, `pulse`, `blog`, and `dash` also pull in the **component library**
+(`#include <waya/ui.hpp>`) for cards, buttons, dialogs, and theme presets — a
+good side-by-side of "pure core" vs "batteries."
+
+## `dash` — the component library, end to end
+
+A live dashboard: tabs, an animated line chart, a toggle, a progress bar + slider,
+and a typed `data_table` with avatars, badges, and bar charts per row — ticking
+itself via a `Sub::every` subscription. The showcase for `waya/ui.hpp`.
+
+**Learn from it:** how icons, widgets, and charts compose like any other node,
+and how a rich screen still streams tiny deltas on each interaction.
+
+```bash
+./build/dash
+```
+
+## `counter` — the smallest complete app (pure core)
+
+State, messages, a pure `update`, and a `view` built from `col`/`row`/`text`
+and `|` mods — nothing else. A button is a local function. This is the floor
+everything else is built on.
+
+**Learn from it:** the Elm loop end to end, and that a component is just a
+function returning a node.
+
+```bash
+./build/counter
+```
+
 ## `splash` — an animated landing page
 
 A striking marketing page: a living aurora headline, a breathing status pill,

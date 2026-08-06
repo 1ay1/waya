@@ -285,34 +285,63 @@ constexpr Len hug;    // content-sized (auto)
 | `box_(std::vector<NodeRef>)` / `row_(...)` / `col_(...)` | Vector-form builders. |
 | `when_(bool, Mod)` / `when_(bool, Mod a, Mod b)` *(mod)* | Conditional mod. |
 
-### UI pieces
+### Structure & spacing (core sugar)
 
 | Signature | Description |
 |---|---|
-| `avatar(std::string url, int size=40)` | Round cover-cropped image. |
-| `avatar_text(std::string initials, std::uint32_t c, int size=40)` | Monogram avatar. |
-| `card(Cs...)` | Themed panel: surface + border + pad + radius + elevation. |
-| `divider(bool vertical=false)` | A hairline rule. |
-| `link(std::string label)` | A styled link. |
+| `push()` | A growing spacer: `row(logo, push(), menu)`. |
 | `scroll_fill()` *(mod)* | Fill leftover space and scroll internally. |
+| `columns(int n, Cs...)` | An n-column grid box (aligned tables). |
+| `grid(Cs...)` | A CSS grid container. |
+| `grid_cols(n|tracks)` `grid_rows(n|tracks)` `grid_areas(tmpl)` `auto_grid(min_px)` *(mods)* | Shape a grid. |
+| `col_span(n)` `row_span(n)` `area(name)` *(mods)* | Place a grid child. |
 
-### Floating layers
+### Floating-layer primitives (core sugar)
 
 | Signature | Description |
 |---|---|
 | `anchored(NodeRef trigger, NodeRef floating, std::string place="bottom")` | Position a floater relative to a trigger. |
-| `popover(...)` / `modal(...)` / `overlay(...)` | Dropdowns, dialogs, backdrops. |
-| `toast_layer(...)` | Toast notification stack. |
+| `overlay(NodeRef content)` / `modal(bool, NodeRef)` | A full-screen backdrop layer. |
+| `stop()` *(mod)* | Stop click propagation (dialog panels). |
 
-### Theming
+### Theming (core token system)
 
 | Signature | Description |
 |---|---|
 | `struct Theme` | Semantic design tokens (bg, surface, text, primary…). |
+| `Theme::dark()` | The neutral baseline palette. |
+| `Theme::tint(primary, accent=0)` | Recolour just the accent. |
 | `theme(Theme)` *(mod)* | Apply a theme to a subtree. |
 | `themed()` / `theme_transition()` *(mods)* | Use tokens / animate theme changes. |
-| `fg_token` `bg_token` `border_token` … | Token-referencing mods. |
-| `fg_text` `fg_muted` `fg_primary` `bg_page` `bg_surface` `bg_raised` `bg_primary` `bg_accent` | Named token mods. |
+| `fg_text` `fg_muted` `fg_primary` `bg_page` `bg_surface` `bg_raised` `bg_primary` `bg_accent` `border_token()` | Named token mods. |
+
+---
+
+## Component library (`waya/ui.hpp`)
+
+Opinionated, ready-made components in namespace `waya::ui`, built entirely on
+the core. See [The Component Library](14-components.md) for the full guide.
+
+| Signature | Description |
+|---|---|
+| `card(Cs...)` | Themed panel: surface + border + pad + radius + elevation. |
+| `divider(bool vertical=false)` | A hairline rule. |
+| `link(std::string label)` | A styled inline link. |
+| `button(label, msg, Variant=primary)` | A themed button. `Variant`: primary/secondary/ghost/danger. |
+| `button_node(child, msg, Variant)` / `icon_button(glyph, msg, Variant=ghost)` | Button chrome around a node / a glyph. |
+| `field(label, control, hint="")` | A labelled control with an optional hint line. |
+| `input_skin()` *(mod)* | The library's themed input chrome. |
+| `badge(label, Tone=neutral)` | A pill. `Tone`: neutral/primary/success/warning/danger. |
+| `dot(Tone=success)` | A status dot. |
+| `avatar(initials, d=36)` / `avatar_img(url, d=36)` | Circular avatar. |
+| `spinner(d=22, stroke=0)` | A rotating ring (self-registers its keyframe). |
+| `skeleton(w, h)` | A shimmering loading placeholder. |
+| `tabs(active, {{id,"Label"}…}, to_msg)` | A themed tab bar. |
+| `popover(open, trigger, panel, place="bottom-right")` | Anchored dropdown. |
+| `tooltip(trigger, text, place="top")` | Hover tooltip (no model state). |
+| `dialog(open, close_msg, panel…)` | A complete modal. |
+| `toast(message, Tone=neutral)` / `toast_layer(nodes)` | Toast + its fixed stack. |
+| `light()` `midnight()` `ocean()` `rose()` | Ready-made `Theme` presets. |
 
 ---
 
@@ -384,6 +413,31 @@ std::string jsonld(std::string type,
 Program hooks: `static Meta meta(const Model&)`,
 `static const char* site_url()`, `static std::vector<std::string> sitemap()`.
 The runtime auto-serves `/robots.txt` and `/sitemap.xml`.
+
+---
+
+## Assets & global CSS (`assets.hpp`)
+
+Document-level injection — the seam for anything that lives in `<head>` instead
+of on a node. See [Assets & Global CSS](15-assets.md).
+
+```cpp
+Assets& assets();   // the process-global registry
+
+assets().keyframes(name, spec);                 // @keyframes name{spec}
+assets().font_face(family, src, weight="400", style="normal");  // @font-face
+assets().root_var(name, value);                 // a :root{--name:value} token
+assets().css(rule);                             // any global CSS rule verbatim
+assets().head(html);                            // raw markup in <head>
+```
+
+Everything deduplicates: `keyframes` first-write-wins, `root_var` last-write-wins,
+`css`/`head` by exact text. The live shell folds it all into every page's head.
+
+```cpp
+// register-and-apply a custom keyframe in one call (a mod):
+box() | custom_animation(name, spec, ms=600, ease="ease", fill="both", iter="1");
+```
 
 ---
 
