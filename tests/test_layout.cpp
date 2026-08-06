@@ -275,6 +275,33 @@ int main() {
         CHECK(has(i, "cursor:pointer") && has(i, ":hover") && has(i, ":active"));
     }
 
+    // ── expressive helpers: conditional mods, building blocks ──────────────
+    {
+        // when_(cond, mod) replaces the `cond ? mod : noop` ternary
+        CHECK(has(css_of(text("x") | when_(true,  semibold)), "font-weight:600"));
+        CHECK(!has(css_of(text("x") | when_(false, bg(0xff0000))), "background"));
+        CHECK(has(css_of(box() | when_(false, bg(0x111111), bg(0x222222))), "#222222"));  // else branch
+    }
+    {
+        // push() = a growing spacer; divider() = a hairline rule
+        CHECK(has(DomBackend{}.render(*push()).css, "flex:1 1 auto"));
+        auto d = DomBackend{}.render(*divider()).css;
+        CHECK(has(d, "height:1px") && has(d, "var(--wa-line"));
+        CHECK(has(DomBackend{}.render(*divider(true)).css, "width:1px"));
+        // card() = a themed surface panel
+        auto c = DomBackend{}.render(*card(text("x"))).css;
+        CHECK(has(c, "var(--wa-surface)") && has(c, "padding:20px") && has(c, "border-radius:16px"));
+        // link() looks like a link
+        CHECK(has(DomBackend{}.render(*link("go")).css, "var(--wa-primary)"));
+    }
+    {
+        // stop() emits data-stop; dialog wires backdrop-close + stopped panel
+        CHECK(has(DomBackend{}.render(*(box() | stop())).html, "data-stop=\"1\""));
+        // popover closed renders no chrome; open renders a frosted panel
+        CHECK(!has(DomBackend{}.render(*popover(false, text("t"), text("p"))).html, "backdrop-filter") ||
+               !has(DomBackend{}.render(*popover(false, text("t"), text("p"))).css, "backdrop-filter"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

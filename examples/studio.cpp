@@ -15,18 +15,21 @@ using namespace waya::surface;
 using namespace waya::surface::color;
 
 struct Studio {
-    struct Model { Theme theme = Theme::midnight(); std::string name = "midnight"; };
-    struct Pick { std::string name; };
-    using Msg = std::variant<Pick>;
+    struct Model { Theme theme = Theme::midnight(); std::string name = "midnight"; bool about = false; };
+    struct Pick { std::string name; }; struct About {};
+    using Msg = std::variant<Pick, About>;
 
     static Model init() { return {}; }
     static Model update(Model m, Msg msg) {
-        std::visit(overload{ [&](const Pick& p){
-            m.name = p.name;
-            m.theme = p.name=="dark"?Theme::dark() : p.name=="light"?Theme::light()
-                    : p.name=="ocean"?Theme::ocean() : p.name=="rose"?Theme::rose()
-                    : Theme::midnight();
-        }}, msg);
+        std::visit(overload{
+            [&](const Pick& p){
+                m.name = p.name;
+                m.theme = p.name=="dark"?Theme::dark() : p.name=="light"?Theme::light()
+                        : p.name=="ocean"?Theme::ocean() : p.name=="rose"?Theme::rose()
+                        : Theme::midnight();
+            },
+            [&](About){ m.about = !m.about; },
+        }, msg);
         return m;
     }
 
@@ -46,12 +49,16 @@ struct Studio {
     }
 
     static NodeRef view(const Model& m) {
-        auto header = col(
-            text("waya studio") | fg_text | display | font_fluid(32, 54) | weight(Weight::black)
-                | css("letter-spacing","-.02em"),
-            text("design tokens, motion, glass \u2014 switch a theme, watch it flow")
-                | fg_muted | body
-        ) | gap(8) | fade_up(500);
+        auto header = row(
+            col(
+                text("waya studio") | fg_text | display | font_fluid(32, 54) | weight(Weight::black)
+                    | css("letter-spacing","-.02em"),
+                text("design tokens, motion, glass — switch a theme, watch it flow")
+                    | fg_muted | body
+            ) | gap(8),
+            push(),
+            link("about") | tap(About{})
+        ) | fade_up(500) | css("align-items","flex-start");
 
         auto palette = card(
             text("Theme") | fg_muted | label,
@@ -92,7 +99,16 @@ struct Studio {
             ) | gap(12) | wrap
         ) | fade_up(800) | delay(180);
 
-        return page(m.theme.bg, centered(56, col(header, palette, showcase, buttons) | gap(28)) | center)
+        auto about = dialog(m.about, About{},
+            text("About waya studio") | fg_text | subtitle | weight(Weight::bold),
+            divider(),
+            text("Every colour here is a theme token; every card, button and this "
+                 "dialog are one-line helpers. Click the backdrop to close — but "
+                 "clicking this panel won't.") | fg_muted | body | leading(1.6f),
+            row(push(), text("Got it") | fg_on_primary | semibold | bg_primary
+                | pad_x(20) | pad_y(11) | round(11) | interactive() | tap(About{})));
+
+        return page(m.theme.bg, centered(56, col(header, palette, showcase, buttons, about) | gap(28)) | center)
              | theme(m.theme) | themed();
     }
 };

@@ -116,6 +116,60 @@ inline const Mod bg_accent  = bg_token("--wa-accent");
 inline const Mod bg_page    = bg_token("--wa-bg");
 /// `border_token()` — a 1px border in the theme's line colour.
 inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line)"); }); }
+
+// ── expressive building blocks ─ the things every real UI needs, one call ────
+/// `push()` — a flexible gap that shoves siblings apart. `row(logo, push(), menu)`
+/// pins logo left and menu right. Reads clearer than a bare growing box.
+inline NodeRef push(){ auto n = box(); n->style.has_grow=true; n->style.grow=1; finalize(*n); return n; }
+/// `divider()` — a hairline rule. Horizontal by default; `divider(true)` = vertical.
+inline NodeRef divider(bool vertical=false){
+    auto n = box();
+    if (vertical){ n->style.extra.emplace_back("width","1px"); n->style.extra.emplace_back("align-self","stretch"); }
+    else         { n->style.extra.emplace_back("height","1px"); n->style.extra.emplace_back("width","100%"); }
+    n->style.extra.emplace_back("background","var(--wa-line, rgba(255,255,255,.10))");
+    n->style.extra.emplace_back("flex","0 0 auto");
+    finalize(*n); return n;
+}
+/// `link(text)` — a styled inline link look (primary colour, underline on hover,
+/// pointer). Pair with `tap(msg)` or `on("click",…)`.
+inline NodeRef link(std::string label){
+    return text(std::move(label)) | fg_primary | pointer
+         | transition("opacity .15s ease") | on(Hover, css("text-decoration","underline"));
+}
+/// `card(children…)` — the ubiquitous panel: themed surface + border + padding
+/// + radius + soft elevation. The single most-repeated container, now one call.
+template <typename... Cs> NodeRef card(Cs... cs){
+    return col(std::move(cs)...) | gap(14) | pad(20) | round(16)
+         | bg_surface | border_token() | elevation(2);
+}
+
+// ── floating layers ─ dropdowns, tooltips, popovers without absolute-by-hand ─
+/// `anchored(trigger, floating, place)` — render `floating` positioned relative
+/// to `trigger`. `place`: "bottom"/"bottom-right"/"top"/"right". The parent is
+/// made position:relative and the floater absolute — no CSS by hand. Show/hide
+/// the floater with `when(open, …)`.
+inline NodeRef anchored(NodeRef trigger, NodeRef floating, std::string place="bottom"){
+    auto& s = floating->style;
+    s.pos = Pos::absolute; s.has_z = true; s.z = 50;
+    if (place=="bottom" || place=="bottom-right") s.extra.emplace_back("top","calc(100% + 8px)");
+    if (place=="top")    s.extra.emplace_back("bottom","calc(100% + 8px)");
+    if (place=="right")  { s.extra.emplace_back("left","calc(100% + 8px)"); s.extra.emplace_back("top","0"); }
+    if (place=="bottom-right" || place=="top") s.extra.emplace_back("right","0");
+    else if (place=="bottom") s.extra.emplace_back("left","0");
+    finalize(*floating);
+    auto n = box(std::move(trigger), std::move(floating));
+    n->style.pos = Pos::relative;
+    n->style.extra.emplace_back("display","inline-flex");
+    finalize(*n); return n;
+}
+/// `popover(open, trigger, panel, place)` — anchored + auto show/hide + frosted
+/// panel chrome. A dropdown menu in one line.
+inline NodeRef popover(bool open, NodeRef trigger, NodeRef panel, std::string place="bottom-right"){
+    auto styled = open ? (panel | frost(14) | round(12) | pad(6) | elevation(4)
+                                | css("min-width","11rem") | pop_in(160))
+                       : box();
+    return anchored(std::move(trigger), std::move(styled), place);
+}
 /// `themed()` — the everyday combo: page-bg, primary text, and a smooth colour
 /// transition so a LIVE theme switch animates instead of snapping. Put on the
 /// same node as `theme(t)` (typically the page root).
@@ -243,6 +297,19 @@ inline NodeRef overlay(NodeRef content){
 /// `modal(cond, content)` — the overlay only when `cond`; empty otherwise.
 inline NodeRef modal(bool open, NodeRef content){
     return open ? overlay(std::move(content)) : box();
+}
+/// `dialog(open, close_msg, panel)` — a complete modal: a dimmed backdrop that
+/// closes on click (tap(close_msg)), with the panel STOPPED so clicking the
+/// content doesn't close it, plus frosted chrome + a pop-in entrance. The whole
+/// modal pattern, correct, in one line.
+template <typename Msg, typename... Cs>
+NodeRef dialog(bool open, Msg close_msg, Cs... panel_children){
+    if (!open) return box();
+    auto panel = col(std::move(panel_children)...)
+        | gap(16) | pad(28) | round(20) | bg_surface | border_token()
+        | elevation(5) | css("max-width", "28rem") | css("width", "100%")
+        | stop() | pop_in(180);
+    return overlay(std::move(panel)) | tap(close_msg);
 }
 /// `toast_layer(nodes)` — a fixed, non-interactive top-right stack for toasts.
 inline NodeRef toast_layer(std::vector<NodeRef> toasts){

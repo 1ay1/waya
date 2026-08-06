@@ -349,7 +349,11 @@ inline std::string client(int port) {
     "window.addEventListener('popstate',route);"
     "connect();"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
-    "if(t&&ws&&ws.readyState===1){ev.preventDefault();ws.send(t.dataset.tap);}});"
+    // If a [data-stop] element sits between the click and the tap target, the
+    // click was 'inside' (e.g. modal content) — don't fire the outer tap
+    // (e.g. a backdrop close). This is on_backdrop / stop() done right.
+    "if(t&&ws&&ws.readyState===1){var st=ev.target.closest('[data-stop]');"
+    "if(st&&t.contains(st)&&st!==t)return;ev.preventDefault();ws.send(t.dataset.tap);}});"
     // input/change carry a payload. Checkboxes & radios send their checked
     // state ("true"/"false"); every other control sends its value. So one path
     // serves text, textarea, select, checkbox and radio uniformly.

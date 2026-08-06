@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -286,6 +287,17 @@ inline Mod sty(std::function<void(Style&)> f){ return {[f=std::move(f)](Node& n)
 /// A do-nothing Mod — the identity for `|`. Makes conditional styling clean:
 ///   text(x) | (active ? bold : noop)
 inline const Mod noop = {[](Node&){}};
+
+// ── conditional mods ─ apply a mod only when a condition holds ──────────────
+// Kills the `cond ? someMod : noop` ternary that litters real views. Reads as
+// intent: `text(x) | when_(active, semibold) | when_(pinned, ring(brand))`.
+inline Mod when_(bool cond, Mod m){ return cond ? m : noop; }
+/// `when_(cond, a, b)` — a when true, else b.
+inline Mod when_(bool cond, Mod a, Mod b){ return cond ? a : b; }
+/// `maybe(opt, mod-of-value)` — apply a mod built from an optional's value when
+/// it's present: `img | maybe(alt_text, [](auto& s){ return attr("alt", s); })`.
+template <typename T, typename Fn>
+Mod maybe(const std::optional<T>& o, Fn make){ return o ? make(*o) : noop; }
 
 // ── colour & text ──────────────────────────────────────────────────────────────
 inline Mod fg(std::uint32_t c){ return sty([=](Style& s){ s.has_fg=true; s.fg=c; }); }
@@ -714,6 +726,10 @@ inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
 inline Mod tab_index(int i){ return attr("tabindex", std::to_string(i)); }
 /// `focusable()` — sugar for tabindex 0 (a div that can receive keyboard focus).
 inline Mod focusable(){ return tab_index(0); }
+/// `stop()` — clicks inside this node do NOT bubble to an ancestor's tap. Put it
+/// on a modal/menu PANEL so clicking the content doesn't trigger the backdrop's
+/// close-on-tap. Pairs with `overlay(...) | tap(Close)`.
+inline Mod stop(){ return attr("data-stop", "1"); }
 
 // ── semantic HTML ─ SEO + accessibility: render as a real element, not a div ─
 /// `as("main")` — render this box/text as a specific HTML element. Search engines
