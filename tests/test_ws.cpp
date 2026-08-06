@@ -80,6 +80,63 @@ int main() {
         CHECK((unsigned char)p[0] == 0x8A);
     }
 
+    // ── adversarial: an oversized 64-bit length is rejected pre-allocation ───
+    // A hostile client can declare a near-UINT64_MAX payload. decode() must
+    // reject it (opcode -2) BEFORE resize(), or it's an OOM DoS.
+    {
+        std::string f;
+        f.push_back((char)0x81);            // FIN + text
+        f.push_back((char)0xFF);            // masked + 127 (64-bit length)
+        for (int i = 0; i < 8; ++i) f.push_back((char)0xFF);   // len = 0xFFFF...
+        f.append("mask");
+        std::size_t used = 0;
+        auto fr = decode(f, used);
+        CHECK(!fr.ok);
+        CHECK(fr.opcode == -2);             // distinct protocol-error signal
+        CHECK(used == 0);
+    }
+    // just over the cap is rejected; just under is accepted structurally
+    {
+        auto declare = [](std::uint64_t len){
+            std::string f; f.push_back((char)0x81); f.push_back((char)0xFF);
+            for (int i = 7; i >= 0; --i) f.push_back((char)((len >> (i*8)) & 0xFF));
+            f.append("mask");
+            std::size_t used = 0; return decode(f, used);
+        };
+        CHECK(declare(kMaxFrame + 1).opcode == -2);         // over: rejected
+        CHECK(declare(kMaxFrame).opcode != -2);             // at cap: not a proto error
+    }
+
+    // ── adversarial: truncated extended-length headers never read OOB ────────
+    {
+        std::size_t used = 0;
+        // 126 marker but < 4 bytes → incomplete, not a crash
+        CHECK(!decode(std::string{(char)0x81, (char)126, (char)0x01}, used).ok);
+        // 127 marker but < 10 bytes → incomplete
+        CHECK(!decode(std::string{(char)0x81, (char)127, 0,0,0,0}, used).ok);
+        // masked bit set but mask bytes missing → incomplete
+        CHECK(!decode(std::string{(char)0x81, (char)0x82, (char)0x01}, used).ok);
+    }
+
+    // ── fuzz: no byte sequence up to 24 bytes may crash decode() ─────────────
+    // Deterministic LCG-driven bytes; the property is "decode never throws,
+    // never reads OOB (ASan-clean), and only ever succeeds on a consistent
+    // frame". Runs thousands of shapes in a blink.
+    {
+        std::uint64_t s = 0x9e3779b97f4a7c15ull;
+        auto rnd = [&]{ s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; };
+        int ok_frames = 0;
+        for (int iter = 0; iter < 20000; ++iter) {
+            std::string buf;
+            std::size_t n = rnd() % 24;
+            for (std::size_t i = 0; i < n; ++i) buf.push_back((char)(rnd() & 0xFF));
+            std::size_t used = 0;
+            auto fr = decode(buf, used);           // must not crash / OOB
+            if (fr.ok) { ok_frames++; CHECK(used <= buf.size()); }
+        }
+        CHECK(ok_frames >= 0);                     // reached here == no crash
+    }
+
     std::cout << "test_ws: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

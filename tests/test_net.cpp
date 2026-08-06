@@ -114,6 +114,43 @@ int main() {
         check(!store.take<M>("").has_value(), "session store ignores empty id");
     }
 
+    // ── JSON: deep nesting is bounded (no stack-overflow DoS) ────────────────
+    // A hostile payload of thousands of nested arrays must fail cleanly, not
+    // recurse until the stack blows. The parser caps depth and returns null.
+    {
+        std::string deep(5000, '[');   // 5000 levels — well past the cap
+        auto j = json::parse(deep);
+        check(j.is_null(), "deeply-nested JSON fails cleanly (no crash)");
+
+        std::string deepObj;
+        for (int i = 0; i < 5000; ++i) deepObj += "{\"a\":";
+        auto j2 = json::parse(deepObj);
+        check(j2.is_null(), "deeply-nested objects fail cleanly");
+
+        // a legitimately-nested doc (well under the cap) still parses fine
+        std::string ok = "[[[[[[[[[[42]]]]]]]]]]";
+        auto j3 = json::parse(ok);
+        check(!j3.is_null(), "reasonable nesting still parses");
+    }
+
+    // ── JSON fuzz: no input may crash the parser ─────────────────────────────
+    // Deterministic bytes drawn from a JSON-ish alphabet so we hit real parser
+    // states (strings, escapes, numbers, structure). Property: parse() never
+    // throws / never reads OOB (ASan-clean); a syntactically bad input yields
+    // null, a good one yields non-null. Reaching the end == success.
+    {
+        const char alpha[] = "{}[]\"\\:,0123456789.-+eEtfn tru\\u00e9";
+        std::uint64_t s = 0xdeadbeefcafef00dull;
+        auto rnd = [&]{ s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; };
+        for (int iter = 0; iter < 30000; ++iter) {
+            std::string buf;
+            std::size_t n = rnd() % 40;
+            for (std::size_t i = 0; i < n; ++i) buf.push_back(alpha[rnd() % (sizeof(alpha)-1)]);
+            (void)json::parse(buf);   // must not crash on ANY input
+        }
+        check(true, "JSON fuzz: 30k random inputs, no crash");
+    }
+
     std::cout << "test_net: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

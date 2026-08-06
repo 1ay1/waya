@@ -135,6 +135,11 @@ public:
 
 private:
     std::string_view s_; std::size_t i_ = 0; bool ok_ = true;
+    int depth_ = 0;
+    // Cap nesting so a hostile payload of deeply-nested `[[[[...` or `{...}`
+    // can't blow the C++ call stack (a stack-overflow DoS). 512 is far beyond
+    // any legitimate document; past it the parse fails cleanly (ok_=false).
+    static constexpr int kMaxDepth = 512;
 
     void ws() { while (i_ < s_.size() && (s_[i_]==' '||s_[i_]=='\t'||s_[i_]=='\n'||s_[i_]=='\r')) ++i_; }
     char peek() const { return i_ < s_.size() ? s_[i_] : '\0'; }
@@ -151,28 +156,32 @@ private:
         }
     }
     Value object() {
+        if (++depth_ > kMaxDepth) { ok_ = false; --depth_; return Value::null(); }
         Value o = Value::object(); ++i_; ws();
-        if (peek() == '}') { ++i_; return o; }
+        if (peek() == '}') { ++i_; --depth_; return o; }
         for (;;) {
-            ws(); if (peek() != '"') { ok_ = false; return o; }
+            ws(); if (peek() != '"') { ok_ = false; break; }
             std::string k = string(); ws();
-            if (peek() != ':') { ok_ = false; return o; } ++i_;
+            if (peek() != ':') { ok_ = false; break; } ++i_;
             o.set(std::move(k), value()); ws();
             if (peek() == ',') { ++i_; continue; }
             if (peek() == '}') { ++i_; break; }
             ok_ = false; break;
         }
+        --depth_;
         return o;
     }
     Value array() {
+        if (++depth_ > kMaxDepth) { ok_ = false; --depth_; return Value::null(); }
         Value a = Value::array(); ++i_; ws();
-        if (peek() == ']') { ++i_; return a; }
+        if (peek() == ']') { ++i_; --depth_; return a; }
         for (;;) {
             a.push(value()); ws();
             if (peek() == ',') { ++i_; continue; }
             if (peek() == ']') { ++i_; break; }
             ok_ = false; break;
         }
+        --depth_;
         return a;
     }
     std::string string() {

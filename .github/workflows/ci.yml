@@ -63,3 +63,33 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+  # Build the whole tree with -DWAYA_STRICT=ON + sanitizers and run it. Strict
+  # mode ABORTS on any structural surface violation, so this proves every
+  # example and test renders a well-formed surface (the "impossible UIs can't
+  # ship" guarantee), and ASan+UBSan cover the parser fuzz loops on top.
+  strict:
+    name: strict render (WAYA_STRICT + ASan/UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC 15 (C++26)
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-15 g++-15 cmake ninja-build
+          echo "CXX=g++-15" >> "$GITHUB_ENV"
+          echo "CC=gcc-15" >> "$GITHUB_ENV"
+
+      - name: Configure (strict + sanitizers)
+        run: cmake -S . -B build-strict -G Ninja -DCMAKE_BUILD_TYPE=Debug -DWAYA_STRICT=ON -DWAYA_SANITIZE=ON
+
+      - name: Build
+        run: cmake --build build-strict -j
+
+      - name: Test
+        run: ctest --test-dir build-strict --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
