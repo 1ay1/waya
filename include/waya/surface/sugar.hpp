@@ -6,6 +6,7 @@
 /// `each` combinators for conditional and list content.
 
 #include "node.hpp"
+#include "router.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -123,6 +124,16 @@ NodeRef when(bool cond, Fn build){ return cond ? build() : box(); }
 
 /// `show(cond, node)` — alias for when; reads well for visibility toggles.
 inline NodeRef show(bool cond, NodeRef node){ return when(cond, std::move(node)); }
+
+// ── routing: render the screen for the current route ────────────────────
+/// `screens(id, { {Home, [&]{…}}, {UserDetail, [&]{…}} })` — pick the builder
+/// for the current screen id and render it. Replaces the manual
+/// when(route==A, …, when(route==B, …)) ladder: a flat, scalable table. Unknown
+/// ids render an empty box (add a catch-all id for a 404 screen).
+inline NodeRef screens(int id, std::vector<std::pair<int, std::function<NodeRef()>>> table){
+    for (auto& [k, build] : table) if (k == id) return build();
+    return box();
+}
 
 /// `each(range, fn)` — map a range to a list of nodes, spliced into a parent.
 /// `col(each(items, [](auto& x){ return row(text(x.name)); }))`.
