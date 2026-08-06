@@ -118,6 +118,21 @@ inline void walk(const Node& n, const std::string& path, bool in_form, bool in_i
         out.push_back({path, "empty-select",
             "a select needs at least one option(...) — an empty dropdown can't be chosen from"});
 
+    // markup() is the ONE unescaped primitive. If its raw HTML carries a
+    // <script> or an inline on*= event handler, it's almost certainly
+    // user-controlled input that slipped into the trusted channel — the exact
+    // XSS the rest of the framework prevents. Flag it loudly (case-insensitive).
+    if (n.kind == Kind::markup && !n.text.empty()) {
+        std::string low; low.reserve(n.text.size());
+        for (char c : n.text) low += (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+        auto has = [&](std::string_view needle){ return low.find(needle) != std::string::npos; };
+        if (has("<script") || has("javascript:") || has("onerror=") ||
+            has("onload=") || has("onclick=") || has("onmouseover="))
+            out.push_back({path, "markup-unsafe",
+                "markup() contains a <script>/javascript:/on*= handler — markup is the raw "
+                "unescaped hatch; never pass user input. Use sanitized_html() or a safe primitive."});
+    }
+
     // a wired handler must point at a real registered Msg token; a negative
     // token here means the Msg never registered (usually a moved-from/default),
     // so the click would be silently dead.

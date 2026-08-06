@@ -199,6 +199,13 @@ At 1000 rows a click sends **~1700× less** than a full render.
 ## Quality
 
 - **Tests:** `ctest --test-dir build` — the suite is green on every push (CI).
+- **Testable by construction:** apps are pure, so the whole thing drives in a
+  plain unit test — no browser, no socket. `test::harness<App>()` runs
+  `init`/`update`/`view` and lets you assert on state, the rendered tree, and
+  even effects (which are plain values). Its sibling `debug::timeline<App>()`
+  adds **time-travel**: record every message, step back/forward, jump to any
+  point, diff what each message changed on screen, and pinpoint the exact step
+  a bug appeared — all from the pure message log.
 - **Correct HTML by construction:** debug builds validate the surface against
   the WHATWG content model on every render (unnamed form controls, nested
   interactive nodes, void elements with children, missing alt text all get

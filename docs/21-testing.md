@@ -97,3 +97,11 @@ int main() {
 No framework runner, no fixtures — it's just a `main()` you can wire into CTest,
 Catch2, GoogleTest, or run directly. Because the app is pure, the test is fast,
 deterministic, and covers the real logic your users hit.
+
+## Going further: time-travel
+
+The harness has a bigger sibling, [`debug::timeline<P>`](22-time-travel.md),
+that records every message so you can step back/forward, jump to any point,
+diff what each message changed on screen, and pinpoint the exact step a bug
+appeared. It's built on the same pure-replay mechanics — ideal for regression
+tests that pin every intermediate state of a captured user session.

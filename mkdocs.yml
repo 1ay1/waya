@@ -80,6 +80,7 @@ nav:
       - Assets & Global CSS: 15-assets.md
       - Correctness & Safety: 16-safety.md
       - Testing: 21-testing.md
+      - Time-Travel Debugging: 22-time-travel.md
       - Deployment: 17-deployment.md
       - The Typed Dialect: 18-typed.md
       - Vocabulary Cheat Sheet: 19-cheatsheet.md
