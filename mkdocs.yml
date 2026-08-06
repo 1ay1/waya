@@ -81,6 +81,7 @@ nav:
       - Correctness & Safety: 16-safety.md
       - Deployment: 17-deployment.md
       - The Typed Dialect: 18-typed.md
+      - Vocabulary Cheat Sheet: 19-cheatsheet.md
   - Reference:
       - API Reference: 11-api-reference.md
       - Recipes & Patterns: 12-recipes.md
