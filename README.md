@@ -21,6 +21,20 @@
 
 ---
 
+### Try it in 30 seconds
+
+```sh
+git clone https://github.com/1ay1/waya.git && cd waya
+./waya run showcase        # builds + serves → http://localhost:8080
+./waya list               # every runnable example
+```
+
+New here? Read the **[Documentation](https://1ay1.github.io/waya/)** — start with
+the [Mental Model](https://1ay1.github.io/waya/02-mental-model/) (the whole idea
+in one page), then [Getting Started](https://1ay1.github.io/waya/01-getting-started/).
+
+---
+
 You write three pure functions — the initial state, how a message changes it,
 and how it looks — and waya turns that into a real, running website: it renders
 the UI to HTML + CSS, serves it, and keeps every browser in sync over a

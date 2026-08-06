@@ -9,6 +9,15 @@ serves it, and on every interaction streams back only the minimal delta over a
 WebSocket. There is no HTML, no CSS, no DOM, no JavaScript, and no client-side
 state in your code.
 
+!!! tip "Fastest start — one command"
+    waya ships a launcher (like `npm`/`cargo`). From a clone of the repo:
+    ```sh
+    ./waya new my-app && cd my-app && waya run   # builds + serves on :8080
+    ```
+    Or just run a bundled example: `./waya run counter` (see `./waya list`).
+    New to the whole idea? Read **[The Mental Model](02-mental-model.md)** first,
+    then follow **[Getting Started](01-getting-started.md)**.
+
 ```cpp
 #include <waya/surface/live.hpp>
 using namespace waya::surface;

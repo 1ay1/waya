@@ -22,10 +22,14 @@ and Windows (Git-Bash / WSL, or `waya.cmd` from cmd/PowerShell):
 ```sh
 ./waya new my-app     # scaffold a fresh app
 ./waya dev            # watch, rebuild & live-reload in the browser
-./waya run            # build then serve once
+./waya run            # build then serve once  (alias: serve)
+./waya build          # build a target without running it
 ./waya list           # list example targets
+./waya clean          # remove the build directory
 ./waya doctor         # check your toolchain
 ```
+
+Every command is spelled out in the **[CLI Reference](23-cli.md)**.
 
 Put it on your PATH (`ln -s "$PWD/waya" ~/.local/bin/waya`) and drop the `./`.
 Every command takes an optional target and flags like `--port` / `--no-open`:

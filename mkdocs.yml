@@ -66,6 +66,7 @@ nav:
   - Guide:
       - Introduction: 00-introduction.md
       - Getting Started: 01-getting-started.md
+      - The `waya` CLI: 23-cli.md
       - "Tutorial: Build a To-Do App": tutorial-todo.md
       - The Mental Model: 02-mental-model.md
       - The Vocabulary: 03-vocabulary.md

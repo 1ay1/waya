@@ -1,5 +1,12 @@
 # waya — Build Plan
 
+!!! warning "Historical roadmap — not current status"
+    This is the original sequencing plan. Many unchecked boxes below have since
+    shipped (the `waya` CLI, the test kit, 11 runnable examples, the docs site,
+    and more). For **what actually exists today**, use the
+    [Guide](../index.md) and [API Reference](../11-api-reference.md); treat this
+    page as design history, not a feature list.
+
 Sequencing for the architecture in [DESIGN.md](design.md). Every phase ends in
 something runnable and demoable; no phase is pure infrastructure.
 
