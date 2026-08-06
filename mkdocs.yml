@@ -80,6 +80,7 @@ nav:
       - Assets & Global CSS: 15-assets.md
       - Correctness & Safety: 16-safety.md
       - Deployment: 17-deployment.md
+      - The Typed Dialect: 18-typed.md
   - Reference:
       - API Reference: 11-api-reference.md
       - Recipes & Patterns: 12-recipes.md
