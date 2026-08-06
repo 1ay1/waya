@@ -846,6 +846,11 @@ template <typename Fn> Mod on_drop(Fn fn){ return on_ev("drop", std::move(fn)); 
 /// `attr("title","Save")` — set ANY HTML attribute. The escape hatch for the
 /// attribute channel, the way `css()` is for the style channel.
 inline Mod attr(std::string name, std::string value){ return {[=](Node& n){ n.attrs.emplace_back(name, value); }}; }
+/// `optimistic()` — pair with tap: the element shows an instant busy state (dim +
+/// wait cursor + click-disabled) the MOMENT it's clicked, before the server
+/// responds, cleared on the next paint. Makes an action feel instant on a slow
+/// link. Use on a submit/save button: `button("Save") | tap(Save{}) | optimistic()`.
+inline Mod optimistic(){ return attr("data-opt", "1"); }
 /// `role("dialog")`, `aria("label","Close")` — accessibility, first-class.
 inline Mod role(std::string r){ return attr("role", std::move(r)); }
 inline Mod aria(std::string k, std::string v){ return attr("aria-" + k, std::move(v)); }

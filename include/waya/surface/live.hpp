@@ -63,6 +63,7 @@
 
 // Reuse the WebSocket codec from the DOM live runtime.
 #include "../net/ws.hpp"
+#include "../net/http.hpp"
 
 namespace waya::surface {
 
@@ -91,6 +92,25 @@ template <typename P>
 concept SurfaceProgram =
     requires { typename P::Model; typename P::Msg; }
     && requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; };
+
+/// `check_program<P>()` — granular, readable diagnostics for a malformed Program.
+/// The concept above gives one opaque "constraint not satisfied"; these fire a
+/// specific message telling you EXACTLY which piece is wrong or misspelled. Call
+/// it at the top of live<P>() so a mistake is a clear one-liner, not a template
+/// wall. (A typo'd `update` used to silently compile as "no update".)
+template <typename P>
+constexpr void check_program() {
+    static_assert(requires { typename P::Model; },
+        "waya: your Program needs a nested type `Model` (your app's state).");
+    static_assert(requires { typename P::Msg; },
+        "waya: your Program needs a nested type `Msg` (a variant of message structs).");
+    static_assert(requires(const typename P::Model& m) { { P::view(m) } -> std::convertible_to<NodeRef>; },
+        "waya: your Program needs `static NodeRef view(const Model&)`. Check the name, "
+        "the const-ref parameter, and that it returns a NodeRef (col/row/box/text...).");
+    static_assert(requires { { P::init() } -> std::convertible_to<typename P::Model>; }
+               || requires { { P::init() } -> std::convertible_to<std::pair<typename P::Model, Cmd<typename P::Msg>>>; },
+        "waya: your Program needs `static Model init()` (or `static std::pair<Model,Cmd<Msg>> init()`).");
+}
 
 namespace detail {
 
@@ -166,35 +186,6 @@ inline std::string gzip(const std::string& in){
     return ret == Z_STREAM_END ? out : std::string{};
 }
 #endif
-
-/// A tiny blocking GET for Cmd::fetch. Absolute http:// URLs only; anything else
-/// (or a network error) yields an empty body so the app's handler still fires.
-/// Runs on a detached worker thread, never the model loop.
-inline std::string http_get(const std::string& url) {
-    auto pos = url.find("://");
-    std::string rest = pos == std::string::npos ? url : url.substr(pos + 3);
-    auto slash = rest.find('/');
-    std::string host = slash == std::string::npos ? rest : rest.substr(0, slash);
-    std::string path = slash == std::string::npos ? "/" : rest.substr(slash);
-    int port = 80;
-    if (auto c = host.find(':'); c != std::string::npos) {
-        port = std::atoi(host.substr(c + 1).c_str()); host = host.substr(0, c);
-    }
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return {};
-    sockaddr_in a{}; a.sin_family = AF_INET; a.sin_port = htons((uint16_t)port);
-    a.sin_addr.s_addr = inet_addr(host.c_str());
-    if (a.sin_addr.s_addr == INADDR_NONE) a.sin_addr.s_addr = inet_addr("127.0.0.1");
-    if (::connect(fd, (sockaddr*)&a, sizeof(a)) < 0) { ::close(fd); return {}; }
-    std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host +
-                      "\r\nConnection: close\r\n\r\n";
-    ::send(fd, req.data(), req.size(), 0);
-    std::string resp; char b[4096]; ssize_t r;
-    while ((r = ::recv(fd, b, sizeof(b), 0)) > 0) resp.append(b, r);
-    ::close(fd);
-    auto hdr = resp.find("\r\n\r\n");
-    return hdr == std::string::npos ? std::string{} : resp.substr(hdr + 4);
-}
 
 /// Call P::update and return (Model, Cmd). Supports FOUR update shapes so apps
 /// range from trivial to full effectful, and the runtime doesn't care which:
@@ -359,8 +350,14 @@ inline std::string client(int port) {
     "for(var i=0;i<m.ops.length;i++)apply(m.ops[i]);}}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
+    // A stable per-tab session id, kept in sessionStorage so it SURVIVES a
+    // reconnect (wifi blip, laptop sleep) but not a fresh tab. The server uses
+    // it to rebind to the retained Model instead of resetting to init() — so a
+    // dropped connection doesn't wipe a half-filled form or a wizard step.
+    "var _sid=sessionStorage.getItem('waya-sid');"
+    "if(!_sid){_sid=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));sessionStorage.setItem('waya-sid',_sid);}"
     "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);}"
-    "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"/?r='+encodeURIComponent(location.pathname+location.search));"
+    "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
     "ws.binaryType='arraybuffer';"
     "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
     // Text frames are runtime control messages (navigation, dev hot-reload);
@@ -384,7 +381,12 @@ inline std::string client(int port) {
     // click was 'inside' (e.g. modal content) — don't fire the outer tap
     // (e.g. a backdrop close). This is on_backdrop / stop() done right.
     "if(t&&ws&&ws.readyState===1){var st=ev.target.closest('[data-stop]');"
-    "if(st&&t.contains(st)&&st!==t)return;ev.preventDefault();ws.send(t.dataset.tap);}});"
+    "if(st&&t.contains(st)&&st!==t)return;ev.preventDefault();"
+    // Optimistic: an element opted into instant-busy gets [data-busy] the moment
+    // it's clicked (disabled + dimmed), cleared automatically when the next
+    // paint replaces/updates it. Makes a server round-trip feel instant.
+    "if(t.hasAttribute('data-opt'))t.setAttribute('data-busy','1');"
+    "ws.send(t.dataset.tap);}});"
     // input/change carry a payload. Checkboxes & radios send their checked
     // state ("true"/"false"); every other control sends its value. So one path
     // serves text, textarea, select, checkbox and radio uniformly.
@@ -433,6 +435,7 @@ struct Session {
     std::condition_variable qcv;
     std::deque<Deliver> queue;         // pending (msg,value) to dispatch
     std::atomic<bool> alive{true};
+    std::atomic<bool> quit{false};    // true only on an explicit Cmd::quit (not a drop)
     std::mutex wm;                     // serializes socket writes
     // Running interval subscriptions. Each carries the typed Msg to deliver on
     // tick, keyed for reconciliation by (interval_ms, Msg-token).
@@ -467,6 +470,9 @@ struct Session {
         return d;
     }
     void stop() { alive = false; qcv.notify_all(); }
+    /// Explicit application quit (Cmd::quit) — distinct from a dropped socket, so
+    /// teardown knows NOT to retain the model for resumption.
+    void quit_now() { quit = true; alive = false; qcv.notify_all(); }
 
     /// Unblock a reader parked in ::recv and wake the owner loop. Does NOT close
     /// the fd — the owner loop is the sole closer, after the reader has exited,
@@ -562,6 +568,94 @@ private:
     std::unordered_map<Session*, std::vector<std::string>> joined_;
 };
 
+/// A bounded worker pool for blocking effects (fetch/task) and one-shot timers.
+/// Replaces spawning an unbounded std::thread per effect — under load (many
+/// fetches, many timers) that exhausts the OS thread limit and falls over. A
+/// fixed pool caps concurrency; excess work queues. Sized from hardware
+/// concurrency (min 4), overridable via WAYA_WORKERS.
+class Pool {
+public:
+    static Pool& instance() { static Pool p; return p; }
+
+    void submit(std::function<void()> job) {
+        { std::lock_guard<std::mutex> l(m_); jobs_.push_back(std::move(job)); }
+        cv_.notify_one();
+    }
+
+private:
+    Pool() {
+        unsigned n = std::thread::hardware_concurrency();
+        if (const char* w = std::getenv("WAYA_WORKERS")) n = (unsigned)std::atoi(w);
+        if (n < 4) n = 4;
+        for (unsigned i = 0; i < n; ++i)
+            std::thread([this]{ worker(); }).detach();
+    }
+    void worker() {
+        for (;;) {
+            std::function<void()> job;
+            { std::unique_lock<std::mutex> l(m_);
+              cv_.wait(l, [this]{ return !jobs_.empty(); });
+              job = std::move(jobs_.front()); jobs_.pop_front(); }
+            try { job(); } catch (...) { /* an effect must never kill a worker */ }
+        }
+    }
+    std::mutex m_;
+    std::condition_variable cv_;
+    std::deque<std::function<void()>> jobs_;
+};
+
+/// Retained models for session resumption. When a connection drops, we stash the
+/// app's Model (type-erased) under the client's session id with a timestamp; a
+/// reconnect within the TTL rebinds to it instead of calling init() again — so a
+/// wifi blip or a slept laptop doesn't wipe a half-filled form. Entries older
+/// than the TTL are swept lazily on access. Keyed by client-supplied id (opaque
+/// per-tab token from sessionStorage), so it's per-tab, not cross-user shared.
+class SessionStore {
+public:
+    static SessionStore& instance() { static SessionStore s; return s; }
+
+    /// Seconds a detached model is kept for a possible reconnect.
+    long ttl_seconds = 900;   // 15 minutes
+
+    template <typename Model>
+    void save(const std::string& id, Model model) {
+        if (id.empty()) return;
+        std::lock_guard<std::mutex> l(m_);
+        sweep_locked();
+        store_[id] = Entry{ std::any{std::move(model)}, now() };
+    }
+
+    /// Take the retained model for `id` if present and fresh; removes it (a model
+    /// belongs to exactly one live owner loop at a time).
+    template <typename Model>
+    std::optional<Model> take(const std::string& id) {
+        if (id.empty()) return std::nullopt;
+        std::lock_guard<std::mutex> l(m_);
+        sweep_locked();
+        auto it = store_.find(id);
+        if (it == store_.end()) return std::nullopt;
+        auto* mp = std::any_cast<Model>(&it->second.model);
+        if (!mp) { store_.erase(it); return std::nullopt; }   // type changed (rebuild)
+        Model m = std::move(*mp);
+        store_.erase(it);
+        return m;
+    }
+
+private:
+    struct Entry { std::any model; long ts; };
+    static long now() {
+        return (long)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    void sweep_locked() {
+        long cutoff = now() - ttl_seconds;
+        for (auto it = store_.begin(); it != store_.end();)
+            it = (it->second.ts < cutoff) ? store_.erase(it) : std::next(it);
+    }
+    std::mutex m_;
+    std::unordered_map<std::string, Entry> store_;
+};
+
 /// Interpret one Cmd. Effects that produce a message push it back into the
 /// session queue (self-messaging); web effects send a control frame. This is
 /// the runtime half of "effects are data" — the app returned a description, we
@@ -570,7 +664,7 @@ template <typename Msg>
 void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
     std::visit(overload{
         [](const typename Cmd<Msg>::None&) {},
-        [&](const typename Cmd<Msg>::Quit&) { s->stop(); },
+        [&](const typename Cmd<Msg>::Quit&) { s->quit_now(); },
         [&](const typename Cmd<Msg>::Batch& b) { for (auto& c : b.cmds) perform(s, c); },
         [&](const typename Cmd<Msg>::Emit& e) { s->push_msg(std::any{e.msg}); },
         [&](const typename Cmd<Msg>::After& a) {
@@ -583,18 +677,20 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
         },
         [&](const typename Cmd<Msg>::Task& t) {
             auto work = t.work; std::weak_ptr<Session> ws_ = s;
-            std::thread([ws_, work]{
+            Pool::instance().submit([ws_, work]{
                 Msg r = work();
                 if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(std::any{r});
-            }).detach();
+            });
         },
         [&](const typename Cmd<Msg>::Fetch& f) {
-            auto url = f.url; auto on = f.on_done; std::weak_ptr<Session> ws_ = s;
-            std::thread([ws_, url, on]{
-                std::string body = detail::http_get(url);
-                Msg r = on(std::move(body));
+            auto req = f; std::weak_ptr<Session> ws_ = s;
+            Pool::instance().submit([ws_, req]{
+                http::Response rr = http::request({
+                    .method = req.method, .url = req.url,
+                    .headers = req.headers, .body = req.body });
+                Msg r = req.on_done(std::move(rr.body));
                 if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(std::any{r});
-            }).detach();
+            });
         },
         [&](const typename Cmd<Msg>::Navigate& n) {
             s->send_text((n.replace ? "@rep|" : "@nav|") + n.url);
@@ -676,7 +772,27 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         auto s = std::make_shared<Session>();
         s->conn = conn;
 
+        // Session id for resumption: the client sends &s=<opaque> on the WS URL.
+        std::string sid;
+        {
+            std::string rp = detail::request_path(req);
+            if (auto q = rp.find("&s="); q != std::string::npos) {
+                sid = rp.substr(q + 3);
+                if (auto amp = sid.find('&'); amp != std::string::npos) sid = sid.substr(0, amp);
+                if (auto sp = sid.find(' '); sp != std::string::npos) sid = sid.substr(0, sp);
+            }
+        }
+
         auto [model, init_cmd] = detail::init_of<P, Model, Msg>();
+        // Resume: if we retained this client's model from a dropped connection,
+        // rebind to it instead of the fresh init() — a reconnect keeps state.
+        bool resumed = false;
+        if (auto kept = detail::SessionStore::instance().take<Model>(sid)) {
+            model = std::move(*kept);
+            init_cmd = Cmd<Msg>::none();   // don't re-run init effects on resume
+            resumed = true;
+        }
+        (void)resumed;
         // Route the initial model to the REQUESTED path (the client passes it as
         // ?r=<path> on the WS URL) so the live app starts on the SAME screen the
         // SSR rendered — no flash-to-Home, and the wired tokens match the DOM the
@@ -722,6 +838,19 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         // the socket is never closed out from under a blocking recv().
         std::thread reader([s, conn]{
             std::string acc;
+            // Token-bucket rate limit: a client can't pin a core by flooding taps.
+            // ~120 msgs/sec sustained, burst 60. Over-limit frames are dropped
+            // (not disconnected) so a legit fast typer isn't punished.
+            double tokens = 60; auto last_refill = std::chrono::steady_clock::now();
+            const double rate = 120.0, cap = 60.0;
+            auto allow = [&]() -> bool {
+                auto now = std::chrono::steady_clock::now();
+                double dt = std::chrono::duration<double>(now - last_refill).count();
+                last_refill = now;
+                tokens = tokens + dt * rate; if (tokens > cap) tokens = cap;
+                if (tokens < 1.0) return false;
+                tokens -= 1.0; return true;
+            };
             for (;;) {
                 char fb[8192];
                 ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
@@ -738,6 +867,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                     if (fr.opcode == 0x8) { s->stop(); return; }        // close
                     if (fr.opcode == 0x9) { s->send_binary(ws::encode_pong(fr.payload)); continue; }
                     if (fr.opcode != 0x1) continue;                     // ignore non-text
+                    if (!allow()) continue;                             // rate-limited: drop
 
                     // Upstream messages: taps "<msg>"; inputs "i<msg>|<value>"
                     // / "c<msg>|<value>"; route "@route|<path>" (special msg).
@@ -814,6 +944,11 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         // a recycled fd).
         for (auto& t : s->timers) *t.run = false;
         detail::Hub::instance().remove(s.get());
+        // Retain the model so a reconnect within the TTL resumes exactly here,
+        // instead of resetting to init(). Only when a session id was supplied
+        // and the loop ended by the socket dropping (not an explicit Cmd::quit).
+        if (!sid.empty() && !s->quit)
+            detail::SessionStore::instance().save<Model>(sid, model);
         s->shutdown_io();
         if (reader.joinable()) reader.join();
         ::close(conn);
@@ -827,6 +962,14 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     // The WebSocket then takes over live; its first full paint reconciles onto
     // this SSR'd DOM (same node structure → usually a no-op).
     std::string route = request_path(req);
+
+    // Health check for load balancers / orchestrators (Docker, k8s, Fly.io).
+    // A cheap 200 that doesn't render the app — answers "is the process up?".
+    if (route == "/healthz" || route.rfind("/healthz?",0)==0) {
+        const char* http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
+                           "Content-Length: 2\r\nConnection: close\r\n\r\nok";
+        ::send(conn, http, std::strlen(http), 0); ::close(conn); return;
+    }
 
     // SEO plumbing files, served automatically. robots.txt tells crawlers they
     // may index everything and where the sitemap is; sitemap.xml lists the
@@ -913,6 +1056,13 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "*{min-width:0;max-width:100%}"
         "svg{display:block}"
         "img,video{max-width:100%;height:auto}"
+        // Optimistic feedback: any tap target dims + nudges the instant it's
+        // pressed, BEFORE the server round-trip, so the UI never feels laggy on
+        // a slow link. [data-busy] (set by the client on click, cleared on the
+        // next paint) shows a wait cursor + reduced opacity for in-flight actions.
+        "[data-tap]{cursor:pointer;-webkit-user-select:none;user-select:none}"
+        "[data-tap]:active{transform:scale(.97);opacity:.85}"
+        "[data-busy]{opacity:.6;cursor:progress;pointer-events:none}"
         // #root is the page surface: a full-viewport centering flex column that
         // INHERITS the page background, so the app root's bg (opaque) paints over
         // it and there are never white gutters. min-height uses dvh so it tracks
@@ -972,8 +1122,8 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
 /// Serve a Surface Program live. Thread-per-connection (one open client can't
 /// block others). Blocks until Ctrl-C.
 template <typename P>
-    requires SurfaceProgram<P>
 int live(LiveConfig cfg = {}) {
+    check_program<P>();   // readable diagnostics before anything else
     if (const char* p = std::getenv("WAYA_PORT")) cfg.port = std::atoi(p);
     if (const char* h = std::getenv("WAYA_HOST")) cfg.host = h;
     int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -983,6 +1133,9 @@ int live(LiveConfig cfg = {}) {
     ::listen(lfd, 16);
     detail::g_fd = lfd;
     std::signal(SIGINT, detail::on_sigint); std::signal(SIGPIPE, SIG_IGN);
+#ifdef SIGTERM
+    std::signal(SIGTERM, detail::on_sigint);   // Docker/systemd stop -> clean exit
+#endif
 
     // When bound to 0.0.0.0 (all interfaces), "http://0.0.0.0" isn't a browsable
     // address — open localhost locally, and ALSO print the LAN address so other
