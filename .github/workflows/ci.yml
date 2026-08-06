@@ -17,7 +17,7 @@ jobs:
     name: build + test (-Werror)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install GCC 15 (C++26)
         run: |
@@ -42,7 +42,7 @@ jobs:
     name: ASan + UBSan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install GCC 15 (C++26)
         run: |
@@ -72,7 +72,7 @@ jobs:
     name: strict render (WAYA_STRICT + ASan/UBSan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install GCC 15 (C++26)
         run: |
@@ -101,7 +101,7 @@ jobs:
     name: ThreadSanitizer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install GCC 15 (C++26)
         run: |

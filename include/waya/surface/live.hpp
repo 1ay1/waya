@@ -17,6 +17,7 @@
 /// wiring in the app code.
 
 #include "node.hpp"
+#include "sugar.hpp"     // col_/row_/push/screens/color — batteries-included
 #include "layout.hpp"
 #include "dom.hpp"
 #include "diff.hpp"
