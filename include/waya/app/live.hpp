@@ -33,7 +33,7 @@ namespace waya {
 struct LiveConfig {
     int         port = 8080;
     bool        open = true;
-    const char* host = "127.0.0.1";
+    const char* host = "0.0.0.0";   // all interfaces: reachable from other devices on the LAN
 };
 
 namespace detail {

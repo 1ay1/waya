@@ -49,7 +49,11 @@
 
 namespace waya::surface {
 
-struct LiveConfig { int port = 8080; const char* host = "127.0.0.1"; bool open = true; };
+/// Runtime config. `host` defaults to 0.0.0.0 — the app listens on ALL network
+/// interfaces, so other devices on your LAN (a phone, another laptop) can reach
+/// it at http://<this-machine-ip>:<port>/, not just localhost. Set host to
+/// "127.0.0.1" (or WAYA_HOST=127.0.0.1) to bind loopback-only.
+struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = true; };
 
 /// A Surface Program: Model + Msg + init/update/view(->NodeRef). `update` may
 /// be `update(Model, Msg)` (taps) OR `update(Model, Msg, std::string value)`
@@ -69,6 +73,27 @@ namespace detail {
 inline std::atomic<int> g_fd{-1};
 inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
+
+/// The machine's primary LAN IP — so a 0.0.0.0-bound app can print a URL other
+/// devices can reach. Trick: "connect" a UDP socket toward a public address (no
+/// packet is sent) and read back the local endpoint the OS picked. Empty on
+/// failure (offline / no route).
+inline std::string lan_ip() {
+    int s = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) return {};
+    sockaddr_in to{}; to.sin_family = AF_INET; to.sin_port = htons(53);
+    to.sin_addr.s_addr = inet_addr("8.8.8.8");
+    std::string ip;
+    if (::connect(s, (sockaddr*)&to, sizeof(to)) == 0) {
+        sockaddr_in me{}; socklen_t len = sizeof(me);
+        if (::getsockname(s, (sockaddr*)&me, &len) == 0) {
+            char buf[INET_ADDRSTRLEN];
+            if (::inet_ntop(AF_INET, &me.sin_addr, buf, sizeof(buf))) ip = buf;
+        }
+    }
+    ::close(s);
+    return ip;
+}
 
 /// Reserved message id for route deliveries. The wire never carries this from a
 /// tap (taps are the app's own enum values, always >= 0 in practice); the
@@ -664,6 +689,7 @@ template <typename P>
     requires SurfaceProgram<P>
 int live(LiveConfig cfg = {}) {
     if (const char* p = std::getenv("WAYA_PORT")) cfg.port = std::atoi(p);
+    if (const char* h = std::getenv("WAYA_HOST")) cfg.host = h;
     int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
     int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     sockaddr_in a{}; a.sin_family=AF_INET; a.sin_port=htons((uint16_t)cfg.port); a.sin_addr.s_addr=inet_addr(cfg.host);
@@ -672,8 +698,18 @@ int live(LiveConfig cfg = {}) {
     detail::g_fd = lfd;
     std::signal(SIGINT, detail::on_sigint); std::signal(SIGPIPE, SIG_IGN);
 
-    std::string url = "http://" + std::string(cfg.host) + ":" + std::to_string(cfg.port);
+    // When bound to 0.0.0.0 (all interfaces), "http://0.0.0.0" isn't a browsable
+    // address — open localhost locally, and ALSO print the LAN address so other
+    // devices (a phone on the same wifi) know where to point.
+    bool all_ifaces = std::string(cfg.host) == "0.0.0.0";
+    std::string open_host = all_ifaces ? "localhost" : std::string(cfg.host);
+    std::string url = "http://" + open_host + ":" + std::to_string(cfg.port);
     std::fprintf(stderr, "waya: surface app on %s  (Ctrl-C to stop)\n", url.c_str());
+    if (all_ifaces) {
+        std::string lan = detail::lan_ip();
+        if (!lan.empty())
+            std::fprintf(stderr, "waya: on your network at http://%s:%d\n", lan.c_str(), cfg.port);
+    }
     if (cfg.open && !std::getenv("WAYA_NO_OPEN")) {
 #if defined(__APPLE__)
         std::system(("open '"+url+"' >/dev/null 2>&1 &").c_str());
