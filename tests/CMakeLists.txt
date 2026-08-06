@@ -1,53 +1,30 @@
 # ── Runtime tests ────────────────────────────────────────────────────────────
-add_executable(test_render        test_render.cpp)
-add_executable(test_content_model test_content_model.cpp)
-add_executable(test_dynamic       test_dynamic.cpp)
-add_executable(test_style_general test_style_general.cpp)
-add_executable(test_layout        test_layout.cpp)
-add_executable(test_attrs         test_attrs.cpp)
-add_executable(test_program       test_program.cpp)
-add_executable(test_diff          test_diff.cpp)
-add_executable(test_diff_perf     test_diff_perf.cpp)
-add_executable(test_memo          test_memo.cpp)
-add_executable(test_ws            test_ws.cpp)
-add_executable(test_live_sound    test_live_sound.cpp)
-add_executable(test_surface        test_surface.cpp)
-add_executable(test_binary         test_binary.cpp)
-add_executable(test_effect         test_effect.cpp)
-add_executable(test_scale          test_scale.cpp)
-add_executable(test_seo            test_seo.cpp)
-add_executable(test_input          test_input.cpp)
+# The surface stack (surface/ + net/ + core/) is the whole framework; every
+# test below drives that one public API.
+add_executable(test_layout   test_layout.cpp)
+add_executable(test_ws       test_ws.cpp)
+add_executable(test_surface  test_surface.cpp)
+add_executable(test_binary   test_binary.cpp)
+add_executable(test_effect   test_effect.cpp)
+add_executable(test_scale    test_scale.cpp)
+add_executable(test_seo      test_seo.cpp)
+add_executable(test_input    test_input.cpp)
+add_executable(test_assets   test_assets.cpp)
+add_executable(test_ui       test_ui.cpp)
+add_executable(test_safety   test_safety.cpp)
+add_executable(test_widgets  test_widgets.cpp)
 
-foreach(t test_render test_content_model test_dynamic test_style_general test_layout test_attrs test_program test_diff test_diff_perf test_memo test_ws test_live_sound test_surface test_binary test_effect test_input test_scale test_seo)
+foreach(t test_layout test_ws test_surface test_binary test_effect test_input test_scale test_seo test_assets test_ui test_safety test_widgets)
     target_link_libraries(${t} PRIVATE waya::waya waya_dev_flags)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
 # ── Browser-client applier test (jsdom) ──────────────────────────────────────
-# Verifies the JS patch applier against a real DOM so the "path indexes text
-# nodes but the client used element-only children" bug can't come back. Skips
-# cleanly when node/jsdom aren't available (the .js exits 0 with SKIP).
+# Verifies the JS surface-patch applier against a real DOM so the "path indexes
+# text nodes but the client used element-only children" bug can't come back.
+# Skips cleanly when node/jsdom aren't available (the .js exits 0 with SKIP).
 find_program(WAYA_NODE node)
 if(WAYA_NODE)
-    add_test(NAME client_apply
-        COMMAND ${WAYA_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/client_apply.test.js)
     add_test(NAME surface_apply
         COMMAND ${WAYA_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/surface_apply.test.js)
 endif()
-
-# ── Compile-fail tests: each case MUST NOT compile ───────────────────────────
-# We compile tests/fail/cases.cpp once per case; ctest treats a failed compile
-# as the expected outcome via WILL_FAIL. This is the golden-error surface.
-set(WAYA_FAIL_CASES 17)
-
-foreach(n RANGE 1 ${WAYA_FAIL_CASES})
-    add_test(
-        NAME fail_case_${n}
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-                --target waya_fail_${n})
-    # Build the target only on demand (EXCLUDE_FROM_ALL), and expect failure.
-    add_library(waya_fail_${n} OBJECT EXCLUDE_FROM_ALL fail/cases.cpp)
-    target_link_libraries(waya_fail_${n} PRIVATE waya::waya)
-    target_compile_definitions(waya_fail_${n} PRIVATE WAYA_CASE=${n})
-    set_tests_properties(fail_case_${n} PROPERTIES WILL_FAIL TRUE)
-endforeach()

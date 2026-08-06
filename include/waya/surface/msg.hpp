@@ -8,9 +8,6 @@
 /// click comes back with that token, the runtime looks the real `Msg` value back
 /// up and dispatches it, typed. The int never escapes the plumbing; app code is
 /// fully type-safe and payload-carrying.
-///
-/// This mirrors the DOM `waya::app` runtime (include/waya/app/msg.hpp) — the
-/// surface runtime now uses the same maya-faithful mechanism.
 
 #include <any>
 #include <cstdint>

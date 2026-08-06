@@ -15,16 +15,11 @@ target_include_directories(waya INTERFACE
 
 target_compile_features(waya INTERFACE cxx_std_26)
 
-# The live WebSocket runtime (app/live_ws.hpp) uses std::thread — one thread per
+# The live runtime (surface/live.hpp) uses std::thread — one thread per
 # connection so a single open socket can't block the server. Link Threads for
 # any consumer that pulls it in.
 find_package(Threads REQUIRED)
 target_link_libraries(waya INTERFACE Threads::Threads)
-
-# waya authors its own diagnostics via P2741; the compiler's own instantiation
-# backtrace is noise. Consumers get short, readable errors. (See DESIGN §10.1.)
-target_compile_options(waya INTERFACE
-    $<$<CXX_COMPILER_ID:GNU>:-ftemplate-backtrace-limit=1>)
 
 # ── Developer warning / sanitizer options ───────────────────────────────────
 # An INTERFACE target carrying strict warnings, linked by waya's OWN targets
@@ -60,7 +55,7 @@ endif()
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    foreach(ex splash orbit studio pulse blog)
+    foreach(ex counter splash orbit studio pulse blog dash)
         add_executable(${ex} examples/${ex}.cpp)
         target_link_libraries(${ex} PRIVATE waya::waya waya_dev_flags)
     endforeach()
@@ -75,6 +70,14 @@ if(WAYA_BUILD_EXAMPLES)
                         $<TARGET_FILE:splash> 8137)
         endif()
     endif()
+endif()
+
+# ── Benchmarks ────────────────────────────────────────────────────────
+option(WAYA_BUILD_BENCH "Build waya's benchmarks" OFF)
+if(WAYA_BUILD_BENCH)
+    add_executable(bench_frames bench/frames.cpp)
+    target_link_libraries(bench_frames PRIVATE waya::waya)
+    target_compile_options(bench_frames PRIVATE $<$<CONFIG:>:-O2>)
 endif()
 
 # ── Install ─────────────────────────────────────────────────────────────────
