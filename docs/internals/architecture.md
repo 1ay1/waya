@@ -105,6 +105,31 @@ every session on a topic. Subscriptions (`Sub`) are reconciled each frame: the
 runtime starts and stops timers/topic listeners to match what the current model
 declares.
 
+## Module layering
+
+waya is deliberately layered so each concern lives in one file and the
+dependency arrows only ever point **up** — the UI core never knows the runtime
+exists. From bottom to top:
+
+| Layer | Files | Depends on | Knows about… |
+|-------|-------|-----------|-------------|
+| **UI core** | `color`, `core/hash`, `surface/node`, `dom`, `diff`, `binary`, `wire`, `layout`, `typed`, `validate`, `component` | only each other | nodes, mods, diffing. **Nothing** about sockets, sessions, or the browser. |
+| **The ideas** | `surface/effect` (Cmd/Sub), `surface/program` (the Elm hooks), `surface/meta`, `surface/router`, `surface/scale` | the core | the pure data-flow loop: how `init`/`update`/`view`/`subscribe` compose. Still no transport. |
+| **The terminal** | `surface/client` | nothing (it's a JS string) | how to decode a binary frame and paint it. A dumb VT100 for the web. |
+| **The transport/runtime** | `net/ws`, `net/http`, `surface/live` | everything above | sockets, the WebSocket handshake, HTTP serving, `Session`/`Hub`/`Pool`/`SessionStore`, and the shell that composes the SSR page + the client. |
+| **The library** | `ui/*` + `ui.hpp` | the core + the ideas | ready-made components. Never the runtime. |
+
+The load-bearing invariant, enforced and tested: **no core file references
+`live`, `Session`, or a socket.** You can render a surface, diff two surfaces,
+and run the whole `Model → update → view` loop with the core + the ideas alone;
+`surface/live.hpp` is just one way to *serve* that loop. A different backend
+(a test harness, a native shell, a different protocol) would reuse everything
+below it unchanged.
+
+This is why the pieces stay small and swappable: `client.hpp` is the entire
+browser terminal (~200 lines, one string) with no C++ logic; `program.hpp` is
+the Elm loop with no sockets; `live.hpp` is the serving glue and nothing else.
+
 ---
 
 See [The Wire Protocol](wire-protocol.md) for the on-the-wire details.
