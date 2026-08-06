@@ -142,7 +142,7 @@ struct Showcase {
             navlink("People", "/",    m.screen == List),
             navlink("Add",    "/add", m.screen == Add)
         ) | as_nav | gap(12) | align(Align::center) | pad_y(14)
-          | css("border-bottom", "1px solid #1e293b");
+          | border_bottom(1, 0x1e293b);
     }
 
     static NodeRef person_row(const Person& p) {
@@ -155,7 +155,7 @@ struct Showcase {
             push(),
             badge(p.role, p.role == "Admin" ? Tone::primary : Tone::neutral)
         ) | key(p.email) | gap(12) | align(Align::center) | pad(12) | round(12)
-          | bg(0x0f172a) | css("border", "1px solid #1e293b");
+          | bg(0x0f172a) | border(1, 0x1e293b);
     }
 
     static NodeRef facet(std::string label, std::string path, bool active) {
@@ -209,7 +209,7 @@ struct Showcase {
               | column | gap(14),
             // validation errors are announced ASSERTIVELY (role=alert)
             m.error.empty() ? box() : (alert(m.error) | fg(0xf87171))
-        ) | gap(16) | pad_y(20) | css("max-width", "460px");
+        ) | gap(16) | pad_y(20) | max_w(460);
     }
 
     static NodeRef view(const Model& m) {
@@ -231,9 +231,9 @@ struct Showcase {
             header(m),
             body,
             live
-        ) | pad_x(24) | css("max-width", "760px") | css("margin", "0 auto")
-          | css("min-height", "100vh") | bg(0x020617)
-          | css("font-family", "ui-sans-serif, system-ui, sans-serif");
+        ) | pad_x(24) | max_w(760) | center_x
+          | h_screen | bg(0x020617)
+          | font_family("ui-sans-serif, system-ui, sans-serif");
     }
 };
 

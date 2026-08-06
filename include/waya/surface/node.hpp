@@ -560,6 +560,11 @@ inline Mod round(float r){ return round(px(r)); }
 inline Mod round(int r){ return round(px((float)r)); }
 inline const Mod pill = sty([](Style& s){ s.radius=px(9999); });
 inline Mod border(float width_, std::uint32_t color){ return sty([=](Style& s){ s.has_border=true; s.border_w=px(width_); s.border_c=color; }); }
+/// directional borders — the common "divider under a header" / "left rail" cases.
+inline Mod border_bottom(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-bottom", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
+inline Mod border_top(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-top", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
+inline Mod border_left(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-left", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
+inline Mod border_right(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-right", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
 inline Mod aspect(float ratio){ return sty([=](Style& s){ s.extra.emplace_back("aspect-ratio", std::to_string(ratio)); }); }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -573,6 +578,20 @@ inline Mod grow(float g=1){ return sty([=](Style& s){ s.has_grow=true; s.grow=g;
 inline Mod shrink(float g=1){ return sty([=](Style& s){ s.has_shrink=true; s.shrink=g; }); }
 /// `center` — centre children both axes; the single most common layout, one word.
 inline const Mod center = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; });
+/// Convenience alignment consts (so you don't need the Justify/Align enums for
+/// the everyday cases — these are what `css("align-items"/"justify-content")` was for).
+inline const Mod items_center  = sty([](Style& s){ s.align=Align::center; });
+inline const Mod items_start   = sty([](Style& s){ s.align=Align::start; });
+inline const Mod items_end     = sty([](Style& s){ s.align=Align::end; });
+inline const Mod items_stretch = sty([](Style& s){ s.align=Align::stretch; });
+inline const Mod justify_center  = sty([](Style& s){ s.justify=Justify::center; });
+inline const Mod justify_start   = sty([](Style& s){ s.justify=Justify::start; });
+inline const Mod justify_end     = sty([](Style& s){ s.justify=Justify::end; });
+inline const Mod justify_between = sty([](Style& s){ s.justify=Justify::between; });
+inline const Mod place_center  = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; });
+/// `center_x` — horizontally centre a block in its parent (the `margin:0 auto`
+/// pattern for a max-width page container).
+inline const Mod center_x = sty([](Style& s){ s.extra.emplace_back("margin-left","auto"); s.extra.emplace_back("margin-right","auto"); });
 // Flex-direction as MODS (the col()/row() builders make containers; these flip
 // an existing container's axis — essential for responsive `on_phone(column)`).
 inline const Mod column     = sty([](Style& s){ s.flow=Flow::col; });

@@ -33,12 +33,12 @@ struct Counter {
     static NodeRef btn(std::string label, Msg msg, std::uint32_t c) {
         return text(std::move(label))
              | pad_x(18) | pad_y(12) | round(10) | bg(c) | fg(0xffffff) | bold
-             | pointer | on(Hover, css("filter", "brightness(1.1)")) | tap(msg);
+             | pointer | on(Hover, brightness(110)) | tap(msg);
     }
 
     static NodeRef view(const Model& m) {
         return col(
-            text("waya") | fg(0x94a3b8) | font(14) | css("letter-spacing", ".3em"),
+            text("waya") | fg(0x94a3b8) | font(14) | tracking(4.8f),
             text(m.n) | font(84) | bold | fg(m.n < 0 ? 0xf87171 : 0xe2e8f0),
             row(
                 btn("\u2212", Dec{},   0x334155),
@@ -46,8 +46,8 @@ struct Counter {
                 btn("+",      Inc{},   0x6366f1)
             ) | gap(12) | center
         ) | gap(28) | center | pad(48)
-          | css("min-height", "100dvh")
-          | css("background", "radial-gradient(1200px 600px at 50% -10%, #16213e, #0b1020)");
+          | h_screen
+          | radial(0x16213e, 50, -10, 0x0b1020);
     }
 };
 
