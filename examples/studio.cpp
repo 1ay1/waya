@@ -7,15 +7,17 @@
 
 #include <waya/surface/live.hpp>
 #include <waya/surface/sugar.hpp>
+#include <waya/ui.hpp>
 
 #include <string>
 #include <variant>
 
 using namespace waya::surface;
 using namespace waya::surface::color;
+using namespace waya::ui;
 
 struct Studio {
-    struct Model { Theme theme = Theme::midnight(); std::string name = "midnight"; bool about = false; };
+    struct Model { Theme theme = midnight(); std::string name = "midnight"; bool about = false; };
     struct Pick { std::string name; }; struct About {};
     using Msg = std::variant<Pick, About>;
 
@@ -24,9 +26,9 @@ struct Studio {
         std::visit(overload{
             [&](const Pick& p){
                 m.name = p.name;
-                m.theme = p.name=="dark"?Theme::dark() : p.name=="light"?Theme::light()
-                        : p.name=="ocean"?Theme::ocean() : p.name=="rose"?Theme::rose()
-                        : Theme::midnight();
+                m.theme = p.name=="dark"?Theme::dark() : p.name=="light"?light()
+                        : p.name=="ocean"?ocean() : p.name=="rose"?rose()
+                        : midnight();
             },
             [&](About){ m.about = !m.about; },
         }, msg);

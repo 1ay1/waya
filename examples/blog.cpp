@@ -13,6 +13,7 @@
 #include <waya/surface/live.hpp>
 #include <waya/surface/sugar.hpp>
 #include <waya/surface/router.hpp>
+#include <waya/ui.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -24,6 +25,7 @@
 
 using namespace waya::surface;
 using namespace waya::surface::color;
+using namespace waya::ui;
 
 // ── data ──────────────────────────────────────────────────────────────────────
 struct Post {
@@ -598,7 +600,7 @@ struct Blog {
         });
         return page(0x080a12,
             centered(72, col(topbar(m), col(body) | as_main, footer()) | gap(24))
-        ) | mesh(0x6366f1, 0x8b5cf6, 0x080a12) | theme(Theme::midnight())
+        ) | mesh(0x6366f1, 0x8b5cf6, 0x080a12) | theme(midnight())
           ;
     }
 

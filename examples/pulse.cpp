@@ -7,6 +7,7 @@
 
 #include <waya/surface/live.hpp>
 #include <waya/surface/sugar.hpp>
+#include <waya/ui.hpp>
 
 #include <string>
 #include <variant>
@@ -14,6 +15,7 @@
 
 using namespace waya::surface;
 using namespace waya::surface::color;
+using namespace waya::ui;
 
 struct Pulse {
     struct Event { long id; std::string text; };
