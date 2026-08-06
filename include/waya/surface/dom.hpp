@@ -70,7 +70,13 @@ private:
         // footgun. waya defaults it right so layouts just behave.
         if(s.flow==Flow::row||s.flow==Flow::col) o+="min-width:0;";
         if(s.justify!=Justify::none){ o+="justify-content:"; o+=just(s.justify); o+=';'; }
+        // Cross-axis alignment. If the author didn't set one, pick the sensible
+        // default per direction: a ROW vertically-centres its children (mixed
+        // content — text + a badge + an icon — lines up on its centre, which is
+        // what every design system does); a COL keeps the CSS default (stretch)
+        // so children fill the width. Authors override with align(…)/center.
         if(s.align!=Align::none){ o+="align-items:"; o+=ali(s.align); o+=';'; }
+        else if(s.flow==Flow::row){ o+="align-items:center;"; }
         if(s.wrap==Wrap::wrap) o+="flex-wrap:wrap;"; else if(s.wrap==Wrap::nowrap) o+="flex-wrap:nowrap;";
         if(s.gap.set()){ o+="gap:"; len(o,s.gap); o+=';'; }
         // `grow` = flex: <g> 1 auto — grow to share free space but keep the

@@ -9,6 +9,7 @@
 
 #include <waya/surface/live.hpp>
 #include <waya/surface/sugar.hpp>
+#include <waya/surface/layout.hpp>
 
 #include <string>
 #include <vector>
@@ -69,18 +70,24 @@ static NodeRef tab_bar(std::vector<std::string> labels, int active, int base_msg
        | css("border-bottom", "1px solid #1f2937");
 }
 
-/// A data table from headers + rows — all built with `each`.
+/// A data table — a REAL grid so every column lines up down the page (headers
+/// and values share the same tracks, unlike per-row flex which can't align).
 static NodeRef data_table(std::vector<std::string> headers,
                           std::vector<std::vector<std::string>> rows) {
-    auto head = row_(each(headers, [](const std::string& h){
-        return text(h) | fg(muted) | font(12) | weight(Weight::bold) | grow(1)
-             | css("text-transform", "uppercase") | css("letter-spacing", "0.05em");
-    })) | gap(12) | pad_y(8);
-    auto body = col_(each(rows, [](const std::vector<std::string>& r){
-        return row_(each(r, [](const std::string& c){ return text(c) | fg(ink) | font(14) | grow(1); }))
-             | gap(12) | pad_y(10) | css("border-top", "1px solid #1f2937");
-    }));
-    return card(head, body);
+    int n = (int)headers.size();
+    std::vector<NodeRef> cells;
+    // header row
+    for (auto& h : headers)
+        cells.push_back(text(h) | fg(muted) | label | pad_y(8));
+    // body rows — each cell flows into the shared column grid
+    for (auto& r : rows)
+        for (auto& c : r)
+            cells.push_back(text(c) | fg(ink) | font(14) | pad_y(10)
+                          | css("border-top", "1px solid #1f2937"));
+    auto grid = box(); grid->kids = std::move(cells);
+    finalize(*grid);
+    grid = grid | grid_cols(n) | css("column-gap", "16px") | css("align-items", "center");
+    return card(grid);
 }
 
 // ── The app: compose the components. Nothing here knows they're "components". ─

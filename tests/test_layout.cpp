@@ -188,6 +188,25 @@ int main() {
         CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line)"));
     }
 
+    // ── alignment defaults: a ROW vertically-centres, a COL doesn't force it ─
+    {
+        CHECK(has(css_of(row(text("a"), text("b"))), "align-items:center"));
+        // an explicit align wins over the default
+        CHECK(has(css_of(row(text("a")) | align(Align::start)), "align-items:flex-start"));
+        // col keeps the CSS default (stretch) — no forced center
+        CHECK(!has(css_of(col(text("a"), text("b"))), "align-items:center"));
+    }
+
+    // ── fixed grids: real column tracks so cells ALIGN across rows ──────────
+    {
+        CHECK(has(css_of(box() | grid_cols(3)), "grid-template-columns:repeat(3,minmax(0,1fr))"));
+        CHECK(has(css_of(box() | grid_template("2fr 1fr")), "grid-template-columns:2fr 1fr"));
+        CHECK(has(css_of(box() | col_span(2)), "grid-column:span 2"));
+        auto c = css_of(columns(3, text("a"), text("b"), text("c")));
+        CHECK(has(c, "display:grid"));
+        CHECK(has(c, "repeat(3,minmax(0,1fr))"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

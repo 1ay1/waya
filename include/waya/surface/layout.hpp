@@ -123,4 +123,37 @@ template <typename... Cs> NodeRef hero(Cs... cs){
     finalize(*n); return n;
 }
 
+// ── fixed grids ─ the primitive that makes TABLES + card grids ALIGN ────────
+// Faking columns with a per-row `row(grow(1)…)` never aligns — each row splits
+// its own free space. A real grid gives every cell a SHARED column track, so
+// headers and values line up down the page. Cells are the grid's direct kids.
+
+/// `grid_cols(n)` — make a container an n-column grid; children flow row by row
+/// into aligned columns. `col_span(k)` on a child makes it span k columns.
+inline Mod grid_cols(int n){
+    return sty([=](Style& s){
+        s.extra.emplace_back("display","grid");
+        s.extra.emplace_back("grid-template-columns","repeat("+std::to_string(n)+",minmax(0,1fr))");
+    });
+}
+/// `grid_template("2fr 1fr 1fr")` — explicit column tracks (unequal columns).
+inline Mod grid_template(std::string tracks){
+    return sty([=](Style& s){
+        s.extra.emplace_back("display","grid");
+        s.extra.emplace_back("grid-template-columns", std::move(tracks));
+    });
+}
+/// `col_span(2)` — a grid child spanning multiple columns.
+inline Mod col_span(int n){ return sty([=](Style& s){ s.extra.emplace_back("grid-column","span "+std::to_string(n)); }); }
+
+/// `columns(n, cells…)` — a fixed n-column grid box; the cells align down the
+/// page. `columns(3, header0,header1,header2, a0,a1,a2, b0,b1,b2)` is a table.
+template <typename... Cs> NodeRef columns(int n, Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    auto box_ = box(); box_->kids = std::move(k);
+    box_->style.extra.emplace_back("display","grid");
+    box_->style.extra.emplace_back("grid-template-columns","repeat("+std::to_string(n)+",minmax(0,1fr))");
+    finalize(*box_); return box_;
+}
+
 } // namespace waya::surface
