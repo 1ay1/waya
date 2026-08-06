@@ -177,6 +177,48 @@ int main() {
         CHECK(m1.route == "/about");   // the path reached update as the value
     }
 
+    // ── BROADCAST: Cmd::broadcast is data (==, map); Sub::on_topic collects ────
+    CHECK((Cmd<int>::broadcast("room", "hi") == Cmd<int>::broadcast("room", "hi")));
+    CHECK(!(Cmd<int>::broadcast("room", "hi") == Cmd<int>::broadcast("room", "yo")));
+    CHECK(!(Cmd<int>::broadcast("a", "x") == Cmd<int>::broadcast("b", "x")));
+    {
+        // map preserves a broadcast unchanged (the payload isn't a Msg).
+        auto lifted = Cmd<int>::broadcast("room", "hi").map([](int m){ return m + 1; });
+        CHECK((lifted == Cmd<int>::broadcast("room", "hi")));
+    }
+    {
+        auto s = Sub<int>::batch({Sub<int>::on_topic("room", [](std::string){ return 1; }),
+                                  Sub<int>::on_topic("dm",   [](std::string){ return 2; })});
+        auto ts = s.topics();
+        CHECK(ts.size() == 2);
+        CHECK(ts[0]->topic == "room" && ts[0]->on("x") == 1);
+        CHECK(ts[1]->topic == "dm"   && ts[1]->on("x") == 2);
+    }
+
+    // ── The Hub fans a publish to every subscribed session (incl. sender) ─────
+    {
+        auto s1 = std::make_shared<detail::Session>(); s1->conn = -1;
+        auto s2 = std::make_shared<detail::Session>(); s2->conn = -1;
+        auto s3 = std::make_shared<detail::Session>(); s3->conn = -1;
+        detail::Hub::instance().set_topics(s1, {"room"});
+        detail::Hub::instance().set_topics(s2, {"room"});
+        detail::Hub::instance().set_topics(s3, {"other"});   // NOT in room
+        detail::Hub::instance().publish("room", "alice\nhi");
+        auto d1 = s1->pop(); auto d2 = s2->pop();
+        CHECK(d1 && d1->msg == detail::kTopicMsg && d1->topic == "room" && d1->value == "alice\nhi");
+        CHECK(d2 && d2->msg == detail::kTopicMsg && d2->value == "alice\nhi");
+        // s3 (different topic) got nothing — its queue is empty.
+        { std::lock_guard<std::mutex> lk(s3->qm); CHECK(s3->queue.empty()); }
+        // Leaving the topic stops delivery.
+        detail::Hub::instance().set_topics(s1, {});
+        detail::Hub::instance().publish("room", "bob\nyo");
+        { std::lock_guard<std::mutex> lk(s1->qm); CHECK(s1->queue.empty()); }
+        auto d2b = s2->pop();
+        CHECK(d2b && d2b->value == "bob\nyo");   // s2 still receives
+        detail::Hub::instance().remove(s2.get());
+        detail::Hub::instance().remove(s3.get());
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;

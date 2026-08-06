@@ -45,8 +45,9 @@ using namespace std::chrono_literals;
 
 /// A message-with-value the runtime delivers to `update`: `msg` is the app's
 /// message as an integer tap id; `value` is an optional string payload (input
-/// value, fetch body, route path).
-struct Deliver { int msg; std::string value; };
+/// value, fetch body, route path, broadcast payload). `topic` is set only for a
+/// broadcast delivery, so the owner loop can find the matching on_topic handler.
+struct Deliver { int msg; std::string value; std::string topic; };
 
 // ── overload helper (same trick maya uses for std::visit) ───────────────────
 template <class... Ts> struct overload : Ts... { using Ts::operator()...; };
@@ -81,9 +82,14 @@ public:
     struct PushUrl  { std::string url; };
     /// GET `url`; the response body becomes a Msg via `on_done`.
     struct Fetch    { std::string url; std::function<Msg(std::string)> on_done; };
+    /// Publish `payload` to everyone subscribed to `topic` (incl. self). The
+    /// sender doesn't know or care who's listening — each receiver's
+    /// `Sub::on_topic(topic, fn)` turns the payload into ITS own Msg. This is
+    /// how independent sessions share state (chat, presence, collaborative UIs).
+    struct Broadcast { std::string topic; std::string payload; };
 
     using Alt = std::variant<None, Quit, Batch, After, Emit, Task,
-                             Navigate, PushUrl, Fetch>;
+                             Navigate, PushUrl, Fetch, Broadcast>;
 
     Cmd() : alt_(std::make_shared<Alt>(None{})) {}
     explicit Cmd(Alt a) : alt_(std::make_shared<Alt>(std::move(a))) {}
@@ -101,6 +107,11 @@ public:
     static Cmd push_url(std::string url) { return Cmd(Alt{PushUrl{std::move(url)}}); }
     static Cmd fetch(std::string url, std::function<Msg(std::string)> on_done) {
         return Cmd(Alt{Fetch{std::move(url), std::move(on_done)}});
+    }
+    /// Publish to a topic. Every session subscribed via Sub::on_topic(topic,..)
+    /// — this one included — receives `payload` and maps it to its own Msg.
+    static Cmd broadcast(std::string topic, std::string payload = {}) {
+        return Cmd(Alt{Broadcast{std::move(topic), std::move(payload)}});
     }
 
     /// Combine multiple Cmds. Flattens nested batches and strips Nones — so a
@@ -142,6 +153,7 @@ public:
             [&](const Emit&  e) -> Cmd<B> { return Cmd<B>::emit(f(e.msg)); },
             [](const Navigate& n) -> Cmd<B> { return Cmd<B>::navigate(n.url, n.replace); },
             [](const PushUrl&  p) -> Cmd<B> { return Cmd<B>::push_url(p.url); },
+            [](const Broadcast& b) -> Cmd<B> { return Cmd<B>::broadcast(b.topic, b.payload); },
             [&](const Batch& b) -> Cmd<B> {
                 std::vector<Cmd<B>> mapped; mapped.reserve(b.cmds.size());
                 for (auto& c : b.cmds) mapped.push_back(c.map(f));
@@ -179,6 +191,7 @@ public:
             }
             else if constexpr (std::is_same_v<A, Navigate>) return a.url == b.url && a.replace == b.replace;
             else if constexpr (std::is_same_v<A, PushUrl>)  return a.url == b.url;
+            else if constexpr (std::is_same_v<A, Broadcast>) return a.topic == b.topic && a.payload == b.payload;
             else if constexpr (std::is_same_v<A, Batch>) {
                 if (a.cmds.size() != b.cmds.size()) return false;
                 for (std::size_t i = 0; i < a.cmds.size(); ++i)
@@ -209,8 +222,12 @@ public:
     struct Every { std::chrono::milliseconds interval; Msg msg; };
     /// Map the current URL path into a Msg on every route change.
     struct OnRoute { std::function<Msg(std::string)> route; };
+    /// Join a pub/sub `topic`; each broadcast `payload` becomes a Msg via `on`.
+    /// The runtime registers/unregisters this session as the subscription set
+    /// changes, so joining or leaving a room is just a model-driven Sub.
+    struct OnTopic { std::string topic; std::function<Msg(std::string)> on; };
 
-    using Alt = std::variant<None, Batch, Every, OnRoute>;
+    using Alt = std::variant<None, Batch, Every, OnRoute, OnTopic>;
 
     Sub() : alt_(std::make_shared<Alt>(None{})) {}
     explicit Sub(Alt a) : alt_(std::make_shared<Alt>(std::move(a))) {}
@@ -219,6 +236,9 @@ public:
     static Sub every(std::chrono::milliseconds interval, Msg msg) { return Sub(Alt{Every{interval, std::move(msg)}}); }
     static Sub every(long ms, Msg msg) { return every(std::chrono::milliseconds{ms}, std::move(msg)); }
     static Sub on_route(std::function<Msg(std::string)> f) { return Sub(Alt{OnRoute{std::move(f)}}); }
+    static Sub on_topic(std::string topic, std::function<Msg(std::string)> on) {
+        return Sub(Alt{OnTopic{std::move(topic), std::move(on)}});
+    }
 
     static Sub batch(std::vector<Sub> subs) {
         std::vector<Sub> flat;
@@ -253,6 +273,11 @@ public:
     [[nodiscard]] const OnRoute* route() const {
         const OnRoute* r = nullptr; collect_route(r); return r;
     }
+    /// Every topic subscription this Sub declares (flattening batches). The
+    /// runtime reconciles these against the topics the session is joined to.
+    [[nodiscard]] std::vector<const OnTopic*> topics() const {
+        std::vector<const OnTopic*> out; collect_topics(out); return out;
+    }
 
     template <std::invocable<Msg> F>
     [[nodiscard]] auto map(F&& f) const -> Sub<std::invoke_result_t<F, Msg>> {
@@ -263,6 +288,11 @@ public:
             [&](const OnRoute& r) -> Sub<B> {
                 return Sub<B>::on_route([rt = r.route, mapper = std::forward<F>(f)](std::string p) -> B {
                     return mapper(rt(std::move(p)));
+                });
+            },
+            [&](const OnTopic& t) -> Sub<B> {
+                return Sub<B>::on_topic(t.topic, [on = t.on, mapper = std::forward<F>(f)](std::string p) -> B {
+                    return mapper(on(std::move(p)));
                 });
             },
             [&](const Batch& b) -> Sub<B> {
@@ -285,6 +315,13 @@ private:
         std::visit(overload{
             [&](const OnRoute& o) { r = &o; },
             [&](const Batch& b) { for (auto& s : b.subs) s.collect_route(r); },
+            [](const auto&) {},
+        }, *alt_);
+    }
+    void collect_topics(std::vector<const OnTopic*>& out) const {
+        std::visit(overload{
+            [&](const OnTopic& o) { out.push_back(&o); },
+            [&](const Batch& b) { for (auto& s : b.subs) s.collect_topics(out); },
             [](const auto&) {},
         }, *alt_);
     }

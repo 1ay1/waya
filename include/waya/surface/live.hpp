@@ -25,6 +25,7 @@
 #include "effect.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <csignal>
 #include <concepts>
@@ -36,6 +37,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -73,6 +75,9 @@ inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
 /// runtime injects it when a "@route|<path>" frame arrives and routes it through
 /// the app's Sub::on_route handler. Chosen far from any plausible app enum.
 inline constexpr int kRouteMsg = -0x7ACE;
+/// Reserved message id for a topic broadcast delivery. The owner loop reads the
+/// topic+payload off the Deliver and maps it through the app's on_topic handler.
+inline constexpr int kTopicMsg = -0x7ACD;
 
 /// A tiny blocking GET for Cmd::fetch. Absolute http:// URLs only; anything else
 /// (or a network error) yields an empty body so the app's handler still fires.
@@ -256,7 +261,12 @@ struct Session {
     std::vector<Timer> timers;
 
     void push(int msg, std::string value = {}) {
-        { std::lock_guard<std::mutex> l(qm); queue.push_back({msg, std::move(value)}); }
+        { std::lock_guard<std::mutex> l(qm); queue.push_back({msg, std::move(value), {}}); }
+        qcv.notify_one();
+    }
+    /// Deliver a topic broadcast: the owner loop resolves the on_topic handler.
+    void push_topic(std::string topic, std::string payload) {
+        { std::lock_guard<std::mutex> l(qm); queue.push_back({kTopicMsg, std::move(payload), std::move(topic)}); }
         qcv.notify_one();
     }
     std::optional<Deliver> pop() {
@@ -288,6 +298,78 @@ struct Session {
         std::lock_guard<std::mutex> l(wm);
         if (::send(conn, f.data(), f.size(), MSG_NOSIGNAL) < 0) alive = false;
     }
+};
+
+/// The broadcast Hub: a process-global, thread-safe registry mapping a topic to
+/// the sessions subscribed to it. `Cmd::broadcast` publishes into it and it
+/// fans the payload into every subscribed session's queue (each session then
+/// dispatches it through its OWN update, so no shared model, no locks in app
+/// code). Sessions register/unregister as their Sub::on_topic set changes.
+/// Weak pointers mean a dropped connection is reaped lazily on the next publish.
+class Hub {
+public:
+    static Hub& instance() { static Hub h; return h; }
+
+    /// Set the exact set of topics this session is subscribed to (idempotent).
+    void set_topics(const std::shared_ptr<Session>& s, const std::vector<std::string>& topics) {
+        std::lock_guard<std::mutex> l(m_);
+        Session* key = s.get();
+        // Remove from topics no longer wanted.
+        auto cur = joined_[key];
+        for (auto& t : cur)
+            if (std::find(topics.begin(), topics.end(), t) == topics.end())
+                drop(t, key);
+        // Add to newly wanted topics.
+        for (auto& t : topics)
+            if (std::find(cur.begin(), cur.end(), t) == cur.end())
+                subs_[t].push_back(s);
+        if (topics.empty()) joined_.erase(key);
+        else joined_[key] = topics;
+    }
+
+    /// Publish `payload` to every session currently on `topic` (incl. sender).
+    void publish(const std::string& topic, const std::string& payload) {
+        std::vector<std::shared_ptr<Session>> live;
+        {
+            std::lock_guard<std::mutex> l(m_);
+            auto it = subs_.find(topic);
+            if (it == subs_.end()) return;
+            auto& vec = it->second;
+            // Reap dead sessions while collecting the live ones (lazy GC).
+            vec.erase(std::remove_if(vec.begin(), vec.end(),
+                [&](const std::weak_ptr<Session>& w){
+                    if (auto sp = w.lock(); sp && sp->alive) { live.push_back(sp); return false; }
+                    return true;
+                }), vec.end());
+            if (vec.empty()) subs_.erase(it);
+        }
+        // Deliver OUTSIDE the lock: each push takes the session's own queue lock,
+        // so a slow/blocked receiver can never stall the publisher or the Hub.
+        for (auto& sp : live) sp->push_topic(topic, payload);
+    }
+
+    /// Drop a session from every topic (called on teardown).
+    void remove(Session* key) {
+        std::lock_guard<std::mutex> l(m_);
+        auto it = joined_.find(key);
+        if (it == joined_.end()) return;
+        for (auto& t : it->second) drop(t, key);
+        joined_.erase(it);
+    }
+
+private:
+    void drop(const std::string& topic, Session* key) {  // caller holds m_
+        auto it = subs_.find(topic);
+        if (it == subs_.end()) return;
+        auto& vec = it->second;
+        vec.erase(std::remove_if(vec.begin(), vec.end(),
+            [&](const std::weak_ptr<Session>& w){ auto sp = w.lock(); return !sp || sp.get() == key; }),
+            vec.end());
+        if (vec.empty()) subs_.erase(it);
+    }
+    std::mutex m_;
+    std::unordered_map<std::string, std::vector<std::weak_ptr<Session>>> subs_;
+    std::unordered_map<Session*, std::vector<std::string>> joined_;
 };
 
 /// Interpret one Cmd. Effects that produce a message push it back into the
@@ -328,6 +410,11 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
             s->send_text((n.replace ? "@rep|" : "@nav|") + n.url);
         },
         [&](const typename Cmd<Msg>::PushUrl& p) { s->send_text("@url|" + p.url); },
+        [&](const typename Cmd<Msg>::Broadcast& b) {
+            // Fan out to every session on the topic (this one included). Each
+            // receiver maps the payload through its own Sub::on_topic.
+            Hub::instance().publish(b.topic, b.payload);
+        },
     }, cmd.alt());
 }
 
@@ -369,6 +456,13 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
         }).detach();
     }
     s->timers = std::move(next);
+
+    // Reconcile pub/sub topics: register the session for exactly the topics its
+    // subscription currently declares (idempotent — joining/leaving a room is
+    // just a model change that adds/removes an on_topic).
+    std::vector<std::string> topics;
+    for (auto* t : sub.topics()) topics.push_back(t->topic);
+    Hub::instance().set_topics(s, topics);
 }
 
 template <typename P>
@@ -457,6 +551,15 @@ void handle(int conn, int port) {
                 auto* rt = sub.route();
                 if (!rt) continue;   // app doesn't route: drop it
                 r = detail::dispatch<P>(std::move(model), rt->route(d->value), d->value);
+            } else if (d->msg == kTopicMsg) {
+                // A broadcast arrived on d->topic. Find the on_topic handler for
+                // that topic in the CURRENT subscription, map the payload to a
+                // Msg, and deliver the payload as the update value too.
+                auto sub = detail::subs_of<P, Model, Msg>(model);
+                const typename Sub<Msg>::OnTopic* h = nullptr;
+                for (auto* t : sub.topics()) if (t->topic == d->topic) { h = t; break; }
+                if (!h) continue;    // no longer subscribed: drop it
+                r = detail::dispatch<P>(std::move(model), h->on(d->value), d->value);
             } else {
                 r = detail::dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value);
             }
@@ -472,9 +575,11 @@ void handle(int conn, int port) {
             detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
             if (!s->alive) break;   // Cmd::quit or a dead socket: stop the loop.
         }
-        // Orderly teardown: stop interval threads, unblock + join the reader,
-        // then close the fd exactly once (no stale recv/send on a recycled fd).
+        // Orderly teardown: stop interval threads, leave all topics, unblock +
+        // join the reader, then close the fd exactly once (no stale recv/send on
+        // a recycled fd).
         for (auto& t : s->timers) *t.run = false;
+        detail::Hub::instance().remove(s.get());
         s->shutdown_io();
         if (reader.joinable()) reader.join();
         ::close(conn);
