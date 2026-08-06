@@ -37,7 +37,7 @@ endif()
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    foreach(ex hello counter clock form chat kanban dashboard bigapp themed app)
+    foreach(ex splash orbit studio pulse)
         add_executable(${ex} examples/${ex}.cpp)
         target_link_libraries(${ex} PRIVATE waya::waya)
     endforeach()
@@ -49,7 +49,7 @@ if(WAYA_BUILD_EXAMPLES)
             add_test(
                 NAME serve_smoke
                 COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/serve_smoke.sh
-                        $<TARGET_FILE:app> 8137)
+                        $<TARGET_FILE:splash> 8137)
         endif()
     endif()
 endif()

@@ -1,0 +1,108 @@
+/// examples/studio.cpp — a design studio: live theme switching + every polish
+/// mod (motion, glass, glow, elevation, gradients, fluid type) on one gorgeous
+/// screen. Tap a palette and the whole app re-tints in one paint, smoothly.
+///
+///   cmake --build build -j && ./build/studio     # http://localhost:8080
+
+#include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
+
+#include <string>
+#include <variant>
+#include <vector>
+
+using namespace waya::surface;
+using namespace waya::surface::color;
+
+struct Studio {
+    struct Model { Theme theme = Theme::midnight(); std::string name = "midnight"; };
+    struct Pick { std::string name; };
+    using Msg = std::variant<Pick>;
+
+    static Model init() { return {}; }
+    static Model update(Model m, Msg msg) {
+        std::visit(overload{ [&](const Pick& p){
+            m.name = p.name;
+            m.theme = p.name=="dark"?Theme::dark() : p.name=="light"?Theme::light()
+                    : p.name=="ocean"?Theme::ocean() : p.name=="rose"?Theme::rose()
+                    : Theme::midnight();
+        }}, msg);
+        return m;
+    }
+
+    template <typename... Cs>
+    static NodeRef card(Cs... cs) {
+        return col(std::move(cs)...) | gap(14) | pad(24) | round(20)
+             | bg_surface | border_token() | elevation(3) | theme_transition();
+    }
+
+    static NodeRef swatch(const Model& m, std::string name, std::uint32_t a, std::uint32_t b) {
+        bool active = m.name == name;
+        return col(
+            box() | size(px(52)) | round(14)
+                  | css("background", "linear-gradient(135deg," + detail::hexstr(a) + "," + detail::hexstr(b) + ")")
+                  | css("box-shadow", "0 6px 16px " + detail::hexstr(a) + "55"),
+            text(name) | fg_muted | caption | (active ? semibold : noop)
+        ) | gap(8) | center | pad(12) | round(16)
+          | (active ? ring(a, 2) : noop) | tap(Pick{name}) | css("cursor", "pointer")
+          | transition() | on(Hover, css("transform", "translateY(-3px)"));
+    }
+
+    static NodeRef view(const Model& m) {
+        auto header = col(
+            text("waya studio") | fg_text | display | font_fluid(32, 52) | weight(Weight::black),
+            text("design tokens, motion, glass \u2014 switch a theme, watch it flow")
+                | fg_muted | body
+        ) | gap(8) | fade_up(500);
+
+        auto palette = card(
+            text("Theme") | fg_muted | label,
+            row(
+                swatch(m, "midnight", 0x8b5cf6, 0x22d3ee),
+                swatch(m, "dark",     0x6366f1, 0x22d3ee),
+                swatch(m, "ocean",    0x14b8a6, 0x38bdf8),
+                swatch(m, "light",    0x6366f1, 0x0891b2),
+                swatch(m, "rose",     0xe11d48, 0xdb2777)
+            ) | gap(12) | wrap
+        ) | fade_up(600) | delay(60);
+
+        auto showcase = row(
+            // motion column
+            card(
+                text("Motion") | fg_muted | label,
+                row(
+                    box() | size(px(40)) | round(999) | bg_primary | spin(),
+                    box() | size(px(40)) | round(12) | bg_accent | pulse(),
+                    box() | size(px(40)) | round(12) | css("background", "linear-gradient(90deg,transparent,var(--wa-primary),transparent)") | shimmer()
+                ) | gap(16) | center
+            ) | grow(1) | css("min-width", "14rem"),
+            // typography column
+            card(
+                text("Type") | fg_muted | label,
+                text("Display") | fg_text | display | font(28),
+                text("Heading") | fg_text | heading,
+                text("Body text flows nicely.") | fg_muted | body,
+                text("CAPTION \u00b7 MONO") | fg_muted | caption | mono
+            ) | grow(1) | css("min-width", "14rem")
+        ) | gap(20) | wrap | fade_up(700) | delay(120);
+
+        auto buttons = card(
+            text("Buttons") | fg_muted | label,
+            row(
+                text("Primary") | fg_on_primary | semibold | bg_primary | pad_x(20) | pad_y(11) | round(11) | glow(0x000000, 0) | theme_transition() | transition() | on(Hover, css("transform","translateY(-2px)")),
+                text("Accent")  | fg_on_primary | semibold | bg_accent  | pad_x(20) | pad_y(11) | round(11) | theme_transition(),
+                text("Glass")   | fg_text | semibold | glass(12) | pad_x(20) | pad_y(11) | round(11),
+                text("Ghost")   | fg_text | semibold | border_token() | pad_x(20) | pad_y(11) | round(11) | theme_transition()
+            ) | gap(12) | wrap
+        ) | fade_up(800) | delay(180);
+
+        return page(m.theme.bg,
+            centered(56, col(header, palette, showcase, buttons) | gap(28)) | center
+        ) | theme(m.theme) | themed();
+    }
+};
+
+int main() {
+    static_assert(SurfaceProgram<Studio>);
+    return live<Studio>({ .port = 8080, .page_bg = 0x0a0a0f, .title = "waya studio" });
+}

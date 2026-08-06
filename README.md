@@ -129,8 +129,9 @@ shape with `path`, which stays substrate-agnostic (SVG on the DOM backend, draw
 ops on the canvas backend).
 
 See **[SURFACE.md](SURFACE.md)** for the full model, and
-[`examples/`](examples/) for `hello`, `counter`, and `app` — every one a surface
-program, run with `waya::surface::live`.
+[`examples/`](examples/) for `splash` (animated landing), `orbit` (live
+generative art), `studio` (live themes), and `pulse` (real-time collaborative
+dashboard) — every one a surface program, run with `waya::surface::live`.
 
 <details>
 <summary>Under the hood: the DOM backend, and its own guarantees</summary>
@@ -173,9 +174,10 @@ diagnostics reduced to **one error in 5–6 lines**. Details in
 
 ```sh
 cmake -S . -B build && cmake --build build -j
-./build/counter                # http://localhost:8080 — click the buttons
-./build/app                    # a live dashboard with a chart
-./build/hello                  # a landing page
+./build/splash                 # http://localhost:8080 — an animated landing page
+./build/orbit                  # live generative art (a subscription ticks it)
+./build/studio                 # live theme switching + every polish mod
+./build/pulse                  # real-time dashboard — open two tabs
 ```
 
 ### Live reload
@@ -185,8 +187,8 @@ itself — the app's WebSocket client reconnects to the rebuilt server and reloa
 A failed build keeps the last good server up, so your browser never hangs.
 
 ```sh
-scripts/dev.sh counter         # edit examples/counter.cpp, save, watch it update
-scripts/dev.sh app build       # a specific target / build dir
+scripts/dev.sh splash          # edit examples/splash.cpp, save, watch it update
+scripts/dev.sh orbit build     # a specific target / build dir
 ```
 
 Install `inotify-tools` for instant reloads; otherwise it polls once a second.
