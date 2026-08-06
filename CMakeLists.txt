@@ -37,7 +37,7 @@ endif()
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    foreach(ex hello counter clock form chat app)
+    foreach(ex hello counter clock form chat kanban app)
         add_executable(${ex} examples/${ex}.cpp)
         target_link_libraries(${ex} PRIVATE waya::waya)
     endforeach()

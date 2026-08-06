@@ -135,10 +135,35 @@ private:
     }
     std::vector<std::string> idents_;
 
+    /// Generic wired events + draggable. Each event becomes data-ev-<name>=
+    /// "<msg>" or "<msg>|<arg>" (arg narrows, e.g. a key). The client reads these
+    /// with one delegated listener per event type.
+    void event_attrs(std::string& o, const Node& nd){
+        for(auto& e : nd.events){
+            o+=" data-ev-"; o+=e.event; o+="=\""; o+=std::to_string(e.msg);
+            if(!e.arg.empty()){ o+='|'; esc(o,e.arg); }
+            o+='"';
+        }
+        if(nd.draggable){ o+=" draggable=\"true\"";
+            // the drag payload rides in name; emit it here for non-control nodes
+            // (control_attrs already emits name for form controls).
+            if(!nd.name.empty() && nd.kind!=Kind::input && nd.kind!=Kind::textarea &&
+               nd.kind!=Kind::checkbox && nd.kind!=Kind::radio && nd.kind!=Kind::select){
+                o+=" name=\""; esc(o,nd.name); o+='"';
+            }
+        }
+        // arbitrary attributes (aria-*, role, title, data-*, controls…)
+        for(auto& a : nd.attrs){
+            o+=' '; o+=a.first;
+            if(!a.second.empty()){ o+="=\""; esc(o,a.second); o+='"'; }
+        }
+    }
+
     void open_attrs(std::string& o, const Node& nd){
         auto cls = intern(nd.style, nd.kind, nd.on_tap>=0);
         if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
         if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
+        event_attrs(o,nd);
     }
 
     /// Shared control attributes: class, input/change wiring, disabled, name.
@@ -149,6 +174,7 @@ private:
         if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
         if(nd.on_change>=0){ o+=" data-change=\""; o+=std::to_string(nd.on_change); o+='"'; }
         if(nd.disabled) o+=" disabled";
+        event_attrs(o,nd);
     }
 
     void emit(std::string& o, const Node& nd){
@@ -190,13 +216,19 @@ private:
                 o+="</select>"; return;
             }
             case Kind::button: {
-                o+="<button type=\"button\"";
+                o+="<button type=\""; o+=(nd.name=="submit"?"submit":"button"); o+='"';
                 auto cls = intern(nd.style, nd.kind, true);
                 if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
                 if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
                 if(nd.disabled) o+=" disabled";
+                event_attrs(o,nd);
                 o+='>'; esc(o,nd.text); o+="</button>"; return;
             }
+            case Kind::form: o+="<form"; open_attrs(o,nd); o+='>';
+                for(auto&k:nd.kids) emit(o,*k); o+="</form>"; return;
+            case Kind::video: o+="<video src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></video>"; return;
+            case Kind::audio: o+="<audio src=\""; esc(o,nd.src); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
+            case Kind::markup: o+="<div"; open_attrs(o,nd); o+='>'; o+=nd.text /*raw, trusted*/; o+="</div>"; return;
             case Kind::path: {
                 // Compute the points' bounds → a viewBox, so the SVG SCALES to fit
                 // its container instead of drawing at raw pixel coordinates that

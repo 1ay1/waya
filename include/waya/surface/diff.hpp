@@ -132,7 +132,8 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
     }
 
     // paint/flow delta (applies to every kind)
-    if (a.style != b.style || a.on_tap != b.on_tap)
+    if (a.style != b.style || a.on_tap != b.on_tap || a.events != b.events
+        || a.draggable != b.draggable || a.attrs != b.attrs)
         out.push_back({Op::set_paint, path, {}, bref});
 
     switch (a.kind) {
@@ -141,6 +142,12 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
             return;
         case Kind::image:
             if (a.src != b.src) out.push_back({Op::set_src, path, b.src, bref});
+            return;
+        case Kind::video: case Kind::audio:
+            if (a.src != b.src) out.push_back({Op::set_paint, path, {}, bref});
+            return;
+        case Kind::markup:
+            if (a.text != b.text) out.push_back({Op::set_paint, path, {}, bref});
             return;
         case Kind::path:
             if (a.points != b.points || a.closed != b.closed)
@@ -162,7 +169,7 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
                 a.name != b.name || a.on_change != b.on_change || a.on_input != b.on_input)
                 out.push_back({Op::set_paint, path, {}, bref});
             return;
-        case Kind::box: {
+        case Kind::box: case Kind::form: {
             if (fully_keyed(a.kids, b.kids))
                 diff_children_keyed(a, b, path, out);
             else

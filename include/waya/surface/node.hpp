@@ -138,7 +138,10 @@ enum class Kind : std::uint8_t {
     input, textarea,          // free text (single / multi-line)
     checkbox, radio,          // boolean / single-choice toggles
     select,                   // dropdown; children are `option`s
-    button                    // a real <button> (submit-free tap target)
+    button,                   // a real <button> (submit-free tap target)
+    form,                     // groups controls; on_submit gathers named fields
+    video, audio,             // media by url
+    markup                    // raw trusted HTML (rich content escape hatch)
 };
 
 struct Node; using NodeRef = std::shared_ptr<Node>;
@@ -146,6 +149,13 @@ struct Pt { float x, y; bool operator==(const Pt&) const = default; };
 
 /// One option in a `select`. `value` is what rides the wire; `label` is shown.
 struct Opt { std::string value, label; bool operator==(const Opt&) const = default; };
+
+/// A wired DOM event handler. `event` is the event name the client listens for
+/// ("keydown", "focus", "blur", "submit", "drop", "pointerenter"…); `msg` is
+/// the app Msg to deliver; `arg` narrows it (e.g. a key name for keydown, so
+/// on_key("Enter",..) only fires on Enter). The payload the client sends up (a
+/// field value, the dropped key, etc.) becomes the update `value`.
+struct Handler { std::string event; int msg; std::string arg; bool operator==(const Handler&) const = default; };
 
 struct Node {
     Kind  kind = Kind::box;
@@ -155,6 +165,7 @@ struct Node {
     std::string     name;              // radio/checkbox group name; form field name
     bool            checked=false;     // checkbox / radio state
     bool            disabled=false;    // control disabled
+    bool            draggable=false;   // this node can be dragged
     std::vector<Opt> options;          // select: the choices
     std::string     selected;          // select: the chosen option value
     std::vector<Pt> points; bool closed=false;
@@ -162,6 +173,8 @@ struct Node {
     int             on_tap=-1;         // click → message
     int             on_input=-1;       // input event → message (value sent up)
     int             on_change=-1;      // change event → message
+    std::vector<Handler> events;       // generic wired events (keyboard/focus/drag/submit/pointer)
+    std::vector<std::pair<std::string,std::string>> attrs;  // arbitrary HTML attrs (aria-*, role, data-*, title…)
     std::vector<NodeRef> kids;
     std::uint64_t   hash=0;
 };
@@ -195,7 +208,10 @@ inline void finalize(Node& n){
     h=mix(h,n.kind); h=hash_style(h,n.style);
     h=mix(h,n.text);h=mix(h,n.src);h=mix(h,n.placeholder);h=mix(h,n.input_type);
     h=mix(h,n.name);h=mix(h,n.checked);h=mix(h,n.disabled);h=mix(h,n.selected);
+    h=mix(h,n.draggable);
     for(auto&o:n.options){h=mix(h,o.value);h=mix(h,o.label);}
+    for(auto&e:n.events){h=mix(h,e.event);h=mix(h,(std::int64_t)e.msg);h=mix(h,e.arg);}
+    for(auto&a:n.attrs){h=mix(h,a.first);h=mix(h,a.second);}
     for(auto&p:n.points){h=mix(h,p.x);h=mix(h,p.y);} h=mix(h,n.closed);
     h=mix(h,n.key); h=mix(h,(std::int64_t)n.on_tap); h=mix(h,(std::int64_t)n.on_input); h=mix(h,(std::int64_t)n.on_change);
     for(auto&k:n.kids) h=mix(h,k->hash);
@@ -232,6 +248,18 @@ inline NodeRef select(std::vector<Opt> options, std::string chosen={}){ auto n=s
 /// `button(label)` — a real <button>; pair with `tap(msg)`. Distinct from a
 /// tappable box: it's keyboard-focusable and announced as a button by default.
 inline NodeRef button(std::string label){ auto n=std::make_shared<Node>(); n->kind=Kind::button; n->text=std::move(label); finalize(*n); return n; }
+/// `form(fields…) | on_submit(Save)` — a real <form> that groups named controls.
+/// Enter in any field, or a button inside it, fires submit; the runtime gathers
+/// every named field into the update value as "name=value&name2=value2".
+template <typename... Cs> NodeRef form(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::form; detail::push(n->kids, std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
+/// `video(url)` — a media player. `controls`/`autoplay`/`loop` via attr(); size
+/// via w()/h()/aspect() like any node.
+inline NodeRef video(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::video; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
+/// `audio(url)` — an audio player with default controls.
+inline NodeRef audio(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::audio; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
+/// `markup(html)` — inject TRUSTED raw HTML (rich text, an SVG icon, embedded
+/// content). The one primitive that is NOT auto-escaped — never pass user input.
+inline NodeRef markup(std::string html){ auto n=std::make_shared<Node>(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ONE uniform modifier. maya's principle: everything is a node, and everything
@@ -388,5 +416,59 @@ inline Mod name(std::string nm){ return {[=](Node& n){ n.name=nm; }}; }
 inline Mod checked(bool on=true){ return {[=](Node& n){ n.checked=on; }}; }
 inline Mod disabled(bool on=true){ return {[=](Node& n){ n.disabled=on; }}; }
 inline Mod key(std::string k){ return {[=](Node& n){ n.key=k; }}; }
+
+// ── the general event mod — wire any DOM event to a Msg ───────────────────
+/// `on("pointerenter", Show)` — the escape hatch: any DOM event name → Msg. The
+/// named helpers below are sugar over this. `arg` optionally narrows it (a key).
+inline Mod on(std::string event, int msg, std::string arg={}){
+    return {[=](Node& n){ n.events.push_back({event, msg, arg}); }};
+}
+
+// ── keyboard ────────────────────────────────────────────────────────────────
+/// `on_key("Enter", Submit)` — fire only when that key is pressed while focused.
+/// The key is the browser KeyboardEvent.key ("Enter","Escape","ArrowDown","a").
+inline Mod on_key(std::string k, int msg){ return on("keydown", msg, std::move(k)); }
+inline Mod on_enter(int msg){ return on_key("Enter", msg); }
+inline Mod on_escape(int msg){ return on_key("Escape", msg); }
+/// Any keydown — the pressed key name arrives as the update `value`.
+inline Mod on_keydown(int msg){ return on("keydown", msg); }
+
+// ── focus ───────────────────────────────────────────────────────────────────
+inline Mod on_focus(int msg){ return on("focus", msg); }
+inline Mod on_blur(int msg){ return on("blur", msg); }
+
+// ── pointer / hover as EVENTS (distinct from :hover styling) ────────────────
+inline Mod on_enter_pointer(int msg){ return on("pointerenter", msg); }
+inline Mod on_leave_pointer(int msg){ return on("pointerleave", msg); }
+/// `on_hover(enterMsg, leaveMsg)` — the common pair (tooltips, previews).
+inline Mod on_hover(int enter_msg, int leave_msg){
+    return on("pointerenter", enter_msg) | on("pointerleave", leave_msg);
+}
+
+// ── forms ───────────────────────────────────────────────────────────────────
+/// `on_submit(Save)` on a `form(...)` — fires on Enter or a submit button; the
+/// runtime gathers the form's named fields as "a=1&b=2" into the update value.
+inline Mod on_submit(int msg){ return on("submit", msg); }
+
+// ── drag & drop ─────────────────────────────────────────────────────────────
+/// Mark a node draggable and give it a payload id (rides as the drag data).
+inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
+/// `on_drop(Move)` on a drop target — the dragged node's payload arrives as the
+/// update value, so the app knows WHAT was dropped WHERE.
+inline Mod on_drop(int msg){ return on("drop", msg); }
+
+// ── arbitrary attributes & accessibility ──────────────────────────────
+/// `attr("title","Save")` — set ANY HTML attribute. The escape hatch for the
+/// attribute channel, the way `css()` is for the style channel.
+inline Mod attr(std::string name, std::string value){ return {[=](Node& n){ n.attrs.emplace_back(name, value); }}; }
+/// `role("dialog")`, `aria("label","Close")` — accessibility, first-class.
+inline Mod role(std::string r){ return attr("role", std::move(r)); }
+inline Mod aria(std::string k, std::string v){ return attr("aria-" + k, std::move(v)); }
+inline Mod title(std::string t){ return attr("title", std::move(t)); }
+inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
+/// `tab_index(0)` — make any node keyboard-focusable (so on_key works on it).
+inline Mod tab_index(int i){ return attr("tabindex", std::to_string(i)); }
+/// `focusable()` — sugar for tabindex 0 (a div that can receive keyboard focus).
+inline Mod focusable(){ return tab_index(0); }
 
 } // namespace waya::surface

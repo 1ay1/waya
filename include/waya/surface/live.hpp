@@ -240,6 +240,32 @@ inline std::string client(int port) {
     "if(t.dataset&&t.dataset.input!=null&&ws&&ws.readyState===1){ws.send('i'+t.dataset.input+'|'+payload(t));}});"
     "document.addEventListener('change',function(ev){var t=ev.target;"
     "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+payload(t));}});"
+    // Generic events wired via data-ev-<type>="<msg>[|<arg>]". One delegated
+    // listener per type; `e<msg>|<payload>` goes up. Keyboard events carry the
+    // key as payload and honor an arg filter (on_key("Enter",..)); form submit
+    // serialises the form's named fields; drop carries the dragged payload.
+    "function evattr(el,type){return el&&el.dataset?el.dataset['ev'+type[0].toUpperCase()+type.slice(1)]:null;}"
+    "function sendev(spec,pl){if(!ws||ws.readyState!==1)return;var bar=spec.indexOf('|');var msg=bar<0?spec:spec.slice(0,bar);ws.send('e'+msg+'|'+pl);}"
+    "function evMatch(spec,key){var bar=spec.indexOf('|');if(bar<0)return true;return spec.slice(bar+1)===key;}"
+    // keydown: walk up to the nearest node wiring keydown, honor the key filter.
+    "document.addEventListener('keydown',function(ev){var t=ev.target;while(t&&t!==document){var s=evattr(t,'keydown');"
+    "if(s!=null&&evMatch(s,ev.key)){ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
+    // focus/blur are non-bubbling → capture phase.
+    "document.addEventListener('focus',function(ev){var s=evattr(ev.target,'focus');if(s!=null)sendev(s,payload(ev.target)||'');},true);"
+    "document.addEventListener('blur',function(ev){var s=evattr(ev.target,'blur');if(s!=null)sendev(s,payload(ev.target)||'');},true);"
+    // pointer enter/leave (capture; non-bubbling).
+    "document.addEventListener('pointerenter',function(ev){var s=evattr(ev.target,'pointerenter');if(s!=null)sendev(s,'');},true);"
+    "document.addEventListener('pointerleave',function(ev){var s=evattr(ev.target,'pointerleave');if(s!=null)sendev(s,'');},true);"
+    // form submit: gather named fields into a=1&b=2 (URL-encoded).
+    "document.addEventListener('submit',function(ev){var f=ev.target.closest('[data-ev-submit]');if(!f)return;ev.preventDefault();"
+    "var d=new FormData(f),ps=[];d.forEach(function(v,k){ps.push(encodeURIComponent(k)+'='+encodeURIComponent(v));});"
+    "sendev(f.dataset.evSubmit,ps.join('&'));});"
+    // drag & drop: dragstart stashes the source's payload (its name attr);
+    // dragover allows the drop; drop delivers "<dragged>:<target-arg>" so the app
+    // learns WHAT was dropped and WHERE (the target's data-drop-arg, e.g. a column).
+    "document.addEventListener('dragstart',function(ev){var t=ev.target.closest('[draggable=true]');if(t){ev.dataTransfer.setData('text/plain',t.getAttribute('name')||'');ev.dataTransfer.effectAllowed='move';}});"
+    "document.addEventListener('dragover',function(ev){if(ev.target.closest&&ev.target.closest('[data-ev-drop]'))ev.preventDefault();});"
+    "document.addEventListener('drop',function(ev){var t=ev.target.closest('[data-ev-drop]');if(t){ev.preventDefault();var src=ev.dataTransfer.getData('text/plain');var arg=t.getAttribute('data-drop-arg');sendev(t.dataset.evDrop,arg!=null?src+':'+arg:src);}});"
     "})();</script>";
 }
 
@@ -518,7 +544,9 @@ void handle(int conn, int port) {
                     const std::string& raw = fr.payload;
                     if (raw.rfind("@route|", 0) == 0) {
                         s->push(kRouteMsg, raw.substr(7));
-                    } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c')) {
+                    } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e')) {
+                        // i/c: input/change value; e: a generic wired event
+                        // (keyboard/focus/submit/drop) — all carry "<msg>|<payload>".
                         auto bar = raw.find('|');
                         int m = std::atoi(raw.substr(1, bar-1).c_str());
                         s->push(m, bar != std::string::npos ? raw.substr(bar+1) : std::string{});

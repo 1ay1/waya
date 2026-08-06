@@ -11,6 +11,7 @@
 #include <waya/surface/dom.hpp>
 #include <waya/surface/diff.hpp>
 #include <waya/surface/wire.hpp>
+#include <waya/surface/sugar.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -252,6 +253,85 @@ int main() {
         auto work = list({"1","2","3"});
         apply(work, p);
         CHECK(keys(work) == (std::vector<std::string>{"3","1","2"}));
+    }
+
+    // ═══ 3. INTERACTION EVENTS ─ keyboard / focus / submit / drag ══════════════
+    enum { Save, Close, Blurred, Dropped };
+    // on_key emits data-ev-keydown="<msg>|<key>"
+    {
+        auto h = html_of(box() | on_enter(Save));
+        CHECK(has(h, "data-ev-keydown=\"0|Enter\""));
+    }
+    CHECK(has(html_of(box() | on_escape(Close)), "data-ev-keydown=\"1|Escape\""));
+    CHECK(has(html_of(box() | on_key("ArrowDown", Save)), "data-ev-keydown=\"0|ArrowDown\""));
+    // focus / blur
+    CHECK(has(html_of(input("x") | on_blur(Blurred)), "data-ev-blur=\"2\""));
+    CHECK(has(html_of(box() | on_focus(Save)), "data-ev-focus=\"0\""));
+    // a generic on("event", msg)
+    CHECK(has(html_of(box() | on("pointerenter", Save)), "data-ev-pointerenter=\"0\""));
+    // draggable + on_drop
+    {
+        auto h = html_of(box() | draggable("card-7"));
+        CHECK(has(h, "draggable=\"true\"")); CHECK(has(h, "name=\"card-7\""));
+    }
+    CHECK(has(html_of(box() | on_drop(Dropped)), "data-ev-drop=\"3\""));
+
+    // ═══ form + on_submit ══════════════════════════════════════════
+    {
+        auto f = form(input("a") | name("user"), button("go")) | on_submit(Save);
+        CHECK(f->kind == Kind::form);
+        auto h = html_of(f);
+        CHECK(has(h, "<form")); CHECK(has(h, "data-ev-submit=\"0\""));
+        CHECK(has(h, "name=\"user\""));
+    }
+
+    // ═══ a11y / arbitrary attrs ════════════════════════════════════
+    {
+        auto h = html_of(box() | role("dialog") | aria("label", "Close") | title("hi") | tab_index(0));
+        CHECK(has(h, "role=\"dialog\"")); CHECK(has(h, "aria-label=\"Close\""));
+        CHECK(has(h, "title=\"hi\"")); CHECK(has(h, "tabindex=\"0\""));
+    }
+    CHECK(has(html_of(box() | attr("data-x", "1")), "data-x=\"1\""));
+
+    // ═══ media + markup ══════════════════════════════════════════
+    CHECK(has(html_of(video("v.mp4")), "<video src=\"v.mp4\""));
+    CHECK(has(html_of(audio("a.mp3")), "<audio src=\"a.mp3\""));
+    {
+        // markup is NOT escaped (trusted raw HTML)
+        auto h = html_of(markup("<b>bold</b>"));
+        CHECK(has(h, "<b>bold</b>"));
+    }
+    // text IS escaped (contrast)
+    CHECK(has(html_of(text("<b>x")), "&lt;b&gt;x"));
+
+    // ═══ sugar: when / show / each / each_keyed / overlay ═══════════════════
+    CHECK(when(true,  text("y"))->kind == Kind::text);
+    CHECK(when(false, text("y"))->kind == Kind::box);      // empty box when false
+    CHECK(show(false, text("y"))->kind == Kind::box);
+    CHECK(when(true, text("a"), text("b"))->text == "a");
+    {
+        std::vector<int> xs{1,2,3};
+        auto nodes = each(xs, [](int v){ return text(std::to_string(v)); });
+        CHECK(nodes.size() == 3 && nodes[2]->text == "3");
+        auto keyed = each_keyed(xs, [](int v){ return "k"+std::to_string(v); },
+                                    [](int v){ return text(std::to_string(v)); });
+        CHECK(keyed[0]->key == "k1" && keyed[2]->key == "k3");
+    }
+    {
+        // overlay is a fixed, high-z full-screen layer
+        auto ov = overlay(text("modal"));
+        CHECK(ov->style.pos == Pos::fixed);
+        CHECK(ov->style.has_z && ov->style.z >= 1000);
+        CHECK(modal(false, text("x"))->kind == Kind::box);   // closed → empty
+        CHECK(modal(true,  text("x"))->style.pos == Pos::fixed);
+    }
+
+    // ═══ event change diffs as set_paint (cheap, node-level) ════════════════
+    {
+        auto a = box() | on_enter(Save);
+        auto b = box() | on_enter(Close);
+        auto p = diff(a, b);
+        CHECK(p.size() == 1 && p[0].op == Op::set_paint);
     }
 
     std::cout << "test_input: " << g_pass << " passed, " << g_fail << " failed\n";
