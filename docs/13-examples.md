@@ -40,6 +40,20 @@ the mod vocabulary, with zero client state.
 ./build/palette
 ```
 
+## `living` — reusable components that glide
+
+A todo list where rows are **memoised components** (rebuilt only when their own
+data changes), items are **keyed** by id (so the diff reconciles by identity),
+and `animated()` makes every add / remove / reorder / filter **glide** (FLIP) —
+with zero animation state in the Model. The reusable-component story end to end.
+
+**Learn from it:** `memo`, `key()` + `animated()`, and how a pure sort/filter in
+`view()` becomes a smooth on-screen animation for free.
+
+```bash
+./build/living
+```
+
 ## `counter` — the smallest complete app (pure core)
 
 State, messages, a pure `update`, and a `view` built from `col`/`row`/`text`

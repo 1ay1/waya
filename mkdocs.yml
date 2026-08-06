@@ -82,6 +82,7 @@ nav:
       - Deployment: 17-deployment.md
       - The Typed Dialect: 18-typed.md
       - Vocabulary Cheat Sheet: 19-cheatsheet.md
+      - Reusable Components: 20-components-reuse.md
   - Reference:
       - API Reference: 11-api-reference.md
       - Recipes & Patterns: 12-recipes.md
