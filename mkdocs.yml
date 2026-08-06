@@ -79,6 +79,7 @@ nav:
       - The Component Library: 14-components.md
       - Assets & Global CSS: 15-assets.md
       - Correctness & Safety: 16-safety.md
+      - Deployment: 17-deployment.md
   - Reference:
       - API Reference: 11-api-reference.md
       - Recipes & Patterns: 12-recipes.md

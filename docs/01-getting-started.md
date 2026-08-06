@@ -15,6 +15,15 @@ just add the include directory and link the system threads library.
 
 ## Install
 
+The fastest start is the scaffolder — it generates a complete, building app:
+
+```sh
+scripts/create-waya-app.sh my-app && cd my-app
+cmake -S . -B build && cmake --build build && ./build/my-app
+```
+
+To add waya to an existing project, pick one of the following.
+
 ### As a subdirectory (simplest)
 
 Clone waya into your project (e.g. under `third_party/`) and add it:

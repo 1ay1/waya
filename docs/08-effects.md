@@ -60,18 +60,58 @@ When you have nothing to do, return `Cmd<Msg>::none()`.
 `task` runs on a detached worker thread and delivers exactly one `Msg` when it
 finishes. The model loop never blocks.
 
-### `fetch` — async HTTP GET
+### `fetch` / `post` / `http` — real async HTTP
 
 ```cpp
-[&](Load){ return { m, Cmd<Msg>::fetch("http://api.local/items", [](std::string body){
-    return Loaded{ parse(body) };
-}) }; }
+// GET
+[&](Load){ return { m.loading(), Cmd<Msg>::fetch("https://api.dev/items",
+    [](std::string body){ return Loaded{ body }; }) }; }
+
+// POST JSON
+[&](Save){ return { m, Cmd<Msg>::post("https://api.dev/save", payload,
+    [](std::string body){ return Saved{ body }; }) }; }
+
+// Any method + headers (auth, content-type, etc.)
+[&](Pay){ return { m, Cmd<Msg>::http("POST", "https://api.dev/pay",
+    {{"Authorization", "Bearer " + m.token}, {"Content-Type", "application/json"}},
+    body, [](std::string r){ return Paid{ r }; }) }; }
 ```
 
-`fetch` performs a blocking GET on a worker thread and calls your mapper with
-the response body (empty on error, so your handler always fires). It handles
-absolute `http://` URLs; for HTTPS or richer needs, use `task` with your own
-client.
+The client runs on a bounded worker pool (never the model loop) and does real
+DNS, arbitrary methods, request headers + body, and a timeout. The mapper gets
+the response body (empty on error, so your handler always fires).
+
+**HTTPS** requires the runtime built with `-DWAYA_TLS=ON` (links OpenSSL);
+without it, `https://` URLs fail cleanly (empty body) rather than talking
+plaintext.
+
+### Parsing JSON
+
+Real APIs speak JSON — `<waya/json.hpp>` reads and writes it with no dependency:
+
+```cpp
+#include <waya/json.hpp>
+using namespace waya;
+
+[&](const Loaded& l) -> std::pair<Model,Cmd<Msg>> {
+    auto j = json::parse(l.body);
+    Model n = m;
+    n.user = j["user"]["name"].str();
+    n.credits = j["user"]["credits"].as_int();
+    for (auto& item : j["items"].arr())
+        n.items.push_back({ item["id"].as_int(), item["title"].str() });
+    return { n, Cmd<Msg>::none() };
+}
+
+// build a request body
+std::string body = json::object({
+    {"amount", json::number(m.total)},
+    {"currency", json::string("usd")},
+}).dump();
+```
+
+Accessors are safe: a missing key or wrong type returns a default
+(`""`/`0`/`false`), so a malformed response never crashes `update`.
 
 ### `emit` — chain messages
 
