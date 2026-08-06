@@ -136,14 +136,33 @@ inline NodeRef toast_layer(std::vector<NodeRef> toasts){
 // give you a correct full-viewport page in one call, so "responsive" is the
 // path of least resistance rather than something you assemble by hand.
 
-/// `page(bg_color, content…)` — the app root: fills the whole viewport, paints
-/// its background edge-to-edge (no gutters), and pads fluidly (clamp). Drop your
-/// UI inside; it adapts to any screen with zero media queries.
+/// `page(bg_color, content…)` — the app root for CONTENT that flows down the
+/// page (articles, forms, dashboards): fills at least the viewport, paints its
+/// background edge-to-edge, pads fluidly, and grows + scrolls naturally when the
+/// content is taller than the screen. This is the safe default for most apps.
 template <typename... Cs> NodeRef page(std::uint32_t bg_color, Cs... cs){
     auto n = col(std::move(cs)...);
-    n->style.has_grow = true; n->style.grow = 1;
     n->style.has_bg = true; n->style.bg = bg_color;
     n->style.extra.emplace_back("min-height", "100dvh");   // dynamic vh: excludes mobile browser chrome
+    n->style.extra.emplace_back("min-width", "0");
+    n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
+    finalize(*n);
+    return n;
+}
+
+/// `app_shell(bg_color, content…)` — the app root for a FIXED-VIEWPORT app whose
+/// inner region scrolls (chat, mail, a board): bounded to exactly the viewport
+/// height (dynamic, so it tracks the mobile browser chrome + keyboard), so a
+/// composer/toolbar stays pinned and only the region you mark `scroll_fill()`
+/// scrolls — the app never scrolls off the bottom of a phone.
+template <typename... Cs> NodeRef app_shell(std::uint32_t bg_color, Cs... cs){
+    auto n = col(std::move(cs)...);
+    n->style.has_bg = true; n->style.bg = bg_color;
+    n->style.extra.emplace_back("height", "100dvh");
+    n->style.extra.emplace_back("max-height", "100dvh");
+    n->style.extra.emplace_back("min-height", "0");
+    n->style.extra.emplace_back("min-width", "0");
+    n->style.extra.emplace_back("overflow", "hidden");   // only scroll_fill() regions scroll
     n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
     finalize(*n);
     return n;
@@ -156,15 +175,31 @@ inline Mod safe_area(){ return css("padding",
 
 /// `centered(max_rem, content)` — a column capped to `max_rem` wide and centred,
 /// growing to fill available height. The classic "readable centred content"
-/// container (chat, article, form). Fluidly full-width below the cap.
+/// container (chat, article, form). Fluidly full-width below the cap. Passes the
+/// height budget through (min-height:0) so a scrolling child inside stays
+/// contained rather than overflowing the page.
 inline NodeRef centered(float max_rem, NodeRef content){
     auto n = col(std::move(content));
     n->style.has_grow = true; n->style.grow = 1;
     n->style.extra.emplace_back("width", "100%");
     n->style.extra.emplace_back("max-width", std::to_string((int)max_rem) + "rem");
     n->style.extra.emplace_back("margin-inline", "auto");
+    n->style.extra.emplace_back("min-height", "0");   // allow inner flex scroller to be bounded
     finalize(*n);
     return n;
+}
+
+/// `fills(content)` — mark a node to fill its flex parent AND be a proper flex
+/// container whose own overflowing child can scroll (flex:1 + min-height:0). Use
+/// on a scrollable region (a chat log, a list) so it takes the leftover space
+/// and scrolls internally instead of pushing siblings off-screen.
+inline Mod scroll_fill(){
+    return sty([](Style& s){
+        s.has_grow = true; s.grow = 1;
+        s.extra.emplace_back("min-height", "0");
+        s.extra.emplace_back("overflow-y", "auto");
+        s.extra.emplace_back("-webkit-overflow-scrolling", "touch");
+    });
 }
 
 } // namespace waya::surface

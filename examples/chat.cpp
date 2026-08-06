@@ -84,8 +84,9 @@ struct Chat {
         }
         auto logbox = box(); logbox->kids = std::move(rows);
         logbox->style.flow = Flow::col; finalize(*logbox);
-        logbox = logbox | gap(8) | css("overflow-y", "auto") | css("flex", "1 1 auto")
-                        | css("min-height", "0");
+        // The log fills the leftover height and scrolls internally — so the
+        // composer row stays pinned to the bottom, on desktop AND on a phone.
+        logbox = logbox | gap(8) | scroll_fill();
 
         auto field = [](std::string v, int msg, std::string ph, bool grow_) {
             auto n = input(std::move(v)) | placeholder(std::move(ph)) | on_input(msg)
@@ -113,11 +114,13 @@ struct Chat {
             ) | gap(10) | wrap | css("align-items", "stretch")
 
         ) | grow(1) | gap(16) | pad(24) | round(20) | bg(0x111827)
-          | shadow() | border(1, 0x1f2937);
+          | shadow() | border(1, 0x1f2937)
+          | css("min-height", "0");   // bound the card so its log scroller works
 
-        // Responsive by construction: a full-viewport page hosting a centred,
-        // width-capped column. No fixed sizes, no media queries.
-        return page(color::bg0, centered(42, card));
+        // A fixed-viewport chat: the shell is bounded to the screen, the log
+        // (scroll_fill) takes the middle and scrolls, the composer stays pinned.
+        // Works identically on desktop and a phone — nothing scrolls off-screen.
+        return app_shell(color::bg0, centered(42, card));
     }
 };
 
