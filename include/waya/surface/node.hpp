@@ -333,6 +333,10 @@ inline Mod grow(float g=1){ return sty([=](Style& s){ s.has_grow=true; s.grow=g;
 inline Mod shrink(float g=1){ return sty([=](Style& s){ s.has_shrink=true; s.shrink=g; }); }
 /// `center` — centre children both axes; the single most common layout, one word.
 inline const Mod center = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; });
+// Flex-direction as MODS (the col()/row() builders make containers; these flip
+// an existing container's axis — essential for responsive `on_phone(column)`).
+inline const Mod column     = sty([](Style& s){ s.flow=Flow::col; });
+inline const Mod horizontal = sty([](Style& s){ s.flow=Flow::row; });
 /// `between` — push children to opposite ends.
 inline const Mod between = sty([](Style& s){ s.justify=Justify::between; });
 inline Mod overflow(std::string v){ return sty([=](Style& s){ s.extra.emplace_back("overflow", v); }); }
@@ -391,6 +395,10 @@ inline std::string state_sel(State st){ switch(st){ case State::Hover:return ":h
     case State::Active:return ":active"; case State::Disabled:return ":disabled"; } return ""; }
 inline std::string break_q(Break b){ switch(b){ case Break::Sm:return "@media(min-width:640px)"; case Break::Md:return "@media(min-width:768px)";
     case Break::Lg:return "@media(min-width:1024px)"; case Break::Xl:return "@media(min-width:1280px)"; } return ""; }
+/// Below a breakpoint (max-width) — for phone-first overrides. 1px under the
+/// breakpoint so `at(Md,..)` and `below(Md,..)` never both apply.
+inline std::string below_q(Break b){ switch(b){ case Break::Sm:return "@media(max-width:639.98px)"; case Break::Md:return "@media(max-width:767.98px)";
+    case Break::Lg:return "@media(max-width:1023.98px)"; case Break::Xl:return "@media(max-width:1279.98px)"; } return ""; }
 /// Build a sub-Style by applying style-only Mods to a fresh node's style.
 template <typename... M> std::shared_ptr<Style> sub_style(M... mods){
     Node tmp; (mods.apply(tmp), ...); return std::make_shared<Style>(tmp.style); }
@@ -400,11 +408,34 @@ template <typename... M> Mod on(State st, M... mods){
     auto sub = detail::sub_style(mods...);
     return sty([=](Style& s){ s.states.emplace_back(detail::state_sel(st), sub); });
 }
-/// `at(Md, w(fill), pad(24))` — a style overlay at a breakpoint. A Mod.
+/// `at(Md, w(fill), pad(24))` — apply mods AT AND ABOVE a breakpoint (min-width;
+/// mobile-first: your base styles are the phone, `at` scales up).
 template <typename... M> Mod at(Break b, M... mods){
     auto sub = detail::sub_style(mods...);
     return sty([=](Style& s){ s.states.emplace_back(detail::break_q(b), sub); });
 }
+/// `below(Md, col, gap(8))` — apply mods BELOW a breakpoint (max-width). The
+/// direct "on phones/tablets, do X" override. Pairs with `at` for either end.
+template <typename... M> Mod below(Break b, M... mods){
+    auto sub = detail::sub_style(mods...);
+    return sty([=](Style& s){ s.states.emplace_back(detail::below_q(b), sub); });
+}
+
+// ── mobile-first convenience ──────────────────────────────────────
+/// `on_phone(col, gap(8))` — overrides that apply on phone widths (< 768px).
+template <typename... M> Mod on_phone(M... mods){ return below(Break::Md, mods...); }
+/// `on_desktop(row, gap(24))` — overrides from tablet/desktop up (≥ 768px).
+template <typename... M> Mod on_desktop(M... mods){ return at(Break::Md, mods...); }
+
+// ── responsive visibility ──────────────────────────────────────
+inline const Mod hidden = sty([](Style& s){ s.extra.emplace_back("display","none"); });
+/// `hide_below(Md)` — not shown below the breakpoint (desktop-only element).
+inline Mod hide_below(Break b){ return below(b, hidden); }
+/// `hide_above(Md)` — not shown at/above the breakpoint (mobile-only element).
+inline Mod hide_above(Break b){ return at(b, hidden); }
+/// `only_phone()` / `only_desktop()` — show exclusively on that class of device.
+inline Mod only_phone(){ return hide_above(Break::Md); }
+inline Mod only_desktop(){ return hide_below(Break::Md); }
 
 // ── interactivity & identity — Mods that touch the node, not just its style ─
 inline Mod tap(int msg){ return {[=](Node& n){ n.on_tap=msg; }}; }

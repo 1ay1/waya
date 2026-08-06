@@ -326,7 +326,41 @@ int main() {
         CHECK(modal(true,  text("x"))->style.pos == Pos::fixed);
     }
 
-    // ═══ event change diffs as set_paint (cheap, node-level) ════════════════
+    // ═══ MOBILE RESPONSIVENESS ─ breakpoint mods + visibility ══════════════
+    {
+        // on_phone flips a row to a column below 768px (max-width query)
+        auto css = DomBackend{}.render(*(row(text("a"), text("b")) | gap(24)
+                        | on_phone(column, gap(8)))).css;
+        CHECK(has(css, "@media(max-width:767.98px)"));
+        CHECK(has(css, "flex-direction:column"));   // inside the phone query
+        // desktop keeps the base row
+        CHECK(has(css, "flex-direction:row"));
+    }
+    {
+        // on_desktop applies at/above 768px (min-width query)
+        auto css = DomBackend{}.render(*(box() | on_desktop(pad(24)))).css;
+        CHECK(has(css, "@media(min-width:768px)"));
+        CHECK(has(css, "padding:24px"));
+    }
+    {
+        // below(Lg,..) is a max-width query at the Lg breakpoint
+        auto css = DomBackend{}.render(*(box() | below(Lg, pad(8)))).css;
+        CHECK(has(css, "@media(max-width:1023.98px)"));
+    }
+    {
+        // responsive visibility: only_desktop hides below Md; only_phone hides above
+        auto d = DomBackend{}.render(*(text("menu") | only_desktop())).css;
+        CHECK(has(d, "@media(max-width:767.98px)") && has(d, "display:none"));
+        auto p = DomBackend{}.render(*(text("burger") | only_phone())).css;
+        CHECK(has(p, "@media(min-width:768px)") && has(p, "display:none"));
+    }
+    {
+        // hide_below / hide_above target the right query
+        CHECK(has(DomBackend{}.render(*(box() | hide_below(Md))).css, "@media(max-width:767.98px)"));
+        CHECK(has(DomBackend{}.render(*(box() | hide_above(Md))).css, "@media(min-width:768px)"));
+    }
+
+    // event change diffs as set_paint (cheap, node-level)
     {
         auto a = box() | on_enter(Save);
         auto b = box() | on_enter(Close);

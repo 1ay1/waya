@@ -618,10 +618,15 @@ void handle(int conn, int port) {
     // app's stylesheet, and the client. The surface fills in over the socket.
     std::string doc =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">"
+        "<meta name=\"theme-color\" content=\"#0b1020\">"
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
         "html,body{height:100%}"
+        // Mobile touch hygiene: no 300ms tap delay / double-tap zoom jank, no
+        // grey tap flash, no rubber-band overscroll, no auto text inflation.
+        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
+        "body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}"
         // A real sans-serif stack; force EVERY element (incl. form controls,
         // which don't inherit font by default) to use it — otherwise inputs and
         // buttons render in the UA's monospace/serif default.

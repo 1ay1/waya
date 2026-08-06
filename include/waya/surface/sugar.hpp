@@ -143,11 +143,16 @@ template <typename... Cs> NodeRef page(std::uint32_t bg_color, Cs... cs){
     auto n = col(std::move(cs)...);
     n->style.has_grow = true; n->style.grow = 1;
     n->style.has_bg = true; n->style.bg = bg_color;
-    n->style.extra.emplace_back("min-height", "100vh");
+    n->style.extra.emplace_back("min-height", "100dvh");   // dynamic vh: excludes mobile browser chrome
     n->style.extra.emplace_back("padding", "clamp(0px, 3vw, 2.5rem)");
     finalize(*n);
     return n;
 }
+
+/// `safe_area` — pad by the device's safe-area insets (iPhone notch / home bar).
+/// Put it on a full-bleed page so content isn't hidden under the notch.
+inline Mod safe_area(){ return css("padding",
+    "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"); }
 
 /// `centered(max_rem, content)` — a column capped to `max_rem` wide and centred,
 /// growing to fill available height. The classic "readable centred content"

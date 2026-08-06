@@ -108,7 +108,8 @@ struct Kanban {
           | on_drop(Move)                            // drop a card here → Move
           | attr("data-drop-arg", std::to_string(c))  // the target column, sent with the drop
           | role("list") | aria("label", col_name(c))
-          | css("width", "16rem") | css("min-height", "20rem");
+          | css("width", "16rem") | css("min-height", "20rem")
+          | on_phone(css("width", "100%"), css("min-height", "auto"));
     }
 
     static NodeRef view(const Model& m) {
@@ -122,6 +123,10 @@ struct Kanban {
             row_(each([]{ return std::vector<int>{0,1,2}; }(),
                      [&](int c){ return column(m, c); }))
                 | gap(16) | css("align-items", "flex-start")
+                // Mobile: stack the columns vertically and let each fill width.
+                // Desktop: keep them side by side, scrolling horizontally if tight.
+                | on_phone(waya::surface::column, css("align-items", "stretch"))
+                | on_desktop(css("overflow-x", "auto"))
 
         ) | gap(24) | pad(36) | css("min-height", "100vh") | bg(bg0);
     }
