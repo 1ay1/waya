@@ -44,6 +44,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#ifdef WAYA_GZIP
+#include <zlib.h>
+#endif
+
 // Reuse the WebSocket codec from the DOM live runtime.
 #include "../net/ws.hpp"
 
@@ -57,7 +61,7 @@ namespace waya::surface {
 /// `page_bg` is the color painted on html/body behind the app — set it to your
 /// app root's background so overscroll bounce, safe-area insets and the pre-paint
 /// flash all match (default: a dark slate). Also drives the mobile theme-color.
-struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = true; std::uint32_t page_bg = 0x0b1020; };
+struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = true; std::uint32_t page_bg = 0x0b1020; const char* title = "waya"; };
 
 /// A Surface Program: Model + Msg + init/update/view(->NodeRef). `update` may
 /// be `update(Model, Msg)` (taps) OR `update(Model, Msg, std::string value)`
@@ -107,6 +111,45 @@ inline constexpr int kRouteMsg = -0x7ACE;
 /// Reserved message id for a topic broadcast delivery. The owner loop reads the
 /// topic+payload off the Deliver and maps it through the app's on_topic handler.
 inline constexpr int kTopicMsg = -0x7ACD;
+
+/// The request line's path, e.g. "/about?x=1" from "GET /about?x=1 HTTP/1.1".
+/// Used to SSR the CORRECT screen for the requested route on first paint.
+inline std::string request_path(std::string_view req){
+    auto sp = req.find(' ');
+    if (sp == std::string_view::npos) return "/";
+    auto start = sp + 1;
+    auto end = req.find(' ', start);
+    if (end == std::string_view::npos || end <= start) return "/";
+    std::string p{req.substr(start, end - start)};
+    return p.empty() ? "/" : p;
+}
+/// True if the client advertised gzip in Accept-Encoding.
+inline bool accepts_gzip(std::string_view req){
+    auto pos = req.find("Accept-Encoding:");
+    if (pos == std::string_view::npos) pos = req.find("accept-encoding:");
+    if (pos == std::string_view::npos) return false;
+    auto eol = req.find("\r\n", pos);
+    return req.substr(pos, (eol==std::string_view::npos?req.size():eol) - pos).find("gzip") != std::string_view::npos;
+}
+
+#ifdef WAYA_GZIP
+/// gzip a buffer (opt-in: compile with -DWAYA_GZIP and link zlib). Returns empty
+/// on failure so the caller falls back to sending the body uncompressed.
+inline std::string gzip(const std::string& in){
+    z_stream zs{};
+    if (deflateInit2(&zs, Z_BEST_SPEED, Z_DEFLATED, 15+16, 8, Z_DEFAULT_STRATEGY) != Z_OK) return {};
+    zs.next_in = (Bytef*)in.data(); zs.avail_in = (uInt)in.size();
+    std::string out; char buf[16384];
+    int ret;
+    do {
+        zs.next_out = (Bytef*)buf; zs.avail_out = sizeof(buf);
+        ret = deflate(&zs, Z_FINISH);
+        out.append(buf, sizeof(buf) - zs.avail_out);
+    } while (ret == Z_OK);
+    deflateEnd(&zs);
+    return ret == Z_STREAM_END ? out : std::string{};
+}
+#endif
 
 /// A tiny blocking GET for Cmd::fetch. Absolute http:// URLs only; anything else
 /// (or a network error) yields an empty body so the app's handler still fires.
@@ -171,6 +214,40 @@ template <typename P, typename Model, typename Msg>
 Sub<Msg> subs_of(const Model& m){
     if constexpr (requires{ { P::subscribe(m) } -> std::convertible_to<Sub<Msg>>; }) return P::subscribe(m);
     else return Sub<Msg>::none();
+}
+
+/// An error card — shown in place of the app when view()/update() throws, so a
+/// bug isolates the session instead of crashing the server. Valid HTML/CSS.
+inline std::string error_html(std::string_view what){
+    std::string safe; for(char c : what){ if(c=='<')safe+="&lt;"; else if(c=='>')safe+="&gt;"; else if(c=='&')safe+="&amp;"; else safe+=c; }
+    return "<div style=\"min-height:100dvh;display:flex;align-items:center;justify-content:center;"
+           "padding:24px;background:#0b1020;color:#e2e8f0;font-family:ui-sans-serif,system-ui,sans-serif\">"
+           "<div style=\"max-width:32rem;padding:24px;border-radius:16px;background:#141b2e;"
+           "border:1px solid #ef444455\">"
+           "<div style=\"font-size:15px;font-weight:700;color:#ef4444;margin-bottom:8px\">"
+           "Something went wrong</div>"
+           "<div style=\"font-size:13px;color:#94a3b8;line-height:1.6;white-space:pre-wrap\">" + safe +
+           "</div></div></div>";
+}
+
+/// Render P::view(model) with an ERROR BOUNDARY: if the app's view throws, we
+/// return an error card node instead of letting the exception unwind into the
+/// detached thread (which would std::terminate the whole process). Keeps the
+/// server and every other session alive.
+template <typename P, typename Model>
+NodeRef safe_view(const Model& m){
+    try { return P::view(m); }
+    catch (const std::exception& e) { return markup(error_html(e.what())); }
+    catch (...) { return markup(error_html("unknown error in view()")); }
+}
+
+/// Dispatch with an error boundary: a throwing update() leaves the model
+/// unchanged and emits no effect, rather than taking down the session.
+template <typename P, typename Model, typename Msg>
+std::pair<Model, Cmd<Msg>> safe_dispatch(Model m, Msg msg, const std::string& value, bool& ok){
+    ok = true;
+    try { return dispatch<P>(std::move(m), msg, value); }
+    catch (...) { ok = false; return { std::move(m), Cmd<Msg>::none() }; }
 }
 
 /// The terminal. Holds NO app state and NO app logic — it decodes packed binary
@@ -521,7 +598,7 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
 }
 
 template <typename P>
-void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
+void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* page_title = "waya") {
     using Model = typename P::Model;
     using Msg   = typename P::Msg;
 
@@ -537,7 +614,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
         s->conn = conn;
 
         auto [model, init_cmd] = detail::init_of<P, Model, Msg>();
-        NodeRef prev = P::view(model);
+        NodeRef prev = detail::safe_view<P>(model);
 
         // First frame: a full paint. Same shape as any later frame — a
         // reconnecting client is resynced by another full paint.
@@ -598,6 +675,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
         // once per handled message, as in Elm.
         while (auto d = s->pop()) {
             std::pair<Model, Cmd<Msg>> r;
+            bool ok = true;
             if (d->msg == kRouteMsg) {
                 // Route changes flow through the app's on_route subscription,
                 // computed from the CURRENT model (before this message). The
@@ -607,7 +685,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
                 auto sub = detail::subs_of<P, Model, Msg>(model);
                 auto* rt = sub.route();
                 if (!rt) continue;   // app doesn't route: drop it
-                r = detail::dispatch<P>(std::move(model), rt->route(d->value), d->value);
+                r = detail::safe_dispatch<P>(std::move(model), rt->route(d->value), d->value, ok);
             } else if (d->msg == kTopicMsg) {
                 // A broadcast arrived on d->topic. Find the on_topic handler for
                 // that topic in the CURRENT subscription, map the payload to a
@@ -616,14 +694,14 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
                 const typename Sub<Msg>::OnTopic* h = nullptr;
                 for (auto* t : sub.topics()) if (t->topic == d->topic) { h = t; break; }
                 if (!h) continue;    // no longer subscribed: drop it
-                r = detail::dispatch<P>(std::move(model), h->on(d->value), d->value);
+                r = detail::safe_dispatch<P>(std::move(model), h->on(d->value), d->value, ok);
             } else {
-                r = detail::dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value);
+                r = detail::safe_dispatch<P>(std::move(model), static_cast<Msg>(d->msg), d->value, ok);
             }
             model = std::move(r.first);
             detail::perform<Msg>(s, r.second);
 
-            NodeRef next = P::view(model);
+            NodeRef next = detail::safe_view<P>(model);
             Patch patch = diff(prev, next);
             prev = next;
             if (!patch.empty())
@@ -643,14 +721,36 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
         return;
     }
 
-    // Initial HTML: a bare shell with #root, an empty <style id=wsheet> for the
-    // app's stylesheet, and the client. The surface fills in over the socket.
+    // ── SSR FIRST PAINT ────────────────────────────────────────────
+    // Render the app's CURRENT screen for the REQUESTED route directly into the
+    // initial HTML, plus its CSS inline. The browser shows real content on the
+    // first byte — no blank flash, works before/without JS, and is crawlable.
+    // The WebSocket then takes over live; its first full paint reconciles onto
+    // this SSR'd DOM (same node structure → usually a no-op).
+    std::string route = request_path(req);
+    auto [ssr_model, ssr_cmd] = detail::init_of<P, Model, Msg>();
+    (void)ssr_cmd;
+    // Route the model to the requested path so /about SSRs the about screen, etc.
+    {
+        auto sub = detail::subs_of<P, Model, Msg>(ssr_model);
+        if (auto* rt = sub.route()) {
+            bool ok=true;
+            auto r = detail::safe_dispatch<P>(std::move(ssr_model), rt->route(route), route, ok);
+            ssr_model = std::move(r.first);
+        }
+    }
+    NodeRef ssr_root = detail::safe_view<P>(ssr_model);
+    auto ssr = DomBackend{}.render(*ssr_root);   // {html, css}
+
+    // Initial HTML: the SSR'd surface in #root, the app's CSS inline (so it's
+    // styled on first paint), and the client script that upgrades to live.
     char bghex[8]; std::snprintf(bghex, sizeof(bghex), "#%06x", page_bg & 0xFFFFFF);
     std::string bg = bghex;
     std::string doc =
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">"
         "<meta name=\"theme-color\" content=\"" + bg + "\">"
+        "<title>" + [&]{ std::string t; for(const char* p=page_title; p&&*p; ++p){ char c=*p; if(c=='<')t+="&lt;"; else if(c=='>')t+="&gt;"; else if(c=='&')t+="&amp;"; else t+=c; } return t; }() + "</title>"
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
         // Root fills the viewport; overscroll is contained on html itself so the
@@ -703,11 +803,22 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
         // Respect the user's reduced-motion preference — accessibility, by default.
         "@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}"
         "</style>"
-        "<style id=\"wsheet\"></style>"
-        "</head><body><div id=\"root\"></div>" + client(port) + "</body></html>";
-    std::string http =
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-        "Content-Length: " + std::to_string(doc.size()) + "\r\nConnection: close\r\n\r\n" + doc;
+        "<style id=\"wsheet\">" + ssr.css + "</style>"
+        "</head><body><div id=\"root\">" + ssr.html + "</div>" + client(port) + "</body></html>";
+    std::string http;
+#ifdef WAYA_GZIP
+    if (accepts_gzip(req)) {
+        std::string gz = gzip(doc);
+        if (!gz.empty()) {
+            http = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                   "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n"
+                   "Content-Length: " + std::to_string(gz.size()) + "\r\nConnection: close\r\n\r\n" + gz;
+        }
+    }
+#endif
+    if (http.empty())
+        http = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+               "Content-Length: " + std::to_string(doc.size()) + "\r\nConnection: close\r\n\r\n" + doc;
     ::send(conn, http.data(), http.size(), 0);
     ::close(conn);
 }
@@ -751,7 +862,7 @@ int live(LiveConfig cfg = {}) {
     for (;;) {
         int conn = ::accept(lfd, nullptr, nullptr);
         if (conn < 0) { if (detail::g_fd < 0) break; continue; }
-        std::thread([conn, port=cfg.port, bg=cfg.page_bg]{ detail::handle<P>(conn, port, bg); }).detach();
+        std::thread([conn, port=cfg.port, bg=cfg.page_bg, title=cfg.title]{ detail::handle<P>(conn, port, bg, title); }).detach();
     }
     return 0;
 }

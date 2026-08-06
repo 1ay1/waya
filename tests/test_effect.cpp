@@ -219,6 +219,52 @@ int main() {
         detail::Hub::instance().remove(s3.get());
     }
 
+    // ── SSR/HTTP helpers: request path + gzip detection ────────────────────
+    CHECK(detail::request_path("GET /about?x=1 HTTP/1.1\r\n") == "/about?x=1");
+    CHECK(detail::request_path("GET / HTTP/1.1\r\n") == "/");
+    CHECK(detail::request_path("garbage") == "/");
+    CHECK(detail::accepts_gzip("GET / HTTP/1.1\r\nAccept-Encoding: gzip, deflate\r\n"));
+    CHECK(!detail::accepts_gzip("GET / HTTP/1.1\r\nAccept-Encoding: identity\r\n"));
+
+    // ── ERROR BOUNDARY: a throwing view()/update() is contained, not fatal ────
+    {
+        struct Boom {
+            struct Model { int n=0; };
+            using Msg = int;
+            static Model init(){ return {}; }
+            static Model update(Model m, Msg){ throw std::runtime_error("x"); return m; }
+            static NodeRef view(const Model& m){ if(m.n==7) throw std::runtime_error("boom"); return text("ok"); }
+        };
+        auto good = detail::safe_view<Boom>(Boom::Model{0});
+        CHECK(good && good->text == "ok");
+        auto bad = detail::safe_view<Boom>(Boom::Model{7});   // would throw
+        CHECK(bad != nullptr && bad->kind == Kind::markup);   // error card, not a crash
+        bool ok=true;
+        auto [m2, c2] = detail::safe_dispatch<Boom>(Boom::Model{3}, 0, std::string{}, ok);
+        CHECK(!ok);
+        CHECK(m2.n == 3);                                     // model unchanged on throw
+        CHECK((c2 == Cmd<int>::none()));
+    }
+
+    // ── SSR routing: the path picks the right screen at first-paint time ─────
+    {
+        struct App {
+            struct Model { std::string route="/"; };
+            using Msg = int;
+            static Model init(){ return {}; }
+            static std::pair<Model,Cmd<Msg>> update(Model m, Msg, std::string p){ m.route=p; return {m, Cmd<Msg>::none()}; }
+            static Sub<Msg> subscribe(const Model&){ return Sub<Msg>::on_route([](std::string){ return 1; }); }
+            static NodeRef view(const Model& m){ return text(m.route); }
+        };
+        auto [m0, c0] = detail::init_of<App, App::Model, App::Msg>();
+        auto sub = detail::subs_of<App, App::Model, App::Msg>(m0);
+        auto* rt = sub.route(); CHECK(rt != nullptr);
+        bool ok=true;
+        auto r = detail::safe_dispatch<App>(std::move(m0), rt->route("/about"), "/about", ok);
+        auto node = detail::safe_view<App>(r.first);
+        CHECK(node->text == "/about");     // SSR renders the requested route's screen
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
