@@ -284,6 +284,17 @@ inline Mod fg(std::uint32_t c){ return sty([=](Style& s){ s.has_fg=true; s.fg=c;
 inline Mod bg(std::uint32_t c){ return sty([=](Style& s){ s.has_bg=true; s.bg=c; }); }
 inline Mod font(Len sz){ return sty([=](Style& s){ s.font_size=sz; }); }
 inline Mod font(float px_){ return font(px(px_)); }
+/// `font_fluid(min_px, max_px)` — responsive type: the size scales with the
+/// viewport width between the two bounds, so a big heading shrinks on a phone
+/// instead of overflowing. Uses CSS clamp(); no media queries. `max` is also the
+/// desktop size. e.g. font_fluid(28, 76) — 28px on a phone up to 76px on desktop.
+inline Mod font_fluid(float min_px, float max_px){
+    // preferred = min + (max-min) scaled across ~[360px, 1200px] viewport.
+    float span = max_px - min_px;
+    std::string pref = std::to_string(min_px) + "px + " + std::to_string(span * 100.0f / 840.0f) + "vw";
+    return sty([=](Style& s){ s.extra.emplace_back("font-size",
+        "clamp(" + std::to_string(min_px) + "px, calc(" + pref + "), " + std::to_string(max_px) + "px)"); });
+}
 inline Mod weight(Weight w){ return sty([=](Style& s){ s.weight=w; }); }
 inline const Mod bold      = sty([](Style& s){ s.weight=Weight::bold; });
 inline const Mod semibold  = sty([](Style& s){ s.weight=Weight::semibold; });
@@ -300,6 +311,15 @@ inline const Mod truncate = sty([](Style& s){ s.extra.emplace_back("white-space"
 // ── box model ────────────────────────────────────────────────────────────────
 inline Mod pad(Len l){ return sty([=](Style& s){ s.pad=l; }); }
 inline Mod pad(float p){ return pad(px(p)); }
+/// `pad_fluid(min_px, max_px)` — padding that shrinks on small screens (clamp,
+/// scaled by viewport width). So a roomy card on desktop isn't cramped—or
+/// overflowing—on a phone. e.g. pad_fluid(16, 56).
+inline Mod pad_fluid(float min_px, float max_px){
+    float span = max_px - min_px;
+    return sty([=](Style& s){ s.extra.emplace_back("padding",
+        "clamp(" + std::to_string(min_px) + "px, calc(" + std::to_string(min_px) + "px + "
+        + std::to_string(span * 100.0f / 840.0f) + "vw), " + std::to_string(max_px) + "px)"); });
+}
 inline Mod pad_x(Len l){ return sty([=](Style& s){ s.pad_x=l; }); }
 inline Mod pad_x(float p){ return pad_x(px(p)); }
 inline Mod pad_y(Len l){ return sty([=](Style& s){ s.pad_y=l; }); }

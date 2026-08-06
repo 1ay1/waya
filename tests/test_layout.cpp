@@ -2,8 +2,8 @@
 /// primitives (no media queries), correct flex defaults, sizing intent.
 
 #include <waya/surface/layout.hpp>
+#include <waya/surface/sugar.hpp>
 #include <waya/surface/dom.hpp>
-
 #include <iostream>
 #include <string>
 
@@ -98,6 +98,56 @@ int main() {
         CHECK(has(html, "preserveAspectRatio=\"none\""));
         CHECK(has(html, "width:100%"));                 // fills the container
         CHECK(has(html, "non-scaling-stroke"));         // line stays crisp
+    }
+
+    // ── ZStack: stack() overlays children in one centred grid cell ─────────
+    {
+        auto c = css_of(stack(text("bg"), text("top")));
+        CHECK(has(c, "display:grid"));
+        CHECK(has(c, "place-items:center"));            // children centred
+        CHECK(has(c, ">*{grid-area:1/1}"));             // every child shares the cell (overlay)
+    }
+
+    // ── responsive shell helpers: page scrolls, app_shell is bounded ───────
+    {
+        auto c = css_of(page(0x0b1020, text("x")));
+        CHECK(has(c, "min-height:100dvh"));             // fills viewport (dynamic vh)
+        CHECK(has(c, "clamp("));                        // fluid padding
+        CHECK(!has(c, "max-height"));                   // page GROWS + scrolls (not capped)
+    }
+    {
+        auto c = css_of(app_shell(0x0b1020, text("x")));
+        CHECK(has(c, "height:100dvh"));                 // bounded to the screen
+        CHECK(has(c, "max-height:100dvh"));
+        CHECK(has(c, "overflow:hidden"));               // only inner scroll_fill scrolls
+    }
+    {
+        // scroll_fill takes leftover space and scrolls internally (composer-pin)
+        auto c = css_of(box(text("row")) | scroll_fill());
+        CHECK(has(c, "flex:1 1 auto"));
+        CHECK(has(c, "min-height:0"));                  // so the child can shrink → overflow engages
+        CHECK(has(c, "overflow-y:auto"));
+        CHECK(has(c, "-webkit-overflow-scrolling:touch"));
+    }
+    {
+        // centered caps width + centres, passes the height budget through
+        auto c = css_of(centered(42, text("x")));
+        CHECK(has(c, "max-width:42rem"));
+        CHECK(has(c, "margin-inline:auto"));
+        CHECK(has(c, "min-height:0"));
+    }
+
+    // ── fluid typography + spacing: clamp() so big text/pad shrink on phones ─
+    {
+        auto c = css_of(text("9") | font_fluid(40, 76));
+        CHECK(has(c, "font-size:clamp(40"));
+        CHECK(has(c, "76"));                            // desktop cap
+        CHECK(has(c, "vw"));                            // scales with viewport
+    }
+    {
+        auto c = css_of(box() | pad_fluid(16, 56));
+        CHECK(has(c, "padding:clamp(16"));
+        CHECK(has(c, "56"));
     }
 
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";

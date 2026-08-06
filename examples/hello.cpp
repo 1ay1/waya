@@ -3,6 +3,7 @@
 ///   cmake --build build -j && ./build/hello       # http://localhost:8080
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
 using namespace waya::surface;
 
@@ -21,18 +22,18 @@ struct Hello {
               | grow(1) | w(px(260))
               | transition() | on(Hover, css("transform","translateY(-4px)"));
         };
-        return col(
-            text("waya") | font(64) | weight(Weight::black)
+        return page(0x0b1020,
+            text("waya") | font_fluid(40, 64) | weight(Weight::black)
                 | css("background","linear-gradient(90deg,#818cf8,#22d3ee)")
                 | css("-webkit-background-clip","text") | css("background-clip","text")
                 | css("color","transparent"),
-            text("Describe what to render. waya owns how.") | fg(0x94a3b8) | font(20) | max_w(px(560)),
+            text("Describe what to render. waya owns how.") | fg(0x94a3b8) | font_fluid(16, 20) | max_w(px(560)),
             row(
                 card("One vocabulary", "box, text, image, path. A chart is one node."),
                 card("Substrate-free", "waya renders as HTML, canvas, whatever fits. You never know."),
                 card("In sync by delta", "The connection carries only what changed. Tiny, live, always.")
             ) | gap(16) | wrap
-        ) | gap(28) | pad(56) | bg(0x0b1020) | css("min-height","100vh");
+        ) | gap(28) | center;
     }
 };
 

@@ -59,7 +59,11 @@ private:
         // layout
         switch(s.flow){ case Flow::row:o+="display:flex;flex-direction:row;";break;
             case Flow::col:o+="display:flex;flex-direction:column;";break;
-            case Flow::stack:o+="display:grid;";break; case Flow::none:break; }
+            // stack = ZStack: a 1-cell grid where every child occupies the SAME
+            // cell (overlaid), centred by default. For badges, overlays, hero
+            // text on an image. The child-overlap rule is emitted in intern().
+            case Flow::stack:o+="display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;";break;
+            case Flow::none:break; }
         // Flex correctness: min-width:0 lets a flex CHILD shrink below its
         // content size. CSS defaults flex items to min-width:auto, which causes
         // overflow and breaks truncation/sidebars/wrapping — the classic flexbox
@@ -125,6 +129,8 @@ private:
         std::string name="ws-"; hex8(name, fnv1a(ident));
         std::string rule;
         if(!base.empty()){ rule += '.'; rule += name; rule += '{'; rule += base; rule += '}'; }
+        // ZStack: every direct child shares the single grid cell so they overlay.
+        if(s.flow==Flow::stack){ rule += '.'; rule += name; rule += ">*{grid-area:1/1}"; }
         std::string media;
         for(auto&[sel,st]:s.states){ std::string body=decls(*st, kind, false); if(body.empty()) continue;
             if(sel.rfind("@media",0)==0){ media += sel; media += "{."; media += name; media += '{'; media += body; media += "}}"; }

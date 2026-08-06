@@ -53,7 +53,11 @@ namespace waya::surface {
 /// interfaces, so other devices on your LAN (a phone, another laptop) can reach
 /// it at http://<this-machine-ip>:<port>/, not just localhost. Set host to
 /// "127.0.0.1" (or WAYA_HOST=127.0.0.1) to bind loopback-only.
-struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = true; };
+///
+/// `page_bg` is the color painted on html/body behind the app — set it to your
+/// app root's background so overscroll bounce, safe-area insets and the pre-paint
+/// flash all match (default: a dark slate). Also drives the mobile theme-color.
+struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = true; std::uint32_t page_bg = 0x0b1020; };
 
 /// A Surface Program: Model + Msg + init/update/view(->NodeRef). `update` may
 /// be `update(Model, Msg)` (taps) OR `update(Model, Msg, std::string value)`
@@ -517,7 +521,7 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
 }
 
 template <typename P>
-void handle(int conn, int port) {
+void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020) {
     using Model = typename P::Model;
     using Msg   = typename P::Msg;
 
@@ -641,16 +645,26 @@ void handle(int conn, int port) {
 
     // Initial HTML: a bare shell with #root, an empty <style id=wsheet> for the
     // app's stylesheet, and the client. The surface fills in over the socket.
+    char bghex[8]; std::snprintf(bghex, sizeof(bghex), "#%06x", page_bg & 0xFFFFFF);
+    std::string bg = bghex;
     std::string doc =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">"
-        "<meta name=\"theme-color\" content=\"#0b1020\">"
+        "<meta name=\"theme-color\" content=\"" + bg + "\">"
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
-        "html,body{height:100%}"
-        // Mobile touch hygiene: no 300ms tap delay / double-tap zoom jank, no
-        // grey tap flash, no rubber-band overscroll, no auto text inflation.
-        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
+        // Root fills the viewport; overscroll is contained on html itself so the
+        // rubber-band at the top/bottom never reveals anything behind the app.
+        "html,body{height:100%;min-height:100%}"
+        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none}"
+        // Hard stop against horizontal overflow: the viewport can never scroll
+        // sideways, so an over-wide element (huge text, a fixed-width block) is
+        // clipped/contained rather than pushing the whole page off to the right.
+        "html,body{overflow-x:hidden;max-width:100%}"
+        // The page background is painted on HTML+BODY (not just the app root), so
+        // there is NEVER white behind the app — not during overscroll bounce, not
+        // in the safe-area insets, not before the socket paints the first frame.
+        "html,body{background:" + bg + "}"
         "body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}"
         // A real sans-serif stack; force EVERY element (incl. form controls,
         // which don't inherit font by default) to use it — otherwise inputs and
@@ -666,10 +680,11 @@ void handle(int conn, int port) {
         "*{min-width:0;max-width:100%}"
         "svg{display:block}"
         "img,video{max-width:100%;height:auto}"
-        // #root is the page surface: full viewport, a centering flex column. The
-        // app's own root fills the width and its background paints the WHOLE
-        // page (no white gutters), while its children still size to content.
-        "#root{min-height:100vh;display:flex;flex-direction:column;align-items:stretch}"
+        // #root is the page surface: a full-viewport centering flex column that
+        // INHERITS the page background, so the app root's bg (opaque) paints over
+        // it and there are never white gutters. min-height uses dvh so it tracks
+        // the mobile browser chrome; the app root fills width + stretches.
+        "#root{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:stretch;background:inherit}"
         "#root>*{flex:1 0 auto}"
         "</style>"
         "<style id=\"wsheet\"></style>"
@@ -720,7 +735,7 @@ int live(LiveConfig cfg = {}) {
     for (;;) {
         int conn = ::accept(lfd, nullptr, nullptr);
         if (conn < 0) { if (detail::g_fd < 0) break; continue; }
-        std::thread([conn, port=cfg.port]{ detail::handle<P>(conn, port); }).detach();
+        std::thread([conn, port=cfg.port, bg=cfg.page_bg]{ detail::handle<P>(conn, port, bg); }).detach();
     }
     return 0;
 }

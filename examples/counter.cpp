@@ -6,6 +6,7 @@
 /// chaining attrs + tap(msg). waya renders it and streams only what changed.
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
 using namespace waya::surface;
 
@@ -28,16 +29,17 @@ struct Counter {
                  | pad_x(20) | pad_y(12) | bg(c) | round(12) | tap(msg)
                  | transition() | on(Hover, opacity(0.85f));
         };
-        return col(
-            text(m.n) | fg(0x818cf8) | font(88) | weight(Weight::black)
+        auto card = col(
+            text(m.n) | fg(0x818cf8) | font_fluid(56, 88) | weight(Weight::black)
                       | css("font-variant-numeric", "tabular-nums"),
             row(
                 btn("−", Dec, 0x334155),
                 btn("reset", Reset, 0x1e293b),
                 btn("+", Inc, 0x6366f1)
-            ) | gap(12)
-        ) | center | gap(28) | pad(48) | round(24) | bg(0x111827)
+            ) | gap(12) | wrap | center
+        ) | center | gap(28) | pad_fluid(28, 48) | round(24) | bg(0x111827)
           | shadow() | border(1, 0x1f2937);
+        return page(color::bg0, centered(24, card) | center);
     }
 };
 

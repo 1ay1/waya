@@ -16,6 +16,7 @@
 /// starts again. That reconciliation is the whole point of subscriptions.
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
 using namespace waya::surface;
 
@@ -74,31 +75,35 @@ struct Clock {
         // other (which would wastefully reuse the clock digit as the heading).
         NodeRef body = (m.route == "/about")
             ? col(
-                text("about") | fg(0xe2e8f0) | font(40) | weight(Weight::black),
+                text("about") | fg(0xe2e8f0) | font_fluid(30, 40) | weight(Weight::black),
                 text("A live clock built from pure update + effects-as-data. "
                      "The seconds tick over a WebSocket; only the digit that "
                      "changed is sent.") | fg(0x94a3b8) | font(16)
                      | css("max-width", "34rem") | css("line-height", "1.6")
               ) | key("screen:about") | gap(16) | center
             : col(
-                text(hhmmss(m.seconds)) | fg(0x818cf8) | font(76) | weight(Weight::black)
-                    | css("font-variant-numeric", "tabular-nums"),
+                text(hhmmss(m.seconds)) | fg(0x818cf8) | font_fluid(40, 76) | weight(Weight::black)
+                    | css("font-variant-numeric", "tabular-nums")
+                    | css("white-space", "nowrap"),
                 row(
                     pill(m.running ? "pause" : "start", Toggle, m.running ? 0x334155 : 0x6366f1),
                     pill("save", Save, 0x1e293b)
-                ) | gap(12),
+                ) | gap(12) | wrap | center,
                 (m.flash ? (text("saved ✓") | fg(0x34d399) | font(14) | semibold)
                          : (text("") | css("height", "1.25rem")))
               ) | key("screen:clock") | gap(24) | center;
 
-        return col(
+        auto card = col(
             row(
                 link("clock", GoHome,  m.route != "/about") | key("nav:clock"),
                 link("about", GoAbout, m.route == "/about") | key("nav:about")
-            ) | gap(20),
+            ) | gap(20) | center,
             body
-        ) | center | gap(36) | pad(56) | round(24) | bg(0x111827)
+        ) | center | gap(36) | pad_fluid(24, 56) | round(24) | bg(0x111827)
           | shadow() | border(1, 0x1f2937);
+
+        // Full-viewport page, card centred and width-capped — fits any phone.
+        return page(color::bg0, centered(30, card) | center);
     }
 
     static std::string hhmmss(int s) {

@@ -8,6 +8,7 @@
 /// (their DOM, and any focus/scroll, survives the reorder).
 
 #include <waya/surface/live.hpp>
+#include <waya/surface/sugar.hpp>
 
 #include <algorithm>
 #include <string>
@@ -87,8 +88,8 @@ struct Form {
         finalize(*listbox);
         listbox = listbox | gap(8);
 
-        return col(
-            text("Profile") | fg(0xe2e8f0) | font(32) | weight(Weight::black),
+        auto form_card = col(
+            text("Profile") | fg(0xe2e8f0) | font_fluid(26, 32) | weight(Weight::black),
 
             field("Name", txt(m.name, SetName, "Ada Lovelace")),
             field("Bio",  textarea(m.bio) | placeholder("A short bio…") | on_input(SetBio)
@@ -113,10 +114,11 @@ struct Form {
             text("Tasks (keyed — reordering slides rows, no re-render)")
                 | fg(0x94a3b8) | font(13) | semibold,
             listbox,
-            row(pill("▲ rotate up", Up, 0x334155), pill("▼ rotate down", Down, 0x6366f1)) | gap(10) | center
+            row(pill("▲ rotate up", Up, 0x334155), pill("▼ rotate down", Down, 0x6366f1)) | gap(10) | wrap | center
 
-        ) | gap(20) | pad(40) | round(20) | bg(0x111827) | shadow() | border(1, 0x1f2937)
-          | css("width", "min(90vw, 30rem)");
+        ) | gap(20) | pad_fluid(20, 40) | round(20) | bg(0x111827) | shadow() | border(1, 0x1f2937);
+
+        return page(0x0b1020, centered(30, form_card) | center);
     }
 };
 
