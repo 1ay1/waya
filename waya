@@ -93,45 +93,112 @@ describe() {
 }
 
 # ── Interactive picker ───────────────────────────────────────────────────────
-# Renders a numbered menu of the example targets (with blurbs) and echoes the
-# chosen target name on stdout. Returns non-zero if the user aborts. Requires a
-# TTY on stdin; callers gate on [ -t 0 ] before invoking.
-pick_example() {
-    _i=0
-    _names=""
-    printf '%bwaya%b pick an example:\n\n' "$C" "$Z" >&2
-    for _t in $(examples); do
-        _i=$((_i + 1))
-        _names="$_names $_t"
+# An arrow-key menu of the example targets (with blurbs). Up/Down (or k/j) move
+# the highlight, Enter selects, q or Esc quits; typing a digit jumps to that
+# row. The chosen target name is echoed on stdout (the menu itself is drawn on
+# stderr, so `$(pick_example)` captures only the name). Reads a TTY on stdin;
+# callers gate on [ -t 0 ]. Falls back to a numbered prompt where `stty` or
+# raw single-byte reads aren't available (e.g. some minimal shells).
+
+# Read one keypress from the tty into KEY as a symbolic name: up/down/enter/
+# quit/digit-N/other. Assumes the tty is already in raw (-icanon -echo) mode.
+_read_key() {
+    KEY=""
+    _c="$(dd bs=1 count=1 2>/dev/null </dev/tty | od -An -tu1 | tr -d ' ')"
+    [ -n "$_c" ] || { KEY=quit; return; }        # EOF -> treat as quit
+    case "$_c" in
+        10|13) KEY=enter ;;                        # LF / CR
+        113|81) KEY=quit ;;                        # q / Q
+        107) KEY=up ;;                             # k
+        106) KEY=down ;;                           # j
+        27)                                        # Esc: bare, or CSI arrow
+            _b="$(dd bs=1 count=1 2>/dev/null </dev/tty | od -An -tu1 | tr -d ' ')"
+            if [ "$_b" = 91 ] || [ "$_b" = 79 ]; then   # '[' or 'O'
+                _d="$(dd bs=1 count=1 2>/dev/null </dev/tty | od -An -tu1 | tr -d ' ')"
+                case "$_d" in 65) KEY=up ;; 66) KEY=down ;; *) KEY=other ;; esac
+            else
+                KEY=quit                           # lone Esc
+            fi ;;
+        4|3) KEY=quit ;;                           # Ctrl-D / Ctrl-C
+        4[89]|5[0-7]) KEY="digit-$((_c - 48))" ;;  # '0'..'9'
+        *) KEY=other ;;
+    esac
+}
+
+# Draw the menu with row $_cur highlighted. First call just prints; later calls
+# move the cursor back up over the previous render so it repaints in place.
+_draw_menu() {
+    [ "${_drawn:-0}" = 1 ] && printf '\033[%dA' "$_count" >&2   # cursor up N rows
+    _n=0
+    for _t in $_names; do
+        _n=$((_n + 1))
         _d="$(describe "$_t")"
-        printf '  %b%2d%b  %b%-10s%b  %s\n' "$G" "$_i" "$Z" "$B" "$_t" "$Z" "$_d" >&2
+        printf '\033[2K' >&2                       # clear the whole line
+        if [ "$_n" = "$_cur" ]; then
+            printf '  %b> %-10s%b  %s\n' "$G$B" "$_t" "$Z" "$_d" >&2
+        else
+            printf '    %b%-10s%b  %s\n' "$B" "$_t" "$Z" "$_d" >&2
+        fi
     done
-    _count=$_i
+    _drawn=1
+}
+
+# The plain fallback: numbered list + typed choice (the pre-arrow behaviour).
+_pick_numbered() {
+    _i=0
+    for _t in $_names; do
+        _i=$((_i + 1))
+        printf '  %b%2d%b  %b%-10s%b  %s\n' "$G" "$_i" "$Z" "$B" "$_t" "$Z" "$(describe "$_t")" >&2
+    done
     printf '\n%bwaya%b choose 1-%d or a name (Enter=1, q=quit): ' "$C" "$Z" "$_count" >&2
     IFS= read -r _sel </dev/tty || { printf '\n' >&2; return 1; }
+    case "$_sel" in q|Q|quit|exit) return 1 ;; '') _sel=1 ;; esac
     case "$_sel" in
-        q|Q|quit|exit) return 1 ;;
-        '') _sel=1 ;;
+        *[!0-9]*) ;;                                # a name; validated below
+        *) if [ "$_sel" -ge 1 ] 2>/dev/null && [ "$_sel" -le "$_count" ]; then
+               _n=0; for _t in $_names; do _n=$((_n + 1)); [ "$_n" -eq "$_sel" ] && { printf '%s' "$_t"; return 0; }; done
+           fi
+           printf '%bwaya%b %berror%b no example #%s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2; return 1 ;;
     esac
-    # numeric choice -> map to the Nth name
-    case "$_sel" in
-        *[!0-9]*) : ;;  # not a pure number, treat as a name below
-        *)
-            if [ "$_sel" -ge 1 ] 2>/dev/null && [ "$_sel" -le "$_count" ]; then
-                _n=0
-                for _t in $_names; do
-                    _n=$((_n + 1))
-                    [ "$_n" -eq "$_sel" ] && { printf '%s' "$_t"; return 0; }
-                done
-            fi
-            printf '%bwaya%b %berror%b no example #%s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2
-            return 1 ;;
-    esac
-    # name choice -> accept if it is a real target
-    for _t in $_names; do
-        [ "$_t" = "$_sel" ] && { printf '%s' "$_t"; return 0; }
+    for _t in $_names; do [ "$_t" = "$_sel" ] && { printf '%s' "$_t"; return 0; }; done
+    printf '%bwaya%b %berror%b unknown example: %s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2; return 1
+}
+
+pick_example() {
+    _names=""; _count=0
+    for _t in $(examples); do _names="$_names $_t"; _count=$((_count + 1)); done
+    [ "$_count" -gt 0 ] || { printf '%bwaya%b %berror%b no examples found\n' "$C" "$Z" "$R" "$Z" >&2; return 1; }
+    printf '%bwaya%b pick an example  %b(up/down, Enter, q)%b\n\n' "$C" "$Z" "$Y" "$Z" >&2
+
+    # No raw-mode tty control? Degrade to the typed-number prompt.
+    if ! command -v stty >/dev/null 2>&1 || ! command -v dd >/dev/null 2>&1; then
+        _pick_numbered; return
+    fi
+    _saved="$(stty -g </dev/tty 2>/dev/null)" || { _pick_numbered; return; }
+    # Restore the terminal + hide-cursor on any exit path (select, quit, Ctrl-C).
+    trap 'stty "$_saved" </dev/tty 2>/dev/null; printf "\033[?25h" >&2' EXIT INT TERM
+    stty -icanon -echo min 1 time 0 </dev/tty 2>/dev/null || { _pick_numbered; return; }
+    printf '\033[?25l' >&2                          # hide cursor
+
+    _cur=1; _drawn=0
+    _draw_menu
+    while :; do
+        _read_key
+        case "$KEY" in
+            up)    [ "$_cur" -gt 1 ] && _cur=$((_cur - 1)) || _cur="$_count"; _draw_menu ;;
+            down)  [ "$_cur" -lt "$_count" ] && _cur=$((_cur + 1)) || _cur=1; _draw_menu ;;
+            digit-*) _j="${KEY#digit-}"
+                     [ "$_j" -ge 1 ] && [ "$_j" -le "$_count" ] && { _cur="$_j"; _draw_menu; } ;;
+            enter) break ;;
+            quit)  stty "$_saved" </dev/tty 2>/dev/null; printf '\033[?25h' >&2; trap - EXIT INT TERM; return 1 ;;
+            *) : ;;
+        esac
     done
-    printf '%bwaya%b %berror%b unknown example: %s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2
+
+    stty "$_saved" </dev/tty 2>/dev/null; printf '\033[?25h' >&2; trap - EXIT INT TERM
+    # Emit the highlighted target on stdout.
+    _n=0
+    for _t in $_names; do _n=$((_n + 1)); [ "$_n" -eq "$_cur" ] && { printf '%s' "$_t"; return 0; }; done
     return 1
 }
 
@@ -310,7 +377,7 @@ ${B}Commands:${Z}
   dev [target]       watch, rebuild & live-reload   (default target: counter)
   build [target]     configure if needed, then build one target
   run [target]       build then run the server      (alias: serve)
-  pick               interactively choose an example, then run it
+  pick               interactively choose an example (arrow keys), then run
   list               list the example targets
   clean              remove the build directory
   doctor             check cmake / compiler / file watcher
@@ -325,7 +392,7 @@ ${B}Options${Z} (for dev / build / run):
 
 ${B}Examples:${Z}
   waya new my-app && cd my-app && waya run
-  waya pick                       # menu of examples, run your choice
+  waya pick                       # arrow-key menu, run your choice
   waya run                        # no target -> interactive picker
   waya dev palette
   waya run counter --port 9000 --no-open
