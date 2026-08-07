@@ -291,14 +291,95 @@ template <typename... Cs> NodeRef board(Len item_w, Cs... cs){
 // area) live in node.hpp as first-class Flow::grid vocabulary. `columns()` below
 // is the convenience BUILDER for the most common case: a fixed n-column table.
 
-/// `columns(n, cells…)` — a fixed n-column grid box; the cells align down the
-/// page. `columns(3, header0,header1,header2, a0,a1,a2, b0,b1,b2)` is a table.
+/// `columns(n, cells…)` — an n-column grid that is RESPONSIVE BY DEFAULT: it
+/// shows up to `n` equal columns, and drops to fewer (…down to 1) all by itself
+/// as the container narrows — no media query, no breakpoint. The trick is a
+/// per-column floor: each track wants at least `min` wide, so once `n` of them
+/// won't fit, `auto-fit` wraps. Pass `min` to tune the collapse point
+/// (default 12rem ≈ a comfortable card).
+///
+///   columns(4, a, b, c, d)            // 4-up on desktop, 2-up on a tablet, 1 on phone
+///   columns(3, a, b, c, min: rem(16)) // collapses sooner
 template <typename... Cs> NodeRef columns(int n, Cs... cs){
     std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
     auto box_ = box(); box_->kids = std::move(k);
     box_->style.flow = Flow::grid;
-    box_->style.extra.emplace_back("grid-template-columns","repeat("+std::to_string(n)+",minmax(0,1fr))");
+    // auto-fit + a min() floor => up to n columns, wrapping down on its own.
+    // 100%/(n) - a hair keeps exactly n at full width, then peels off columns
+    // as space shrinks. max(<min>, …) stops it going below a readable width.
+    const std::string per = "calc(100% / " + std::to_string(n) + " - 0.01px)";
+    box_->style.extra.emplace_back("grid-template-columns",
+        "repeat(auto-fit, minmax(max(12rem, " + per + "), 1fr))");
     finalize(*box_); return box_;
+}
+
+/// `columns_min(n, min, cells…)` — like `columns` but with an explicit collapse
+/// floor (each column stays >= `min` before the grid wraps to fewer).
+template <typename... Cs> NodeRef columns_min(int n, Len min, Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    auto box_ = box(); box_->kids = std::move(k);
+    box_->style.flow = Flow::grid;
+    std::string mn = std::to_string((int)min.value) + (min.unit==Unit::rem?"rem":"px");
+    const std::string per = "calc(100% / " + std::to_string(n) + " - 0.01px)";
+    box_->style.extra.emplace_back("grid-template-columns",
+        "repeat(auto-fit, minmax(max(" + mn + ", " + per + "), 1fr))");
+    finalize(*box_); return box_;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Whole-page grid layouts — one call = one dashboard shape. (For the app
+//  ROOT wrapper see page()/app_shell()/centered() in sugar.hpp.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// `dashboard(min_col, panels…)` — the panel grid: as many equal columns as fit
+/// at >= `min_col` wide, every row STRETCHED so panels sharing a row are the
+/// same height (charts/cards line up). The monitoring/instrument shape in one
+/// call — like `grid(min_col, …)` but height-aligned.
+///
+///   dashboard(rem(26), cpuPanel, memPanel, netPanel, diskPanel)
+template <typename... Cs> NodeRef dashboard(Len min_col, Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    std::string mc = std::to_string((int)min_col.value) + (min_col.unit==Unit::rem?"rem":"px");
+    auto n = box(); n->kids = std::move(k);
+    n->style.flow = Flow::grid;
+    n->style.extra.emplace_back("grid-template-columns","repeat(auto-fit,minmax(min(" + mc + ",100%),1fr))");
+    n->style.extra.emplace_back("align-items","stretch");
+    n->style.gap = px(18);
+    finalize(*n); return n;
+}
+
+/// `holy_grail(header, nav, main, aside, footer)` — the classic five-region
+/// page band: full-width header + footer, and a middle row of nav | main |
+/// aside that WRAPS to a single column on narrow screens by itself (no
+/// breakpoint). `main` takes the leftover width; the rails are fixed-ish.
+/// Pass `nullptr` for any region you don't need. Wrap the result in
+/// page()/app_shell() for the coloured root.
+inline NodeRef holy_grail(NodeRef header, NodeRef nav, NodeRef main_,
+                          NodeRef aside, NodeRef footer,
+                          Len rail = rem(14)){
+    auto rail_s = std::to_string((int)rail.value) + (rail.unit==Unit::rem?"rem":"px");
+    auto railed = [&](NodeRef r){
+        if(!r) return;
+        r->style.extra.emplace_back("flex","0 1 " + rail_s);
+        r->style.min_w = px(0); finalize(*r);
+    };
+    railed(nav); railed(aside);
+    if(main_){ main_->style.has_grow=true; main_->style.grow=999;
+               main_->style.extra.emplace_back("flex-basis","60%");
+               main_->style.min_w = px(0); finalize(*main_); }
+    auto band = box();
+    if(nav)   band->kids.push_back(nav);
+    if(main_) band->kids.push_back(main_);
+    if(aside) band->kids.push_back(aside);
+    band->style.flow = Flow::row; band->style.wrap = Wrap::wrap;
+    band->style.gap = px(16); band->style.has_grow=true; band->style.grow=1;
+    finalize(*band);
+    auto n = col();
+    if(header) n->kids.push_back(header);
+    n->kids.push_back(band);
+    if(footer) n->kids.push_back(footer);
+    n->style.gap = px(16); n->style.min_h = Len{100, Unit::vh};
+    finalize(*n); return n;
 }
 
 } // namespace waya::surface

@@ -970,6 +970,28 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     }
     detail::begin_msg_capture();
     detail::memo_begin_frame();
+
+    // Per-route HTTP outcome: an app may declare `static HttpResult
+    // http_status(const Model&)` to return the RIGHT status for this route — a
+    // real 404 for an unknown page, a 301/302 redirect, custom caching, cookies.
+    // Defaults to a cacheless 200. A redirect short-circuits (no body rendered).
+    HttpResult hr;
+    if constexpr (requires { P::http_status(ssr_model); }) {
+        hr = P::http_status(ssr_model);
+    }
+    if (hr.is_redirect()) {
+        std::string extra = "Location: " + hr.location + "\r\n";
+        for (auto& c : hr.cookies)         extra += "Set-Cookie: " + c + "\r\n";
+        for (auto& [k,v] : hr.headers)     extra += k + ": " + v + "\r\n";
+        std::string rr = http_response(hr.status_line(), "text/html; charset=utf-8",
+                                       "<a href=\"" + hr.location + "\">Redirecting…</a>",
+                                       extra, head_only);
+        send_all(conn, rr.data(), rr.size());
+        access_log(method, route, hr.status);
+        ::close(conn);
+        return;
+    }
+
     NodeRef ssr_root = detail::safe_view<P>(ssr_model);   // captures tokens into a fresh table
     auto ssr = DomBackend{}.render(*ssr_root);   // {html, css}
     detail::memo_reset();   // SSR is a one-shot on this thread; start clean next time

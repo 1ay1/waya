@@ -23,6 +23,7 @@
 
 #include "theme.hpp"
 #include "../surface/sugar.hpp"
+#include "../surface/layout.hpp"
 
 namespace waya::ui {
 
@@ -301,6 +302,73 @@ inline NodeRef toast(std::string message, Tone tone = Tone::neutral){
         | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
         | detail::raw_css("box-shadow","0 10px 30px rgba(0,0,0,.4)")
         | detail::raw_css("pointer-events","auto") | slide_in(220);
+}
+
+// ── dashboard primitives ────────────────────────────────────────────
+// The pieces you reach for when building an instrument/monitoring UI: a
+// titled panel with an accent rail, a labelled slider row, and a media
+// scope that fills its panel. All token-themed (fg_text / fg_muted /
+// bg_surface / --wa-line), so `theme(t)` on the root recolours them.
+
+/// `panel(title, subtitle, body)` — a card with a titled header: an accent
+/// rail, a title + subtitle stack, and the body below. Pass `accent` to tint
+/// the rail; pass `header_extra` for a top-right control (an expand button, a
+/// live badge). The body GROWS to fill the card height, so panels sharing a
+/// grid row line up and content like a bar chart soaks up the space.
+///
+///   panel("CPU", "last 60s", spark) | h_full
+///   panel("Map", "live", scope(svg), 0x22d3ee, expand_btn)
+inline NodeRef panel(std::string title, std::string subtitle, NodeRef body,
+                     std::uint32_t accent = 0x6d7cff, NodeRef header_extra = nullptr){
+    auto rail = box() | detail::raw_css("width","3px") | detail::raw_css("height","18px")
+        | round(2) | detail::raw_css("background", detail::hexstr(accent))
+        | glow(accent, 10);
+    auto titles = col(
+        text(std::move(title)) | fg_text | detail::raw_css("font-size","14px")
+            | weight(Weight::bold) | detail::raw_css("letter-spacing","-0.01em"),
+        when(!subtitle.empty(), [&]{
+            return text(std::move(subtitle)) | fg_muted | detail::raw_css("font-size","11px"); })
+    ) | gap(2);
+    auto head = row(rail, titles, box() | grows,
+                    when(header_extra != nullptr, [&]{ return header_extra; }))
+        | gap(10) | items_center | w_full;
+    return col(head, box(std::move(body)) | grows | min_h(0) | w_full)
+        | gap(14) | pad(18) | round(16) | h_full
+        | detail::raw_css("background","var(--wa-surface, #0b1120)")
+        | border_token()
+        | detail::raw_css("box-shadow","0 24px 60px -30px rgba(0,0,0,.7)");
+}
+
+/// `slider_row(label, control, value_text)` — the canonical dial: a label on
+/// the left, a live value on the right, and the control (a `range_input`,
+/// usually) full-width beneath. Wire the control yourself so the Msg stays
+/// yours:
+///
+///   slider_row("Gain", range_input(v,0,100) | on_input(...) , v + " dB")
+inline NodeRef slider_row(std::string label, NodeRef control, std::string value_text = "",
+                          std::uint32_t value_color = 0x22d3ee){
+    return col(
+        row(text(std::move(label)) | fg_muted | detail::raw_css("font-size","12px") | medium,
+            box() | grows,
+            when(!value_text.empty(), [&]{
+                return text(std::move(value_text))
+                    | detail::raw_css("color", detail::hexstr(value_color))
+                    | detail::raw_css("font-size","12px") | weight(Weight::bold) | tabular_nums; }))
+            | items_center | w_full,
+        std::move(control) | w_full
+    ) | gap(6) | w_full;
+}
+
+/// `scope(content)` — a framed media viewport for an SVG / canvas / <img> that
+/// should FILL its panel. Clips, rounds, sizes to the panel, and gives the
+/// child `width/height:100%`. The everyday "put this visualisation in a card"
+/// container. `min_px` sets a height floor so it never collapses.
+inline NodeRef scope(NodeRef content, int min_px = 180){
+    return box(std::move(content) | w_full | h_full | detail::raw_css("line-height","0"))
+        | w_full | grows | round(12) | clip_content
+        | detail::raw_css("min-height", std::to_string(min_px) + "px")
+        | detail::raw_css("background","var(--wa-bg, #060a14)")
+        | border_token();
 }
 
 } // namespace waya::ui

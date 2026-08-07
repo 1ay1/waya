@@ -329,21 +329,45 @@ NodeRef sidebar_item(std::string ico, std::string label, bool active, Msg msg){
 
 /// `sidebar_shell(brand, nav_items, content)` — a full dashboard layout: a
 /// fixed, sticky sidebar (brand on top, nav below) beside a scrolling content
-/// column. The sidebar hides on phones so the app goes full-width. Wrap in your
-/// page root (`| theme(t) | bg_page`).
+/// column. On phones the sidebar is replaced by a sticky TOP BAR (brand + the
+/// same nav items as a horizontal scrolling strip), so navigation is always
+/// reachable — no dead-end full-width content. Wrap in your page root
+/// (`| theme(t) | bg_page`).
 inline NodeRef sidebar_shell(NodeRef brand, std::vector<NodeRef> nav_items, NodeRef content){
-    std::vector<NodeRef> rail; rail.push_back(std::move(brand));
+    // Desktop rail: brand + nav stacked, sticky, hidden on phones.
+    std::vector<NodeRef> rail; rail.push_back(brand);
     rail.push_back(box() | detail::raw_css("height","8px"));
-    for (auto& it : nav_items) rail.push_back(std::move(it));
-    auto sidebar = col_(std::move(rail)) | gap(4) | pad(18) | w(240)
+    for (auto& it : nav_items) rail.push_back(it);
+    auto sidebar = col_(rail) | gap(4) | pad(18) | w(240)
         | detail::raw_css("height","100vh") | sticky_top(0)
         | detail::raw_css("background","var(--wa-surface, #0c1019)")
         | detail::raw_css("border-right","1px solid var(--wa-line, rgba(255,255,255,.08))")
         | only_desktop();
+
+    // Mobile top bar: brand on the left, nav items as a horizontal strip that
+    // scrolls if they overflow. Sticky at the top. Shown ONLY on phones.
+    std::vector<NodeRef> strip;
+    for (auto& it : nav_items) strip.push_back(it);
+    auto mobile_nav = col(
+        brand,
+        row_(strip) | gap(6)
+            | detail::raw_css("overflow-x","auto")
+            | detail::raw_css("flex-wrap","nowrap")
+            | detail::raw_css("-webkit-overflow-scrolling","touch")
+    ) | gap(12) | pad(14) | w_full | sticky_top(0)
+        | detail::raw_css("z-index","40")
+        | detail::raw_css("background","var(--wa-surface, #0c1019)")
+        | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.08))")
+        | only_phone();
+
     auto main_ = box(std::move(content)) | grow() | min_w(0)
         | pad_fluid(16, 32) | detail::raw_css("max-width","1400px");
-    return row(std::move(sidebar), std::move(main_)) | items_stretch
+    // Row on desktop (rail | content); on phone the rail collapses (only_desktop)
+    // and the mobile_nav sits above content — so we stack the shell in a column
+    // wrapper and put the desktop row inside.
+    auto content_col = col(mobile_nav, row(sidebar, std::move(main_)) | items_stretch | grows)
         | detail::raw_css("min-height","100vh") | w_full;
+    return content_col;
 }
 
 // ───────────────────────────────────────────────────────────────────────

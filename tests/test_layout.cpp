@@ -184,9 +184,11 @@ int main() {
         auto root = css_of(box() | theme(Theme{}));
         CHECK(has(root, "--wa-primary:"));
         CHECK(has(root, "--wa-surface:"));
-        CHECK(has(css_of(box() | bg_surface), "var(--wa-surface)"));
-        CHECK(has(css_of(text("x") | fg_primary), "var(--wa-primary)"));
-        CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line)"));
+        // tokens read the live CSS var WITH a dark-theme fallback so components
+        // stay legible even before theme() runs.
+        CHECK(has(css_of(box() | bg_surface), "var(--wa-surface,"));
+        CHECK(has(css_of(text("x") | fg_primary), "var(--wa-primary,"));
+        CHECK(has(css_of(box() | border_token()), "1px solid var(--wa-line,"));
         // the token MECHANISM: tint() recolours just the accent (core Theme)
         CHECK(has(css_of(box() | theme(Theme::dark().tint(0x22c55e))), "--wa-primary:#22c55e"));
         // themed() paints bg+text from vars with a smooth transition (live switch)
@@ -216,7 +218,19 @@ int main() {
         CHECK(has(css_of(box() | col_span(2)), "grid-column:span 2"));
         auto c = css_of(columns(3, text("a"), text("b"), text("c")));
         CHECK(has(c, "display:grid"));
-        CHECK(has(c, "repeat(3,minmax(0,1fr))"));
+        // columns() is now RESPONSIVE BY DEFAULT: up to 3 cols, collapsing on
+        // its own via auto-fit + a per-column floor (no media query).
+        CHECK(has(c, "repeat(auto-fit"));
+        CHECK(has(c, "calc(100% / 3"));
+        // columns_min lets you set the collapse floor explicitly.
+        auto cm = css_of(columns_min(4, rem(16), text("a"), text("b")));
+        CHECK(has(cm, "minmax(max(16rem"));
+        // Responsive shells are composed from below()/at() mods by the app —
+        // the framework ships the MECHANISM, not an opinionated nav component.
+        // A box that's a row on desktop and a column on phone:
+        auto shell = css_of(box() | on_desktop(horizontal) | on_phone(column));
+        CHECK(has(shell, "@media"));
+        CHECK(has(shell, "flex-direction:column"));
     }
 
     // ── rendering-correctness regressions ───────────────────────────

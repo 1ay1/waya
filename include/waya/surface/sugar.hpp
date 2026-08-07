@@ -90,21 +90,24 @@ inline Mod theme(const Theme& t){
 }
 
 // Token mods — use these instead of raw fg()/bg() to stay themeable. Each reads
-// the live CSS variable set by `theme(...)` at the root.
-inline Mod fg_token(const char* var){ return sty([=](Style& s){ s.extra.emplace_back("color", std::string("var(")+var+")"); }); }
-inline Mod bg_token(const char* var){ return sty([=](Style& s){ s.extra.emplace_back("background", std::string("var(")+var+")"); }); }
-inline const Mod fg_text    = fg_token("--wa-text");
-inline const Mod fg_muted   = fg_token("--wa-muted");
-inline const Mod fg_primary = fg_token("--wa-primary");
-inline const Mod fg_accent  = fg_token("--wa-accent");
-inline const Mod fg_on_primary = fg_token("--wa-on-primary");
-inline const Mod bg_surface = bg_token("--wa-surface");
-inline const Mod bg_raised  = bg_token("--wa-raised");
-inline const Mod bg_primary = bg_token("--wa-primary");
-inline const Mod bg_accent  = bg_token("--wa-accent");
-inline const Mod bg_page    = bg_token("--wa-bg");
+// the live CSS variable set by `theme(...)` at the root, WITH a sane dark-theme
+// fallback so components stay legible even when the app never calls theme().
+inline Mod fg_token(const char* var, const char* fallback){ return sty([=](Style& s){
+    s.extra.emplace_back("color", std::string("var(")+var+","+fallback+")"); }); }
+inline Mod bg_token(const char* var, const char* fallback){ return sty([=](Style& s){
+    s.extra.emplace_back("background", std::string("var(")+var+","+fallback+")"); }); }
+inline const Mod fg_text    = fg_token("--wa-text",  "#e8edf7");
+inline const Mod fg_muted   = fg_token("--wa-muted", "#93a1bd");
+inline const Mod fg_primary = fg_token("--wa-primary", "#6d7cff");
+inline const Mod fg_accent  = fg_token("--wa-accent",  "#22d3ee");
+inline const Mod fg_on_primary = fg_token("--wa-on-primary", "#ffffff");
+inline const Mod bg_surface = bg_token("--wa-surface", "#0b1120");
+inline const Mod bg_raised  = bg_token("--wa-raised",  "#0e162a");
+inline const Mod bg_primary = bg_token("--wa-primary", "#6d7cff");
+inline const Mod bg_accent  = bg_token("--wa-accent",  "#22d3ee");
+inline const Mod bg_page    = bg_token("--wa-bg",      "#05070d");
 /// `border_token()` — a 1px border in the theme's line colour.
-inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line)"); }); }
+inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line, rgba(255,255,255,.10))"); }); }
 
 // ── expressive building blocks ─ the things every real UI needs, one call ────
 /// `push()` — a flexible gap that shoves siblings apart. `row(logo, push(), menu)`

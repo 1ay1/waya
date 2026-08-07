@@ -19,6 +19,7 @@
 /// to make a waya app first-class for Google, Twitter, Slack, and friends.
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace waya::surface {
@@ -40,6 +41,68 @@ struct Meta {
     bool has() const {                // did the app set anything meaningful?
         return !title.empty() || !description.empty() || !canonical.empty()
             || !image.empty() || !json_ld.empty();
+    }
+};
+
+/// The HTTP outcome of an SSR request — the response status, an optional
+/// redirect, per-route cache policy, and cookies. An app declares
+/// `static HttpResult http_status(const Model&)` to make a route return the
+/// RIGHT status: a real 404 for an unknown page (so search engines don't index
+/// it), a 301/302 redirect, a 410 Gone, custom caching, or a Set-Cookie. Without
+/// it, every route is a cacheless 200 (fine for a simple app, wrong for SEO on a
+/// content site). Every field is optional.
+///
+///   static HttpResult http_status(const Model& m) {
+///       if (m.screen == NotFound) return HttpResult::not_found();
+///       if (m.screen == Moved)    return HttpResult::redirect("/new-home");   // 301
+///       return HttpResult::ok().cache(3600);   // 200, cache 1h at the CDN
+///   }
+struct HttpResult {
+    int status = 200;                       ///< HTTP status code (200/301/302/404/410/…)
+    std::string location;                   ///< redirect target (for 301/302/307/308)
+    long cache_seconds = -1;                ///< >=0 => Cache-Control: public,max-age=N; <0 => no-store
+    std::vector<std::string> cookies;       ///< raw Set-Cookie header values
+    std::vector<std::pair<std::string,std::string>> headers;  ///< extra response headers
+
+    // ── factories ──────────────────────────────────────────────────────────
+    static HttpResult ok()               { return {}; }
+    static HttpResult not_found()        { HttpResult r; r.status = 404; return r; }
+    static HttpResult gone()             { HttpResult r; r.status = 410; return r; }
+    static HttpResult status_(int code)  { HttpResult r; r.status = code; return r; }
+    /// A permanent (301) redirect — use for moved pages (passes SEO ranking on).
+    static HttpResult redirect(std::string to){ HttpResult r; r.status = 301; r.location = std::move(to); return r; }
+    /// A temporary (302) redirect — use for auth gates, A/B, transient moves.
+    static HttpResult temporary_redirect(std::string to){ HttpResult r; r.status = 302; r.location = std::move(to); return r; }
+
+    // ── chainable modifiers ──────────────────────────────────────────────
+    HttpResult& cache(long seconds){ cache_seconds = seconds; return *this; }
+    HttpResult& no_cache(){ cache_seconds = -1; return *this; }
+    HttpResult& cookie(std::string set_cookie_value){ cookies.push_back(std::move(set_cookie_value)); return *this; }
+    HttpResult& header(std::string name, std::string value){ headers.emplace_back(std::move(name), std::move(value)); return *this; }
+
+    bool is_redirect() const { return status/100 == 3 && !location.empty(); }
+
+    /// The status line text for the wire ("200 OK", "404 Not Found", …).
+    const char* status_line() const {
+        switch(status){
+            case 200: return "200 OK";
+            case 201: return "201 Created";
+            case 204: return "204 No Content";
+            case 301: return "301 Moved Permanently";
+            case 302: return "302 Found";
+            case 303: return "303 See Other";
+            case 307: return "307 Temporary Redirect";
+            case 308: return "308 Permanent Redirect";
+            case 400: return "400 Bad Request";
+            case 401: return "401 Unauthorized";
+            case 403: return "403 Forbidden";
+            case 404: return "404 Not Found";
+            case 410: return "410 Gone";
+            case 429: return "429 Too Many Requests";
+            case 500: return "500 Internal Server Error";
+            case 503: return "503 Service Unavailable";
+            default:  return "200 OK";
+        }
     }
 };
 
