@@ -120,7 +120,11 @@ NodeRef icon_button(std::string glyph, Msg msg, Variant v = Variant::ghost){
 inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
     auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
              | detail::raw_css("letter-spacing",".02em");
-    auto col_ = col(std::move(lab), std::move(control)) | gap(6);
+    // Wrap the label + control in a <label> element: clicking the label text
+    // focuses the control (implicit association), and screen readers announce
+    // them together — without needing to thread a matching id/for through.
+    auto col_ = col(std::move(lab), std::move(control)) | gap(6) | as("label")
+              | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
     if (!hint.empty())
         col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | detail::raw_css("font-size","12px")) | gap(6);
     return col_;
