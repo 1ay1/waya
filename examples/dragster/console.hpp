@@ -34,9 +34,9 @@ inline NodeRef hud_pill(std::string keytext, std::string label, Msg msg, std::ui
     waya::Color base = waya::rgb(c);
     auto chip = row(
         keycap(std::move(keytext), c, active),
-        text(std::move(label)) | fg(active ? base.lighten(0.4f).opaque() : 0xc3c9d6u)
-            | font(12) | weight(Weight::black) | tracking_em(0.1f) | term
-    ) | items_center | gap(8);
+        text(std::move(label)) | fg(active ? base.lighten(0.5f).opaque() : 0xd7dce8u)
+            | font(13) | weight(Weight::black) | tracking_em(0.06f) | term
+    ) | items_center | gap(9);
 
     auto b = box(chip)
         | pad_x(11) | pad_y(9) | round(px(10))

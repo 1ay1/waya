@@ -163,10 +163,10 @@ NodeRef tachometer(const Model& m) {
 
     return col(
         row(
-            text("TACH") | fg(rgb(0xffffff).alpha(0.4f)) | font(9) | term | weight(Weight::black) | uppercase | tracking_em(0.28f),
+            text("TACH") | fg(rgb(0xffffff).alpha(0.55f)) | font(10) | term | weight(Weight::bold) | uppercase | tracking_em(0.22f),
             spacer(),
             text(over ? "REDLINE!" : (lit >= N - 4 ? "SHIFT!" : ""))
-                | fg(over ? warn : amber) | font(10) | term | weight(Weight::black) | tracking_em(0.1f)
+                | fg(over ? warn : amber) | font(11) | term | weight(Weight::black) | tracking_em(0.12f)
                 | glow_text(over ? warn : amber, 8)
         ) | items_center | w_full,
         box(bar) | h(px(22)) | w_full | pad(px(4)) | round(px(6))

@@ -30,8 +30,12 @@ inline constexpr std::uint32_t amber     = 0xf0a81a; // caution
 inline constexpr std::uint32_t ink       = 0x101014;
 inline constexpr std::uint32_t inkSoft   = 0x2a2a30;
 
-// blocky retro mono (font_family is the real Mod).
+// Fonts. `term` = a clean geometric UI sans for labels/values (crisp, legible);
+// `mono` = a tabular monospace reserved for the big timer digits so they don't
+// jitter as they count.
 inline const Mod term = font_family(
-    "'Courier New',ui-monospace,'JetBrains Mono',Consolas,monospace");
+    "ui-sans-serif,system-ui,'Segoe UI',Inter,Roboto,'Helvetica Neue',Arial,sans-serif");
+inline const Mod mono_font = font_family(
+    "ui-monospace,'SF Mono','JetBrains Mono','Roboto Mono',Menlo,Consolas,monospace");
 
 } // namespace dr
