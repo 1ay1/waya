@@ -106,13 +106,23 @@ inline std::string_view attr_val(const Node& n, std::string_view key){
 /// A control has a name if it carries one directly (radio/checkbox group name,
 /// form field name) or via an explicit attr("name", …).
 inline bool has_name(const Node& n){ return !n.name.empty() || has_attr(n, "name"); }
-/// Does this node have an ACCESSIBLE label — visible text, an aria-label, an
-/// aria-labelledby, or a title? An interactive node with none is a screen-reader
-/// dead-end ("button" announced with no name).
+/// Does the subtree contain any visible TEXT (a text node, or a control/button
+/// with a label)? An icon-only button whose only child is a decorative SVG has
+/// none — so "has children" is NOT enough to count as labelled.
+inline bool has_text_in_subtree(const Node& n){
+    if (!n.text.empty() && (n.kind == Kind::text || n.kind == Kind::button)) return true;
+    for (auto& k : n.kids) if (k && has_text_in_subtree(*k)) return true;
+    return false;
+}
+/// Does this node have an ACCESSIBLE label — visible text ANYWHERE in its
+/// subtree, an aria-label/aria-labelledby, or a title? An interactive node with
+/// none is a screen-reader dead-end ("button" announced with no name). An
+/// icon-only button (its only child a decorative SVG) has no text, so it must
+/// carry an aria label — which is exactly the case this now catches.
 inline bool has_accessible_label(const Node& n){
-    if (!n.text.empty()) return true;
-    if (!n.kids.empty()) return true;   // could contain a labelling child (icon+text, etc.)
-    return has_attr(n, "aria-label") || has_attr(n, "aria-labelledby") || has_attr(n, "title");
+    if (has_attr(n, "aria-label") || has_attr(n, "aria-labelledby") || has_attr(n, "title"))
+        return true;
+    return has_text_in_subtree(n);
 }
 
 inline void walk(const Node& n, const std::string& path, bool in_form, bool in_interactive,

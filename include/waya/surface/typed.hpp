@@ -195,7 +195,9 @@ Styled<Ctx> operator|(Styled<Ctx> s, const Gate<Req>&) {
 template <typename... Cs> Styled<ctx::Flex>  Row(Cs... cs)  { return as_styled<ctx::Flex>(row(NodeRef(cs)...)); }
 template <typename... Cs> Styled<ctx::Flex>  Col(Cs... cs)  { return as_styled<ctx::Flex>(col(NodeRef(cs)...)); }
 template <typename... Cs> Styled<ctx::Grid>  Grid(Cs... cs) { return as_styled<ctx::Grid>(grid(NodeRef(cs)...)); }
-template <typename... Cs> Styled<ctx::Flex>  Stack(Cs... cs){ return as_styled<ctx::Flex>(stack(NodeRef(cs)...)); }
+// A ZStack renders `display:grid` (one overlaid cell), so its context is Grid,
+// not Flex — tagging it Flex was a type-lie about the layout it establishes.
+template <typename... Cs> Styled<ctx::Grid>  Stack(Cs... cs){ return as_styled<ctx::Grid>(stack(NodeRef(cs)...)); }
 template <typename... Cs> Styled<ctx::Block> Box(Cs... cs)  { return as_styled<ctx::Block>(box(NodeRef(cs)...)); }
 inline Styled<ctx::Inline> Text(std::string s){ return as_styled<ctx::Inline>(text(std::move(s))); }
 inline Styled<ctx::Inline> Text(long long v)  { return as_styled<ctx::Inline>(text(v)); }
