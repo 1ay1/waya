@@ -229,6 +229,18 @@ if(WAYA_BUILD_EXAMPLES)
         list(APPEND WAYA_EXAMPLE_TARGETS autorace)
     endif()
 
+    # Multi-file example: examples/dragster/ — a playable homage to Activision's
+    # Dragster (1980, David Crane). A best-time drag race played on a tachometer:
+    # build revs, shift up through 4 gears before the redline blows the engine,
+    # cross the strip in the fewest seconds. Server game-loop tick + hotkeys.
+    file(GLOB WAYA_DRAGSTER_SRCS CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/examples/dragster/*.cpp")
+    if(WAYA_DRAGSTER_SRCS)
+        add_executable(dragster ${WAYA_DRAGSTER_SRCS})
+        target_link_libraries(dragster PRIVATE waya::waya waya_dev_flags)
+        list(APPEND WAYA_EXAMPLE_TARGETS dragster)
+    endif()
+
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
     # Uses the first discovered example as the subject.
     if(WAYA_BUILD_TESTS AND UNIX AND WAYA_EXAMPLE_TARGETS)
