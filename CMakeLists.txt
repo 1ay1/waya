@@ -121,19 +121,30 @@ endif()
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    foreach(ex counter splash orbit studio pulse blog dash typed palette living showcase swarm nova)
-        add_executable(${ex} examples/${ex}.cpp)
+    # Targets are derived from examples/*.cpp automatically, so dropping a new
+    # file in examples/ creates a new target with no edit here. CONFIGURE_DEPENDS
+    # re-globs on build, so added/removed files are picked up without re-running
+    # cmake by hand.
+    file(GLOB WAYA_EXAMPLE_SRCS CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp")
+    set(WAYA_EXAMPLE_TARGETS "")
+    foreach(ex_src ${WAYA_EXAMPLE_SRCS})
+        get_filename_component(ex ${ex_src} NAME_WE)
+        add_executable(${ex} ${ex_src})
         target_link_libraries(${ex} PRIVATE waya::waya waya_dev_flags)
+        list(APPEND WAYA_EXAMPLE_TARGETS ${ex})
     endforeach()
 
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
-    if(WAYA_BUILD_TESTS AND UNIX)
+    # Uses the first discovered example as the subject.
+    if(WAYA_BUILD_TESTS AND UNIX AND WAYA_EXAMPLE_TARGETS)
         find_program(WAYA_CURL curl)
         if(WAYA_CURL)
+            list(GET WAYA_EXAMPLE_TARGETS 0 WAYA_SMOKE_TARGET)
             add_test(
                 NAME serve_smoke
                 COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/serve_smoke.sh
-                        $<TARGET_FILE:splash> 8137)
+                        $<TARGET_FILE:${WAYA_SMOKE_TARGET}> 8137)
         endif()
     endif()
 endif()

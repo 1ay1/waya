@@ -69,9 +69,14 @@ parse_opts() {
     REST="${REST# }"
 }
 
-# ── The example targets, scraped from CMakeLists.txt (single source of truth) ─
+# ── The example targets, discovered from examples/*.cpp (single source of truth) ─
+# Matches the CMake glob: every examples/<name>.cpp is a runnable target. No
+# hand-maintained list, so a new example file just appears in `waya list`/`pick`.
 examples() {
-    grep -oE 'foreach\(ex [^)]*' "$ROOT/CMakeLists.txt" 2>/dev/null | sed 's/foreach(ex //'
+    for _f in "$ROOT"/examples/*.cpp; do
+        [ -f "$_f" ] || continue                   # no matches -> skip the literal glob
+        _n="${_f##*/}"; printf '%s\n' "${_n%.cpp}"
+    done
 }
 
 # One-line blurb for an example, scraped from the first `///` (or `//`) comment
@@ -293,15 +298,91 @@ find_binary() {
     return 1
 }
 
+# Run one target's server in the background and return its PID in SRV_PID.
+# Output streams straight to the terminal (so app logs still show).
+_launch() {
+    _t="$1"
+    cmd_build "$_t" -d "$BUILD"
+    _bin="$(find_binary "$_t")" || die "no binary produced for '$_t'."
+    kill_port
+    if [ -t 0 ] && [ -t 2 ]; then
+        say "running ${B}$_t${Z}  ${Y}(press p to switch example, q to quit)${Z}"
+    else
+        say "running ${B}$_t${Z}  (Ctrl-C to stop)"
+    fi
+    # Detach the server's stdin from the terminal (</dev/null): otherwise the
+    # server inherits the tty on fd 0 and races the supervisor for keystrokes,
+    # swallowing the p / q control keys. The server doesn't read stdin anyway.
+    "$_bin" </dev/null &
+    SRV_PID=$!
+}
+
+# Stop the background server (TERM, then KILL) and wait for it to reap.
+_stop_server() {
+    [ -n "${SRV_PID:-}" ] || return 0
+    kill -TERM "$SRV_PID" 2>/dev/null
+    _w=0
+    while kill -0 "$SRV_PID" 2>/dev/null && [ "$_w" -lt 20 ]; do
+        sleep 0.1 2>/dev/null || sleep 1
+        _w=$((_w + 1))
+    done
+    kill -KILL "$SRV_PID" 2>/dev/null
+    wait "$SRV_PID" 2>/dev/null
+    SRV_PID=""
+}
+
 cmd_run() {
     parse_opts "$@"
     set -- $REST
     resolve_target "${1:-}"; target="$PICKED"
-    cmd_build "$target" -d "$BUILD"
-    bin="$(find_binary "$target")" || die "no binary produced for '$target'."
-    kill_port
-    say "running ${B}$target${Z}  (Ctrl-C to stop)"
-    exec "$bin"
+
+    # Non-interactive (CI, pipes) or no single-byte tty control: the classic
+    # behaviour -- build, exec the server, done. No hot-swap supervisor.
+    if ! { [ -t 0 ] && [ -t 2 ]; } || ! command -v stty >/dev/null 2>&1 || ! command -v dd >/dev/null 2>&1; then
+        cmd_build "$target" -d "$BUILD"
+        bin="$(find_binary "$target")" || die "no binary produced for '$target'."
+        kill_port
+        say "running ${B}$target${Z}  (Ctrl-C to stop)"
+        exec "$bin"
+    fi
+
+    # Interactive supervisor: run the server in the background and watch the
+    # tty for 'p' (re-pick + hot-swap) or 'q'/Ctrl-C (quit). Server output still
+    # streams to the terminal the whole time.
+    SRV_PID=""
+    _saved="$(stty -g </dev/tty 2>/dev/null)"
+    _restore() { [ -n "$_saved" ] && stty "$_saved" </dev/tty 2>/dev/null; }
+    trap '_restore; _stop_server; printf "\033[?25h" >&2; exit 0' INT TERM
+    trap '_restore; _stop_server' EXIT
+
+    _launch "$target"
+
+    while :; do
+        # If the server exited on its own (crash, or it's a one-shot), stop.
+        if [ -n "$SRV_PID" ] && ! kill -0 "$SRV_PID" 2>/dev/null; then
+            wait "$SRV_PID" 2>/dev/null; _rc=$?
+            _restore; trap - EXIT INT TERM
+            [ "$_rc" -eq 0 ] && exit 0
+            die "$target exited (status $_rc)."
+        fi
+        # Poll the tty ~1s at a time for a control key, without blocking output.
+        stty -icanon -echo min 0 time 10 </dev/tty 2>/dev/null || { wait "$SRV_PID" 2>/dev/null; break; }
+        _k="$(dd bs=1 count=1 2>/dev/null </dev/tty | od -An -tu1 | tr -d ' ')"
+        _restore
+        case "$_k" in
+            112|80)               # p / P -> switch example
+                printf '\n' >&2
+                _new="$(pick_example)" || { say "keeping ${B}$target${Z}."; continue; }
+                [ -n "$_new" ] || { say "keeping ${B}$target${Z}."; continue; }
+                _stop_server
+                target="$_new"
+                _launch "$target" ;;
+            113|81|3|4)           # q / Q / Ctrl-C / Ctrl-D -> quit
+                _stop_server; trap - EXIT INT TERM
+                say "stopped."; exit 0 ;;
+            *) : ;;               # timeout or other key -> keep serving
+        esac
+    done
 }
 
 cmd_list() {
@@ -377,6 +458,7 @@ ${B}Commands:${Z}
   dev [target]       watch, rebuild & live-reload   (default target: counter)
   build [target]     configure if needed, then build one target
   run [target]       build then run the server      (alias: serve)
+                     while running: p = switch example, q = quit
   pick               interactively choose an example (arrow keys), then run
   list               list the example targets
   clean              remove the build directory
