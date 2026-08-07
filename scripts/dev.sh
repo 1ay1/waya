@@ -65,8 +65,11 @@ TMP="${TMPDIR:-/tmp}/waya_build.$$.log"
 # ── Configure the build dir if needed (surface configure errors!) ────────────
 ensure_configured() {
     [ -f "$BUILD/CMakeCache.txt" ] && return 0
-    log "configuring ${B}${BUILD}${Z} (first run)..."
-    if ! cmake -S . -B "$BUILD" >"$TMP" 2>&1; then
+    # A waya app is a live server, so build optimised by default — an -O0 build
+    # feels laggy for real-time UIs. Override with WAYA_BUILD_TYPE=Debug.
+    _btype="${WAYA_BUILD_TYPE:-Release}"
+    log "configuring ${B}${BUILD}${Z} (${_btype}, first run)..."
+    if ! cmake -S . -B "$BUILD" -DCMAKE_BUILD_TYPE="$_btype" >"$TMP" 2>&1; then
         tail -n 25 "$TMP" 2>/dev/null
         die "cmake configure failed (see above). Fix the error, then re-run."
     fi
@@ -91,15 +94,18 @@ find_binary() {
 
 # ── Validate the target is real, with a helpful list on typo ─────────────────
 validate_target() {
-    # `cmake --build --target help` isn't portable across generators; instead we
-    # trust the first build to tell us. But we can catch the obvious typo early
-    # by checking known example targets declared in CMakeLists.txt.
-    known="$(grep -oE 'foreach\(ex [^)]*' CMakeLists.txt 2>/dev/null | sed 's/foreach(ex //')"
+    # Targets are examples/*.cpp (CMake auto-globs them). Derive the known list
+    # the same way so a typo is caught early with a helpful hint.
+    known=""
+    for _f in examples/*.cpp; do
+        [ -f "$_f" ] || continue
+        _n="${_f##*/}"; known="$known ${_n%.cpp}"
+    done
     [ -n "$known" ] || return 0                       # can't introspect; skip
     for t in $known; do [ "$t" = "$TARGET" ] && return 0; done
     # Not a known example - could still be a custom target, so warn (don't die).
     warn "'${B}${TARGET}${Z}' is not a known example target."
-    warn "known targets: ${known}"
+    warn "known targets:${known}"
     warn "continuing anyway in case it's a custom target..."
 }
 

@@ -218,7 +218,11 @@ resolve_target() {
         [ -n "$PICKED" ] || exit 0
         return 0
     fi
-    PICKED="counter"
+    # Non-interactive with no target: fall back to the FIRST example that
+    # exists (the set is discovered from examples/*.cpp), so a headless
+    # `waya run` still works even though there's no fixed default anymore.
+    PICKED="$(examples | head -1)"
+    [ -n "$PICKED" ] || die "no examples found in $ROOT/examples"
 }
 
 # Resolve $BUILD to an absolute path: absolute inputs (e.g. -d /tmp/x) are used
@@ -277,9 +281,13 @@ cmd_build() {
     resolve_target "${1:-}"; target="$PICKED"
     need_cmake
     bdir="$(abs_build)"
+    # A waya app is a live server (view+diff every frame), so an unoptimised
+    # build feels laggy for real-time UIs. Configure Release by default — the
+    # CLI's whole job is the happy path. Override with WAYA_BUILD_TYPE=Debug.
+    _btype="${WAYA_BUILD_TYPE:-Release}"
     [ -f "$bdir/CMakeCache.txt" ] || {
-        say "configuring ${B}$BUILD${Z}..."
-        cmake -S "$ROOT" -B "$bdir" || die "configure failed."
+        say "configuring ${B}$BUILD${Z} (${_btype})..."
+        cmake -S "$ROOT" -B "$bdir" -DCMAKE_BUILD_TYPE="$_btype" || die "configure failed."
     }
     say "building ${B}$target${Z}..."
     cmake --build "$bdir" --target "$target" ${JOBS:+-j "$JOBS"} \
@@ -455,7 +463,7 @@ ${B}Usage:${Z}  waya <command> [target] [options]
 
 ${B}Commands:${Z}
   new <name> [dir]   scaffold a fresh app (self-contained, fetches waya)
-  dev [target]       watch, rebuild & live-reload   (default target: counter)
+  dev [target]       watch, rebuild & live-reload   (no target -> picker)
   build [target]     configure if needed, then build one target
   run [target]       build then run the server      (alias: serve)
                      while running: p = switch example, q = quit
@@ -476,8 +484,8 @@ ${B}Examples:${Z}
   waya new my-app && cd my-app && waya run
   waya pick                       # arrow-key menu, run your choice
   waya run                        # no target -> interactive picker
-  waya dev palette
-  waya run counter --port 9000 --no-open
+  waya dev prism
+  waya run aurora --port 9000 --no-open
   waya list
 EOF
 }
