@@ -211,27 +211,41 @@ struct Swarm {
             ) | gap(2);
         };
 
-        auto header = row(
-            col(text("swarm") | fg(ink) | font(24) | bold,
-                text("tap a star before it drifts away \xE2\x80\x94 open two tabs, the board is shared") | fg(muted) | font(13)) | gap(2),
-            push(),
-            stat("score", std::to_string(m.score), brand2),
-            stat("combo", std::to_string(m.combo) + "x", m.combo > 3 ? good : ink),
-            stat("missed", std::to_string(m.missed), m.missed > 0 ? bad : muted)
-        ) | gap(28) | center | wrap;
+        // The header only changes when score/combo/missed change (on a pop),
+        // NOT on the 30fps drift tick — memo() by those props so the animation
+        // loop reuses the cached header node instead of rebuilding+rehashing it
+        // every frame. The diff then O(1)-skips it. This is the SOTA move: per
+        // tick we rebuild ONLY the handful of moving stars.
+        auto header = memo(m.score, m.combo, m.missed, [&]{
+            return row(
+                col(text("swarm") | fg(ink) | font(24) | bold,
+                    text("tap a star before it drifts away \xE2\x80\x94 open two tabs, the board is shared") | fg(muted) | font(13)) | gap(2),
+                push(),
+                stat("score", std::to_string(m.score), brand2),
+                stat("combo", std::to_string(m.combo) + "x", m.combo > 3 ? good : ink),
+                stat("missed", std::to_string(m.missed), m.missed > 0 ? bad : muted)
+            ) | gap(28) | center | wrap;
+        });
 
-        std::vector<NodeRef> rows;
-        if (m.board.empty()) {
-            rows.push_back(text("no scores yet \xE2\x80\x94 pop a star") | fg(faint) | font(13) | pad_y(12));
-        } else {
-            int rank = 0;
-            for (auto& b : m.board) rows.push_back(board_row(b, rank++, m.me));
-        }
-
-        auto board_card = col(
-            text("live leaderboard") | fg(muted) | font(12) | tracking(1.4f) | bold,
-            col_(std::move(rows)) | gap(6)
-        ) | gap(12) | pad(18) | round(16) | frost(10) | elevation(2) | min_w(rem(14));
+        // The leaderboard only changes when a score arrives (a broadcast), not
+        // on the drift tick. Fold the board into a cheap deps hash and memo the
+        // whole card by it — rebuilt only when the standings actually move.
+        std::uint64_t board_dep = m.board.size() * 1469598103934665603ull;
+        for (auto& b : m.board) { for (char c : b.name) board_dep = (board_dep ^ (unsigned char)c) * 1099511628211ull;
+                                  board_dep = (board_dep ^ (std::uint64_t)b.score) * 1099511628211ull; }
+        auto board_card = memo(board_dep, m.me, [&]{
+            std::vector<NodeRef> rows;
+            if (m.board.empty()) {
+                rows.push_back(text("no scores yet \xE2\x80\x94 pop a star") | fg(faint) | font(13) | pad_y(12));
+            } else {
+                int rank = 0;
+                for (auto& b : m.board) rows.push_back(board_row(b, rank++, m.me));
+            }
+            return col(
+                text("live leaderboard") | fg(muted) | font(12) | tracking(1.4f) | bold,
+                col_(std::move(rows)) | gap(6)
+            ) | gap(12) | pad(18) | round(16) | frost(10) | elevation(2) | min_w(rem(14));
+        });
 
         return col(
             header,
