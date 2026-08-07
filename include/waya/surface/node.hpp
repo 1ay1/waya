@@ -501,8 +501,15 @@ inline const Mod italic    = sty([](Style& s){ s.italic=true; });
 inline const Mod underline = sty([](Style& s){ s.underline=true; });
 inline const Mod strike    = sty([](Style& s){ s.strike=true; });
 inline Mod text_align(Justify j){ return sty([=](Style& s){ s.text_align=j; }); }
+/// text-align convenience consts (so you never need the Justify enum for text).
+inline const Mod text_center = sty([](Style& s){ s.text_align=Justify::center; });
+inline const Mod text_left   = sty([](Style& s){ s.text_align=Justify::start; });
+inline const Mod text_right  = sty([](Style& s){ s.text_align=Justify::end; });
 inline Mod leading(float lh){ return sty([=](Style& s){ s.has_lh=true; s.line_height=lh; }); }
 inline Mod tracking(float ls){ return sty([=](Style& s){ s.has_ls=true; s.letter_spacing=ls; }); }
+/// `tracking_em(v)` — letter-spacing in em (scales with font size). Negative
+/// tightens display headings: `tracking_em(-0.03f)`.
+inline Mod tracking_em(float em){ return sty([=](Style& s){ s.extra.emplace_back("letter-spacing", std::to_string(em)+"em"); }); }
 inline const Mod nowrap_text = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); });
 inline const Mod truncate = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); s.extra.emplace_back("overflow","hidden"); s.extra.emplace_back("text-overflow","ellipsis"); });
 /// `line_clamp(n)` — truncate multi-line text to n lines with an ellipsis.
@@ -589,9 +596,26 @@ inline const Mod justify_start   = sty([](Style& s){ s.justify=Justify::start; }
 inline const Mod justify_end     = sty([](Style& s){ s.justify=Justify::end; });
 inline const Mod justify_between = sty([](Style& s){ s.justify=Justify::between; });
 inline const Mod place_center  = sty([](Style& s){ if(s.flow==Flow::none) s.flow=Flow::row; s.justify=Justify::center; s.align=Align::center; });
+inline const Mod items_baseline = sty([](Style& s){ s.align=Align::baseline; });
 /// `center_x` — horizontally centre a block in its parent (the `margin:0 auto`
 /// pattern for a max-width page container).
 inline const Mod center_x = sty([](Style& s){ s.extra.emplace_back("margin-left","auto"); s.extra.emplace_back("margin-right","auto"); });
+/// `flex_1` — grow AND shrink to fill available space (the flex:1 shorthand).
+inline const Mod flex_1 = sty([](Style& s){ s.has_grow=true; s.grow=1; s.has_shrink=true; s.shrink=1; s.extra.emplace_back("flex-basis","0%"); });
+/// `flex_none` — don't grow or shrink (icons/avatars that must keep their size).
+inline const Mod flex_none = sty([](Style& s){ s.has_grow=true; s.grow=0; s.has_shrink=true; s.shrink=0; });
+/// `outline_none` — remove the default focus outline (pair with focus_ring for a
+/// nicer one; never remove it without a visible replacement).
+inline const Mod outline_none = sty([](Style& s){ s.extra.emplace_back("outline","none"); });
+/// `bg_none` — no background fill. `no_border` — remove any border. Together with
+/// `outline_none` these give an "unstyled" input that inherits its parent.
+inline const Mod bg_none   = sty([](Style& s){ s.extra.emplace_back("background","transparent"); });
+inline const Mod no_border = sty([](Style& s){ s.extra.emplace_back("border","none"); });
+/// `scroll_margin(px)` — offset an anchor target from the top when scrolled to
+/// (so a sticky header doesn't cover it). The #hash-link fix.
+inline Mod scroll_margin(float px_){ return sty([=](Style& s){ s.extra.emplace_back("scroll-margin-top", std::to_string((int)px_)+"px"); }); }
+/// `round_cap` — rounded ends on a drawn `path` stroke (charts, sparklines).
+inline const Mod round_cap = sty([](Style& s){ s.extra.emplace_back("stroke-linecap","round"); s.extra.emplace_back("stroke-linejoin","round"); });
 // Flex-direction as MODS (the col()/row() builders make containers; these flip
 // an existing container's axis — essential for responsive `on_phone(column)`).
 inline const Mod column     = sty([](Style& s){ s.flow=Flow::col; });
@@ -815,6 +839,8 @@ inline const Mod pre_wrap      = sty([](Style& s){ s.extra.emplace_back("white-s
 inline const Mod break_word    = sty([](Style& s){ s.extra.emplace_back("overflow-wrap","anywhere"); });
 /// overflow control, named.
 inline const Mod clip_content = sty([](Style& s){ s.extra.emplace_back("overflow","hidden"); });
+inline const Mod clip_x = sty([](Style& s){ s.extra.emplace_back("overflow-x","hidden"); });
+inline const Mod clip_y = sty([](Style& s){ s.extra.emplace_back("overflow-y","hidden"); });
 inline const Mod overflow_visible = sty([](Style& s){ s.extra.emplace_back("overflow","visible"); });
 /// interaction / selection.
 inline const Mod select_none = sty([](Style& s){ s.extra.emplace_back("user-select","none"); });
@@ -911,6 +937,10 @@ inline Mod frost(int blur_px=14, float alpha=0.05f){
         s.extra.emplace_back("border", "1px solid "+detail::rgba_hex(0xffffff, 0.12f));
         s.extra.emplace_back("backdrop-filter", "blur("+std::to_string(blur_px)+"px)");
         s.extra.emplace_back("-webkit-backdrop-filter", "blur("+std::to_string(blur_px)+"px)"); }); }
+/// `drop_shadow(color, blur, alpha)` — a coloured glow around a node's SHAPE
+/// (respects transparency and SVG paths, unlike box-shadow). Great for art/icons.
+inline Mod drop_shadow(std::uint32_t color, int blur_=24, float alpha=0.25f){ return sty([=](Style& s){
+    s.extra.emplace_back("filter", "drop-shadow(0 0 "+std::to_string(blur_)+"px "+detail::rgba_hex(color, alpha)+")"); }); }
 
 // ── the universal channel — reach ANY css, nothing off-limits ────────────
 // The escape hatches. They keep the vocabulary open-ended — but a team that

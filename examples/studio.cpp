@@ -54,13 +54,13 @@ struct Studio {
         auto header = row(
             col(
                 text("waya studio") | fg_text | display | font_fluid(32, 54) | weight(Weight::black)
-                    | css("letter-spacing","-.02em") | aurora_text(0x8b5cf6, 0x22d3ee, 0xf472b6, 8),
+                    | tracking_em(-0.02f) | aurora_text(0x8b5cf6, 0x22d3ee, 0xf472b6, 8),
                 text("design tokens, motion, glass — switch a theme, watch it flow")
                     | fg_muted | body
             ) | gap(8),
             push(),
             link("about") | tap(About{})
-        ) | fade_up(500) | css("align-items","flex-start");
+        ) | fade_up(500) | items_start;
 
         auto palette = card(
             text("Theme") | fg_muted | label,
@@ -81,14 +81,14 @@ struct Studio {
                     box() | size(px(40)) | round(12) | bg_accent | pulse(),
                     box() | size(px(40)) | round(12) | shimmer()
                 ) | gap(16) | center
-            ) | grow(1) | css("min-width", "14rem") | hover_lift(3),
+            ) | grow(1) | min_w(rem(14)) | hover_lift(3),
             card(
                 text("Type") | fg_muted | label,
                 text("Display") | fg_text | display | font(28),
                 text("Heading") | fg_text | heading,
                 text("Body text flows nicely.") | fg_muted | body,
                 text("CAPTION \u00b7 MONO") | fg_muted | caption | mono
-            ) | grow(1) | css("min-width", "14rem") | hover_lift(3)
+            ) | grow(1) | min_w(rem(14)) | hover_lift(3)
         ) | gap(20) | wrap | fade_up(700) | delay(120);
 
         auto buttons = card(

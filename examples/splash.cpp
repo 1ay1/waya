@@ -44,7 +44,7 @@ struct Splash {
         auto hero = col(
             pill,
             text("Build live UIs in C++") | display | weight(Weight::black)
-                | font_fluid(44, 84) | css("letter-spacing", "-.03em")
+                | font_fluid(44, 84) | tracking_em(-0.03f)
                 | aurora_text(0x818cf8, 0x22d3ee, 0xf472b6, 7) | fade_up(700),
             text("Describe what to render \u2014 waya owns how. Server-rendered, "
                  "keyed-diffed, themeable, and beautiful by default.")
@@ -60,16 +60,16 @@ struct Splash {
                 ) | gap(8) | center | pad_x(20) | pad_y(14) | round(12)
                   | frost(10) | interactive() | tap(Star{})
             ) | gap(14) | wrap | center | fade_up(900) | delay(160)
-        ) | gap(26) | center | css("text-align", "center");
+        ) | gap(26) | center | text_center;
 
         auto features = row(
             feature("\u26a1", "Real-time", "Only the changed nodes stream over a binary WebSocket. Instant.", 0x818cf8, 0x22d3ee, 1000),
             feature("\U0001f9ec", "Typed", "Messages are a std::variant \u2014 payloads, exhaustive matching, no strings.", 0x22d3ee, 0x34d399, 1120),
             feature("\U0001f3a8", "Beautiful", "Motion, glass, themes, aurora \u2014 every one a one-line mod.", 0xf472b6, 0x818cf8, 1240)
-        ) | gap(20) | wrap | css("width", "100%");
+        ) | gap(20) | wrap | w_full;
 
         return page(0x070912, centered(60, col(hero, features) | gap(60) | center) | center)
-             | mesh(0x6366f1, 0x22d3ee, 0x070912) | css("overflow-x", "hidden");
+             | mesh(0x6366f1, 0x22d3ee, 0x070912) | clip_x;
     }
 };
 

@@ -235,9 +235,9 @@ struct Blog {
         for (char c : name) { if (c==' ') { take=true; continue; } if (take && initials.size()<2) { initials += (char)std::toupper((unsigned char)c); take=false; } }
         std::uint32_t c = author_hue(name);
         return stack(text(initials) | fg(0x0b0e18) | weight(Weight::black) | font(px_*0.42f))
-             | css("width", std::to_string(px_)+"px") | css("height", std::to_string(px_)+"px")
-             | round(999) | css("background", "linear-gradient(135deg," + hex(c) + "," + hex(c) + "aa)")
-             | css("flex","0 0 auto") | css("place-items","center");
+             | square(px_)
+             | round(999) | gradient(c, c, 135)
+             | flex_none | place_center;
     }
 
     static std::string hex(std::uint32_t c) {
@@ -247,7 +247,7 @@ struct Blog {
     // A real <a href> anchor link (in-page nav to a heading, external URLs).
     static NodeRef alink(const std::string& label, const std::string& href) {
         return text(label) | as("a") | attr("href", href) | pointer
-             | on(Hover, css("text-decoration","underline"));
+             | on(Hover, underline);
     }
 
     // A reading-progress bar pinned to the very top that fills as you scroll the
@@ -325,13 +325,13 @@ struct Blog {
         chiprow->style.wrap = Wrap::wrap; finalize(*chiprow); chiprow = chiprow | gap(6);
         return col(
             row(text("FEATURED") | fg(brand2) | caption | mono | weight(Weight::black)
-                    | css("letter-spacing",".2em"),
+                    | tracking_em(0.2f),
                 push(),
                 row(text("\u2661") | fg(0xf472b6), text(std::to_string(p.likes)) | fg(muted) | caption) | gap(4) | center
             ) | center,
             text(p.title) | fg(ink) | display | font_fluid(26, 40) | weight(Weight::black)
-                | leading(1.1f) | css("letter-spacing","-.02em"),
-            text(p.excerpt) | fg(0xcbd5e1) | body | font(18) | leading(1.6f) | css("max-width","46rem"),
+                | leading(1.1f) | tracking_em(-0.02f),
+            text(p.excerpt) | fg(0xcbd5e1) | body | font(18) | leading(1.6f) | max_w(rem(46)),
             row(avatar(p.author, 32),
                 col(text(p.author) | fg(ink) | caption | semibold,
                     row(text(p.date) | fg(faint) | caption | mono, text("\u00b7") | fg(faint),
@@ -342,7 +342,7 @@ struct Blog {
             ) | gap(10) | center,
             (chiprow | gap(6))
         ) | gap(16) | pad_fluid(22, 34) | round(22)
-          | css("background", "linear-gradient(135deg, rgba(99,102,241,.14), rgba(34,211,238,.06))")
+          | tint(0x6366f1, 0.12f)
           | hairline(0xffffff, 0.10f) | hover_lift(3) | pointer | tap(Nav{"/post/" + p.slug});
     }
 
@@ -379,7 +379,7 @@ struct Blog {
             | placeholder("search " + std::to_string(m.posts.size()) + " posts\u2026")
             | on_input([](std::string v){ return SetQuery{v}; })
             | fg(ink) | tint(0xffffff, 0.04f) | hairline(0xffffff, 0.10f)
-            | pad_x(16) | pad_y(12) | round(12) | font(15) | css("width","100%");
+            | pad_x(16) | pad_y(12) | round(12) | font(15) | w_full;
 
         std::string countline = searching
             ? (std::to_string(hits.size()) + (hits.size()==1 ? " result" : " results") + " for \u201c" + m.query + "\u201d")
@@ -412,7 +412,7 @@ struct Blog {
         std::string esc; for (char c : code){ if(c=='<')esc+="&lt;"; else if(c=='>')esc+="&gt;"; else if(c=='&')esc+="&amp;"; else esc+=c; }
         return markup("<pre style=\"margin:0;overflow-x:auto\"><code>" + esc + "</code></pre>")
              | tint(0x000000, 0.35f) | hairline(0xffffff, 0.08f) | round(12) | pad(18)
-             | mono | fg(0xcbd5e1) | font(13) | css("line-height","1.6");
+             | mono | fg(0xcbd5e1) | font(13) | leading(1.6f);
     }
 
     static NodeRef post_view(const Model& m) {
@@ -428,12 +428,12 @@ struct Blog {
                 std::string anchor = "h" + std::to_string(hi++);
                 toc.emplace_back(anchor, txt);
                 blocks.push_back(text(txt) | fg(ink) | heading | font(25) | as("h2")
-                    | attr("id", anchor) | pad_y(4) | css("scroll-margin-top","84px"));
+                    | attr("id", anchor) | pad_y(4) | scroll_margin(84));
             }
             else if (kind=="code") blocks.push_back(code_block(txt));
             else if (kind=="quote") blocks.push_back(
                 text(txt) | fg(0xc7d2fe) | subtitle | italic | as("blockquote")
-                    | css("border-left","3px solid #6366f1") | pad_x(18) | pad_y(4) | leading(1.6f));
+                    | border_left(3, 0x6366f1) | pad_x(18) | pad_y(4) | leading(1.6f));
             else blocks.push_back(text(txt) | fg(0xcbd5e1) | body_txt() | font(18) | leading(1.8f) | as("p"));
         }
         std::vector<NodeRef> chips; for (auto& t : p->tags) chips.push_back(nav_tag(t));
@@ -444,10 +444,10 @@ struct Blog {
         if (toc.size() >= 2) {
             std::vector<NodeRef> links;
             links.push_back(text("ON THIS PAGE") | fg(faint) | caption | mono
-                | weight(Weight::black) | css("letter-spacing",".16em"));
+                | weight(Weight::black) | tracking_em(0.16f));
             for (auto& [anchor, label] : toc)
                 links.push_back(alink(label, "#" + anchor) | fg(muted) | caption
-                    | css("text-decoration","none"));
+                    | no_underline);
             toc_box = col_(std::move(links)) | gap(9) | pad(18) | round(14)
                 | tint(0xffffff, 0.03f) | hairline(0xffffff, 0.07f);
         }
@@ -456,7 +456,7 @@ struct Blog {
             link("\u2190 all posts") | caption | tap(Nav{"/"}),
             (chiprow | gap(6)),
             text(p->title) | fg(ink) | display | font_fluid(30, 50) | weight(Weight::black)
-                | css("letter-spacing","-.02em") | leading(1.08f),
+                | tracking_em(-0.02f) | leading(1.08f),
             text(p->excerpt) | fg(0x94a3b8) | subtitle | font(20) | leading(1.5f),
             row(avatar(p->author, 40),
                 col(text(p->author) | fg(ink) | body | semibold,
@@ -493,7 +493,7 @@ struct Blog {
                 text(label) | fg(faint) | caption | mono,
                 text(q->title) | fg(ink) | body | semibold | leading(1.3f)
             ) | gap(4);
-            if (right) inner = inner | css("text-align","right") | css("align-items","flex-end");
+            if (right) inner = inner | text_right | items_end;
             return inner | grow(1) | pad(16) | round(14)
                  | tint(0xffffff, 0.03f) | hairline(0xffffff, 0.07f)
                  | hover_lift(2) | pointer | tap(Nav{"/post/" + q->slug});
@@ -528,7 +528,7 @@ struct Blog {
         std::sort(sorted.begin(), sorted.end(), [](const Post&a,const Post&b){ return a.date>b.date; });
         for (auto& p : sorted)
             rows.push_back(row(
-                text(p.date) | fg(faint) | caption | mono | css("min-width","6rem"),
+                text(p.date) | fg(faint) | caption | mono | min_w(rem(6)),
                 text(p.title) | fg(ink) | body | grow(1) | pointer | tap(Nav{"/post/"+p.slug}),
                 text(std::to_string(p.minutes)+"m") | fg(muted) | caption
             ) | gap(14) | center | pad_y(10) | hairline_bottom());
@@ -587,7 +587,7 @@ struct Blog {
 
     // small helpers
     static Mod body_txt(){ return font(17); }
-    static Mod hairline_bottom(){ return css("border-bottom","1px solid rgba(255,255,255,.06)"); }
+    static Mod hairline_bottom(){ return border_bottom(1, 0xffffff); }
 
     static NodeRef view(const Model& m) {
         auto body = screens((int)m.screen, {
@@ -608,7 +608,7 @@ struct Blog {
         return row(text("\u00a9 2024 hypertext") | fg(faint) | caption,
                    push(),
                    text("rendered in C++ \u00b7 no CSS was harmed") | fg(faint) | caption)
-             | pad_y(28) | wrap | center | css("border-top","1px solid rgba(255,255,255,.06)");
+             | pad_y(28) | wrap | center | border_top(1, 0xffffff);
     }
 };
 

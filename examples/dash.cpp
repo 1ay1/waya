@@ -55,7 +55,7 @@ struct Dash {
 
     static NodeRef stat(std::string label, std::string value, std::string_view ic, Tone tone) {
         return card(
-            row(icon(ic, 18) | fg_primary, text(label) | fg_muted | css("font-size", "13px")) | gap(8) | center,
+            row(icon(ic, 18) | fg_primary, text(label) | fg_muted | font(13)) | gap(8) | center,
             text(value) | font(30) | bold,
             badge("+4.2%", tone)
         ) | gap(8) | w(pct_(100));
@@ -100,8 +100,8 @@ struct Dash {
                 badge(m.live ? "live" : "paused", m.live ? Tone::success : Tone::neutral)) | center,
             tabs(m.tab, {{0, "Overview"}, {1, "Team"}}, [](int i){ return Tab{ i }; }),
             body
-        ) | gap(20) | pad(28) | css("max-width", "820px") | css("margin", "0 auto")
-          | css("min-height", "100dvh") | theme(midnight());
+        ) | gap(20) | pad(28) | max_w(820) | center_x
+          | h_screen | theme(midnight());
     }
 };
 

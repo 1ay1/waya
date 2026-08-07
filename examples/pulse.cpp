@@ -59,13 +59,13 @@ struct Pulse {
     static NodeRef metric(std::string name, int pct, std::uint32_t c) {
         return col(
             row(
-                text(name) | fg(muted) | caption | weight(Weight::bold) | css("text-transform","uppercase") | css("letter-spacing",".05em"),
+                text(name) | fg(muted) | caption | weight(Weight::bold) | uppercase | tracking_em(0.05f),
                 text(std::to_string(pct)+"%") | fg(ink) | caption | mono
-            ) | css("justify-content","space-between"),
-            box(box() | css("width", std::to_string(pct)+"%") | css("height","100%") | round(999)
-                      | gradient_bg(c, c, 90) | css("transition","width .8s cubic-bezier(.2,.7,.2,1)")
-                      | css("box-shadow","0 0 12px "+detail::rgba_hex(c,0.4f)))
-              | css("height","8px") | round(999) | tint(0xffffff, 0.06f)
+            ) | between,
+            box(box() | w(Len{(float)pct, Unit::pct}) | h_full | round(999)
+                      | gradient_bg(c, c, 90) | transition("width .8s cubic-bezier(.2,.7,.2,1)")
+                      | drop_shadow(c, 12, 0.4f))
+              | h(8) | round(999) | tint(0xffffff, 0.06f)
         ) | gap(8);
     }
 
@@ -92,9 +92,9 @@ struct Pulse {
             metric("network", m.net, 0x34d399),
             row(
                 text(std::to_string(m.ops)) | fg(0xc7d2fe) | display | font(44) | glow_text(0x818cf8, 18)
-                    | css("font-variant-numeric","tabular-nums"),
+                    | tabular_nums,
                 text("ops/sec") | fg(muted) | caption
-            ) | gap(10) | css("align-items","baseline")
+            ) | gap(10) | items_baseline
         ) | gradient_border(0x6366f1, 0x22d3ee, 1);
 
         std::vector<NodeRef> rows;
@@ -115,8 +115,8 @@ struct Pulse {
         return page(0x080a12,
             centered(62, col(
                 header,
-                row(metrics | grow(1) | css("min-width","18rem"), feed | grow(1) | css("min-width","18rem"))
-                    | gap(20) | wrap | css("align-items","stretch")
+                row(metrics | grow(1) | min_w(rem(18)), feed | grow(1) | min_w(rem(18)))
+                    | gap(20) | wrap | items_stretch
             ) | gap(24))
         ) | radial(brand, 80, -10, 0x080a12, 50);
     }

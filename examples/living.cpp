@@ -61,7 +61,7 @@ struct Living {
             const char* dots = it.prio == 0 ? "\u00b7" : it.prio == 1 ? ":" : it.prio == 2 ? "\u2237" : "\u2237\u00b7";
             return row(
                 box(it.done ? icon("check", 16) | fg(emerald) : box() | w(16) | h(16)
-                        | css("border","2px solid " + std::string(it.done?"#34d399":"#475569")) | round(999))
+                        | border(2, it.done ? 0x34d399 : 0x475569) | round(999))
                     | pointer | tap(Toggle{ it.id }),
                 text(it.text) | fg(it.done ? muted : ink) | (it.done ? strike : noop) | grow(1),
                 text(dots) | fg(amber) | mono | pointer | tap(Bump{ it.id }) | title("bump priority"),
@@ -99,8 +99,8 @@ struct Living {
                      "reorder / filter \u2014 every change glides.") | fg(muted) | leading(1.5f)) | gap(6),
             controls,
             list | gap(10)
-        ) | gap(20) | pad(28) | max_w(rem(30)) | css("margin", "6vh auto")
-          | css("min-height", "100dvh") | theme(midnight());
+        ) | gap(20) | pad(28) | max_w(rem(30)) | center_x | pad_y(rem(6))
+          | h_screen | theme(midnight());
     }
 };
 

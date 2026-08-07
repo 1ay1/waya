@@ -121,3 +121,29 @@ jobs:
         run: ctest --test-dir build-tsan --output-on-failure
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+
+  # Build the whole tree with -DWAYA_NO_RAW_CSS=ON. This makes the raw css()/var()
+  # escape hatches compile errors, so a clean build PROVES every example and test
+  # is written purely in the named vocabulary — zero hand-written HTML/CSS leaked
+  # in. It's the enforcement teeth behind "you never touch HTML/CSS."
+  no-raw-css:
+    name: pure vocabulary (WAYA_NO_RAW_CSS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install GCC 15 (C++26)
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-15 g++-15 cmake ninja-build
+          echo "CXX=g++-15" >> "$GITHUB_ENV"
+          echo "CC=gcc-15" >> "$GITHUB_ENV"
+
+      - name: Configure (no raw CSS)
+        # Tests OFF: the test suite legitimately EXERCISES css()/var() (they're
+        # public API); this gate is about APP code, so it builds the examples.
+        run: cmake -S . -B build-purecss -G Ninja -DCMAKE_BUILD_TYPE=Debug -DWAYA_NO_RAW_CSS=ON -DWAYA_BUILD_TESTS=OFF
+
+      - name: Build every example — must compile with no raw css()/var()
+        run: cmake --build build-purecss -j

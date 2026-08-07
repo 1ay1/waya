@@ -102,14 +102,14 @@ struct Palette {
                 row(icon("search", 18) | fg(muted),
                     input(m.query) | placeholder("Type a command...")
                         | autofocus() | on_input([](std::string v){ return Type{v}; })
-                        | grow(1) | css("background","transparent") | css("border","none")
-                        | css("outline","none") | fg(ink) | font(16))
+                        | grow(1) | bg_none | no_border
+                        | outline_none | fg(ink) | font(16))
                     | gap(10) | center | pad(14)
-                    | css("border-bottom","1px solid rgba(255,255,255,.08)"),
+                    | border_bottom(1, 0xffffff),
                 list | pad(8) | scroll_y | max_h(340)
             )
-            | w(rem(34)) | css("max-width","92vw") | round(16) | clip
-            | bg(slate900) | css("border","1px solid rgba(255,255,255,.1)")
+            | w(rem(34)) | max_w(vw(92)) | round(16) | clip
+            | bg(slate900) | border(1, 0xffffff)
             | elevation(4) | pop_in(160)
             | stop()
             // arrow keys move the selection, Enter runs, Esc closes.

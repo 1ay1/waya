@@ -52,7 +52,7 @@ struct Orbit {
         }
         // hue shifts across rings and time
         std::uint32_t palette[] = {0x818cf8, 0x22d3ee, 0x34d399, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x38bdf8, 0x4ade80, 0xfb7185};
-        return path(pts) | stroke(palette[idx % 9], 2.0f) | css("opacity", "0.85");
+        return path(pts) | stroke(palette[idx % 9], 2.0f) | opacity(0.85f);
     }
 
     // a glowing dot chasing each ring
@@ -62,7 +62,7 @@ struct Orbit {
         float x = (float)(300 + r * std::cos(a + t * speed * 0.4));
         float y = (float)(300 + r * std::sin(a + t * speed * 0.4));
         return path({{x-3,y},{x+3,y}}, false) | stroke(0xffffff, 6.0f)
-             | css("stroke-linecap", "round");
+             | round_cap;
     }
 
     static NodeRef view(const Model& m) {
@@ -70,9 +70,9 @@ struct Orbit {
         for (int i = 0; i < m.rings; ++i) layers.push_back(ring(m.t, i, m.rings));
         for (int i = 0; i < m.rings; ++i) layers.push_back(dot(m.t, i));
         auto canvas = box_(std::move(layers))
-            | css("position", "relative") | aspect(1.0f)
-            | css("width", "min(80vw, 600px)") | css("max-width", "600px")
-            | css("filter", "drop-shadow(0 0 24px rgba(129,140,248,.25))");
+            | relative | aspect(1.0f)
+            | w_full | max_w(600)
+            | drop_shadow(0x818cf8, 24, 0.25f);
         // stack the layers on top of each other
         canvas->style.flow = Flow::stack; finalize(*canvas);
 
@@ -84,7 +84,7 @@ struct Orbit {
 
         return page(0x07090f,
             centered(48, col(
-                text("orbit") | display | mono | css("letter-spacing", ".3em")
+                text("orbit") | display | mono | tracking_em(0.3f)
                     | aurora_text(0x818cf8, 0x22d3ee, 0xf472b6, 6) | glow_text(0x818cf8, 16),
                 text("a generative field, ticked 30×/s by a subscription") | fg(muted) | caption,
                 canvas | center,
