@@ -37,45 +37,36 @@ struct Dragster {
     // a full-screen dim overlay with a title + prompt.
     static NodeRef overlay(std::string title, std::string sub, std::uint32_t tc, bool showStart = true) {
         auto prompt = showStart
-            ? box(text("\u25b6  PRESS ENTER / TAP TO RACE") | fg(0x120806) | font(13) | term | weight(Weight::black))
-                | pad_x(18) | pad_y(12) | round(8) | pointer
-                | detail::raw_css("background", "linear-gradient(180deg," + hx(good) + ",#2f8a24)")
-                | detail::raw_css("box-shadow", "0 6px 16px -4px " + hxa(good,"88"))
-                | detail::raw_css("animation", "dr-glow 1.4s ease-in-out infinite")
+            ? box(text("▶  PRESS ENTER / TAP TO RACE") | fg(lcd) | font(13) | weight(Weight::black) | term)
+                | pad_x(18) | pad_y(12) | round(px(6)) | pointer
+                | bg(seg) | animate("dr-glow", 1400)
                 | tap(Start{})
-            : (box() | detail::raw_css("display","none"));
+            : nothing();
         return col(
-            text(std::move(title)) | fg(tc) | font(34) | term | weight(Weight::black)
-                | tracking_em(0.06f) | text_glow(tc, 14) | text_center,
-            text(std::move(sub)) | fg(ink) | font(14) | term | text_center,
+            text(std::move(title)) | fg(tc) | font(40) | weight(Weight::black) | term
+                | tracking_em(0.06f) | text_align(Justify::center),
+            text(std::move(sub)) | fg(ink) | font(14) | term | text_align(Justify::center),
             prompt
-        ) | gap(16) | items_center | center
-          | detail::raw_css("position","absolute") | detail::raw_css("inset","0")
-          | detail::raw_css("z-index","10")
-          | detail::raw_css("background","rgba(6,6,12,.82)")
-          | detail::raw_css("backdrop-filter","blur(2px)") | round(6);
+        ) | gap(18) | center
+          | absolute() | pin() | z(10)
+          | bg(waya::rgba(lcd, 0.86f)) | backdrop_blur(2);
     }
 
     // the christmas-tree staging lights during the countdown.
     static NodeRef tree(const Model& m) {
-        // three amber bulbs stage down, then green. count runs 60 -> 0.
         int stage = 3 - (m.count / 20);            // 0,1,2 amber, then GO
         auto bulb = [&](int idx, std::uint32_t c){
             bool lit = stage > idx;
-            return box() | detail::raw_css("width","34px") | detail::raw_css("height","34px")
-                 | detail::raw_css("border-radius","50%")
-                 | detail::raw_css("background", lit ? hx(c) : hxa(c,"22"))
-                 | (lit ? dglow(c, 12) : detail::raw_css("box-shadow","none"))
-                 | detail::raw_css("border","2px solid #000");
+            return box() | size(px(34)) | round(pct(50)) | border(2, frame)
+                   | bg(lit ? waya::rgb(c) : waya::rgb(ghost).alpha(0.3f));
         };
+        bool green = m.count <= 6;
         return col(
-            row(bulb(0, amber), bulb(1, amber), bulb(2, amber)) | gap(10) | center,
-            text(m.count <= 6 ? "GREEN!" : "GET SET\u2026") | fg(m.count<=6?good:amber)
-                | font(20) | term | weight(Weight::black) | text_glow(m.count<=6?good:amber, 10) | text_center
-        ) | gap(14) | items_center | center
-          | detail::raw_css("position","absolute") | detail::raw_css("inset","0")
-          | detail::raw_css("z-index","9")
-          | detail::raw_css("background","rgba(6,6,12,.55)");
+            row(bulb(0, amber), bulb(1, amber), bulb(2, amber)) | gap(10) | justify(Justify::center),
+            text(green ? "GREEN!" : "GET SET…") | fg(green ? good : amber)
+                | font(22) | weight(Weight::black) | term | text_align(Justify::center)
+        ) | gap(14) | center
+          | absolute() | pin() | z(9) | bg(waya::rgba(lcd, 0.6f));
     }
 
     static NodeRef fx() {
@@ -89,67 +80,70 @@ struct Dragster {
     static NodeRef view(const Model& m) {
         char best[16];
         if (m.best_frames > 0) std::snprintf(best, sizeof best, "%.2fs", secs(m.best_frames));
-        else                   std::snprintf(best, sizeof best, "no time yet");
+        else                   std::snprintf(best, sizeof best, "--.--");
+        char et[16]; std::snprintf(et, sizeof et, "%.2f", secs(m.elapsed));
 
-        // pick the overlay for the current phase (none while racing).
+        // phase overlay (none while racing).
         NodeRef ov =
             m.phase == Phase::Ready
-                ? overlay("DRAGSTER", "throttle \u00b7 shift before the redline \u00b7 best time wins", amber)
+                ? overlay("DRAGSTER", "throttle · shift before the redline · best time wins", amber)
           : m.phase == Phase::Count
                 ? tree(m)
           : m.phase == Phase::Finished
-                ? overlay("FINISH!", std::string("time ") +
-                          [&]{ char t[16]; std::snprintf(t,sizeof t,"%.2fs",secs(m.elapsed)); return std::string(t); }()
-                          + "   \u00b7   best " + best, good)
+                ? overlay("FINISH", std::string("time ") + et + "s   ·   best " + best, good)
           : m.phase == Phase::Blown
-                ? overlay("ENGINE BLOWN", "you held it past the redline \u2014 restage", hot)
+                ? overlay("ENGINE BLOWN", "held past the redline — press enter", warn)
           : m.phase == Phase::Fouled
-                ? overlay("RED-LIGHT FOUL", "you shifted before the green \u2014 restage", hot)
-          : (box() | detail::raw_css("display","none"));
+                ? overlay("RED-LIGHT FOUL", "shifted before the green — press enter", warn)
+          : (nothing());
 
-        // the TV: the strip screen with the phase overlay on top.
-        auto tv = box(strip_screen(m), ov)
-            | detail::raw_css("position","relative") | w_full;
+        // ── HUD, floating on top of the LCD panel ─────────────────────────
+        // a stat chip: tiny label + big value, in LCD-dark ink on the olive.
+        auto chip = [&](std::string label, std::string value, std::uint32_t c){
+            return col(
+                text(std::move(label)) | fg(inkSoft) | font(9) | term | uppercase | tracking_em(0.24f),
+                text(std::move(value)) | fg(c) | font(30) | term | weight(Weight::black)
+                    | tabular_nums | leading(1.0f)
+            ) | gap(2) | items_center;
+        };
+        std::uint32_t etc = m.phase==Phase::Finished ? good
+                          : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : ink;
 
-        // the console: brand, TV, tach, readouts, controls, help.
-        auto console = col(
-            brand_plate(),
-            box() | detail::raw_css("height","1px") | detail::raw_css("background", hxa(0x000000,"55")) | w_full,
-            box(tv) | detail::raw_css("flex","1 1 0") | detail::raw_css("min-height","0") | w_full
-                | detail::raw_css("display","flex") | detail::raw_css("align-items","center")
-                | detail::raw_css("justify-content","center"),
+        // top bar: brand left, timing chips right — on a faint dark bezel strip.
+        auto topbar = row(
+            col(text("DRAGSTER") | fg(ink) | font(18) | term | weight(Weight::black) | tracking_em(0.16f),
+                text("activision · 1980") | fg(inkSoft) | font(8) | term | uppercase | tracking_em(0.26f)) | gap(1),
+            spacer(),
+            chip("time", et, etc),
+            chip("best", best, good),
+            chip("gear", m.gear ? std::to_string(m.gear) : "N", ink)
+        ) | items_center | gap(20) | w_full;
+
+        // bottom bar: the tach across the width + the tap-controls + hint.
+        auto botbar = col(
             tachometer(m),
-            readouts(m),
-            controls(m),
-            text("space throttle   \u2191/shift up   enter start") | fg(muted) | font(10) | term | text_center | w_full
-        ) | gap(12) | pad(20) | round(20)
-          | detail::raw_css("box-sizing","border-box")
-          | detail::raw_css("width","min(480px, 100%)")
-          | detail::raw_css("max-width","100%")
-          | detail::raw_css("height","100%")
-          | detail::raw_css("max-height","100%")
-          | detail::raw_css("min-height","0")
-          | detail::raw_css("background",
-              "linear-gradient(160deg," + hx(woodHi) + " 0%," + hx(woodLo) + " 60%,#2a1810 100%)")
-          | detail::raw_css("box-shadow",
-              "inset 0 2px 0 rgba(255,255,255,.12), inset 0 -3px 8px rgba(0,0,0,.5), 0 30px 70px -30px rgba(0,0,0,.9)")
-          | detail::raw_css("border","1px solid " + hxa(0x000000,"55"));
+            row(
+                hud_pill(m.gas ? "THROTTLE ◉" : "THROTTLE", GasTog{}, warn, m.gas),
+                hud_pill("SHIFT ▲", Shift{}, amber, false),
+                spacer(),
+                hud_pill(m.phase==Phase::Race||m.phase==Phase::Count ? "RACING" : "START", Start{}, good, false)
+            ) | items_center | gap(10) | w_full,
+            text("space throttle   ·   ↑ / shift up   ·   enter start")
+                | fg(inkSoft) | font(9) | term | text_align(Justify::center) | w_full | tracking_em(0.08f)
+        ) | gap(12) | w_full;
 
-        return box(fx(), console)
-            | detail::raw_css("height","100dvh")
-            | detail::raw_css("width","100dvw")
-            | detail::raw_css("box-sizing","border-box")
-            | detail::raw_css("display","flex")
-            | detail::raw_css("align-items","center")
-            | detail::raw_css("justify-content","center")
-            | detail::raw_css("overflow","hidden")
-            | detail::raw_css("padding",
-                "max(12px, env(safe-area-inset-top)) "
-                "max(12px, env(safe-area-inset-right)) "
-                "max(12px, env(safe-area-inset-bottom)) "
-                "max(12px, env(safe-area-inset-left))")
-            | detail::raw_css("background",
-                "radial-gradient(1000px 700px at 50% 0%, #1a1a24, transparent 60%), " + hx(dr::page))
+        // The HUD frame doesn't intercept clicks (no_pointer); the pills opt back
+        // in to pointer events themselves.
+        auto hud = col(topbar, spacer(), botbar)
+            | absolute() | pin() | z(5) | pad(20) | safe_area() | no_pointer;
+
+        // the whole window: full-bleed screen, HUD over it, overlay on top. dvh/
+        // dvw (dynamic viewport) has no Len unit — the one place raw_css is right.
+        return box(fx(), strip_screen(m), hud, ov)
+            | absolute() | overflow("hidden") | bg(dr::page)
+            | detail::raw_css("position", "relative")
+            | detail::raw_css("height", "100dvh")
+            | detail::raw_css("width", "100dvw")
             // global keyboard
             | hotkey(" ",          GasTog{})
             | hotkey("ArrowUp",    Shift{})
