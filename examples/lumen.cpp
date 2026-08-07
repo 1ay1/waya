@@ -168,16 +168,23 @@ struct Lumen {
           | detail::raw_css("background","#0f1420") | border(0x1c2434);
 
         auto hero = col(
-            row(box() | circle(7) | detail::raw_css("background","#2ee6a6") | breathe(),
+            row(box() | circle(7) | detail::raw_css("background","#2ee6a6") | glow(0x2ee6a6, 8) | breathe(),
                 text("COMMAND PALETTE") | fg(body_c) | font(12) | weight(Weight::bold) | tracking_em(0.22f))
-                | gap(9) | items_center,
+                | gap(9) | items_center | fade_up(500),
             text("Everything, one keystroke away")
-                | fg(ink) | font_fluid(30, 52) | weight(Weight::black) | text_center
-                | detail::raw_css("letter-spacing","-0.03em") | detail::raw_css("line-height","1.05"),
+                | font_fluid(30, 54) | weight(Weight::black) | text_center
+                | detail::raw_css("background", "linear-gradient(120deg,#e8ecff 20%,#9aa4ff 55%,#00d4ff)")
+                | detail::raw_css("-webkit-background-clip", "text")
+                | detail::raw_css("background-clip", "text")
+                | detail::raw_css("color", "transparent")
+                | detail::raw_css("letter-spacing","-0.03em") | detail::raw_css("line-height","1.05")
+                | fade_up(600) | delay(80),
             text("Press \u2318K or \u2303K \u2014 or click below \u2014 to open a fuzzy launcher "
                  "with keyed, animated results.")
-                | fg(body_c) | font(16) | leading(1.7f) | max_w(500) | text_center,
-            trigger, last_card
+                | fg(body_c) | font(16) | leading(1.7f) | max_w(500) | text_center
+                | fade_up(600) | delay(160),
+            box(trigger) | fade_up(600) | delay(240),
+            box(last_card) | fade_up(600) | delay(320)
         ) | gap(24) | items_center;
 
         return col(hero, palette(m))
@@ -185,7 +192,8 @@ struct Lumen {
              | min_h(100_vh) | max_w(900) | center_x
              | on_shortcut("mod+k", Open{})
              | detail::raw_css("background",
-                 "radial-gradient(900px 500px at 50% 0%, rgba(109,124,255,.14), transparent 60%), #0a0d16")
+                 "radial-gradient(1100px 560px at 50% -5%, rgba(109,124,255,.20), transparent 60%),"
+                 "radial-gradient(700px 500px at 85% 30%, rgba(0,212,255,.10), transparent 55%), #0a0d16")
              | as_main;
     }
 

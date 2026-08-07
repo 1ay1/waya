@@ -52,7 +52,8 @@ struct Prism {
     }
 
     static Mod card() {
-        return bg_surface | detail::raw_css("border", "1px solid var(--wa-line)") | round(16);
+        return bg_surface | detail::raw_css("border", "1px solid var(--wa-line)") | round(16)
+             | detail::raw_css("box-shadow", "0 12px 32px -16px rgba(0,0,0,.45)");
     }
 
     // a single settings row: title + description on the left, control on the right
@@ -153,11 +154,11 @@ struct Prism {
         ) | gap(12) | w(320);
 
         auto body = row(
-            col(account, prefs) | gap(20) | grow(),
-            preview
+            col(account | fade_up(500), prefs | fade_up(560) | delay(80)) | gap(20) | grow(),
+            preview | fade_up(600) | delay(160)
         ) | gap(20) | wrap | items_start;
 
-        return col(header, body)
+        return col(header | fade_up(450), body)
              | gap(28) | pad(32) | max_w(1080) | center_x | min_h(100_vh)
              | theme(theme_of(m.theme_i)) | bg_page | fg_text
              | transition("background-color .35s ease, color .35s ease")

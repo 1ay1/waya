@@ -116,8 +116,10 @@ struct Board {
 
         return col(head, col_(std::move(cards)) | gap(10), add)
              | gap(14) | pad(14) | round(14) | w(300)
-             | detail::raw_css("background", "#0d1119") | border(0x181f2c)
-             | detail::raw_css("align-self", "flex-start");
+             | detail::raw_css("background", "linear-gradient(180deg,#0e131f,#0a0e17)")
+             | border(0x1a2130)
+             | detail::raw_css("align-self", "flex-start")
+             | fade_up(500) | delay(lane * 90);
     }
 
     static NodeRef view(const Model& m) {
@@ -127,7 +129,8 @@ struct Board {
 
         auto header = row(
             row(box(icon("home", 18) | fg(0xffffff)) | square(34) | center | round(9)
-                    | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#00d4ff)"),
+                    | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#00d4ff)")
+                    | glow(0x6d7cff, 14),
                 col(text("Flow") | fg(ink) | font(20) | weight(Weight::black)
                         | detail::raw_css("letter-spacing", "-0.02em"),
                     text("Product roadmap") | fg(faint) | font(13)) | gap(1)) | gap(12) | items_center,
@@ -147,10 +150,11 @@ struct Board {
         auto board = row(column(m, Todo), column(m, Doing), column(m, Done))
                    | gap(16) | items_start | wrap;
 
-        return col(header, board)
+        return col(header | fade_up(450), board)
              | gap(28) | pad(32) | max_w(1080) | center_x | min_h(100_vh)
              | detail::raw_css("background",
-                 "radial-gradient(1000px 500px at 20% -10%, rgba(109,124,255,.10), transparent 60%), #0a0d16")
+                 "radial-gradient(1100px 520px at 15% -10%, rgba(109,124,255,.14), transparent 60%),"
+                 "radial-gradient(800px 480px at 90% 10%, rgba(0,212,255,.08), transparent 55%), #080b13")
              | as_main;
     }
 
