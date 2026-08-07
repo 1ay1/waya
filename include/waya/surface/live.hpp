@@ -677,6 +677,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             }
         }
         detail::begin_msg_capture();
+        detail::memo_begin_frame();
         NodeRef prev = detail::safe_view<P>(model);
 
         // First frame: a full paint. Same shape as any later frame — a
@@ -823,6 +824,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             detail::perform<Msg>(s, r.second);
 
             detail::begin_msg_capture();     // fresh msg registry for this render
+            detail::memo_begin_frame();      // new memo generation + amortised sweep
             NodeRef next = detail::safe_view<P>(model);
             Patch patch = diff(prev, next);
             prev = next;
@@ -844,6 +846,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             detail::SessionStore::instance().save<Model>(sid, model);
         s->shutdown_io();
         if (reader.joinable()) reader.join();
+        detail::memo_reset();   // don't leak this session's cache onto a recycled thread
         ::close(conn);
         return;
     }
@@ -901,8 +904,10 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         }
     }
     detail::begin_msg_capture();
+    detail::memo_begin_frame();
     NodeRef ssr_root = detail::safe_view<P>(ssr_model);   // captures tokens into a fresh table
     auto ssr = DomBackend{}.render(*ssr_root);   // {html, css}
+    detail::memo_reset();   // SSR is a one-shot on this thread; start clean next time
 
     // Per-route SEO metadata, computed from the routed model.
     Meta mt = detail::meta_of<P, Model>(ssr_model);

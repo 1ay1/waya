@@ -41,9 +41,50 @@
 namespace waya::surface {
 
 namespace detail {
-struct MemoSlot { std::uint64_t deps = 0; NodeRef node; };
+struct MemoSlot {
+    std::uint64_t deps = 0;
+    NodeRef node;
+    std::uint32_t seen = 0;
+    // The msg-table entries (tap/input/key handlers) this subtree registered
+    // when it was built. A cache HIT skips the builder — and therefore skips
+    // re-registering these — which would (a) leave the returned node's tokens
+    // unresolvable and (b) desync every later sibling's order-derived token.
+    // So we RECORD them at build and REPLAY them on every hit, restoring the
+    // table to exactly what a fresh build would have produced. This is what
+    // makes memo() safe on INTERACTIVE subtrees, not just static ones.
+    std::vector<MsgEntry> handlers;
+    std::uint64_t salt_used = 0;   // how many salt ticks the build consumed
+};
 // Thread-local: view() runs on one owner thread per session.
 inline thread_local std::unordered_map<std::uint64_t, MemoSlot> g_memo2;
+// Monotonic render generation for this thread's session. Bumped once per view()
+// pass (see memo_begin_frame). Every memo/component hit stamps its slot with the
+// current generation; slots not touched for a while are swept. Without this the
+// cache grows without bound whenever memo keys churn (e.g. a game memoising by a
+// per-frame-changing coordinate) — a real leak in a long-lived session.
+inline thread_local std::uint32_t g_memo_gen = 0;
+
+/// Begin a new render generation and, periodically, sweep slots that haven't
+/// been touched in the last few frames. Called once at the top of each view()
+/// pass by the runtime. Sweeping is amortised (every 64th frame) so the common
+/// path stays O(touched), not O(cache). A slot survives if it was seen within
+/// the last `keep` generations — long enough that a component which renders on
+/// alternate frames (e.g. behind a conditional) isn't evicted prematurely.
+inline void memo_begin_frame() {
+    ++g_memo_gen;
+    constexpr std::uint32_t sweep_every = 64;
+    constexpr std::uint32_t keep       = 8;
+    if ((g_memo_gen % sweep_every) != 0) return;
+    for (auto it = g_memo2.begin(); it != g_memo2.end();) {
+        // unsigned wrap is fine: (gen - seen) is the age in generations.
+        if ((std::uint32_t)(g_memo_gen - it->second.seen) > keep) it = g_memo2.erase(it);
+        else ++it;
+    }
+}
+
+/// Drop this thread's memo cache entirely (session teardown). Keeps a recycled
+/// worker thread from carrying a previous session's cached nodes.
+inline void memo_reset() { g_memo2.clear(); g_memo_gen = 0; }
 
 // ── prop hashing: fold any set of props into a 64-bit deps hash ─────────────
 inline void hash_bytes(std::uint64_t& h, std::string_view s){
@@ -95,7 +136,25 @@ NodeRef memo(Args&&... args) {
         std::uint64_t deps = detail::hash_props(std::get<I>(tup)...);
         std::uint64_t key = detail::type_salt<Build>() ^ deps;
         auto& slot = detail::g_memo2[key];
-        if (!slot.node || slot.deps != deps) { slot.deps = deps; slot.node = build(); }
+        if (!slot.node || slot.deps != deps) {
+            // BUILD: record exactly the msg-table entries + salt ticks this
+            // subtree registers, so a later cache hit can reproduce them.
+            std::size_t base = detail::g_msg_table.entries.size();
+            std::uint64_t salt0 = detail::g_msg_table.salt;
+            slot.deps = deps;
+            slot.node = build();
+            slot.handlers.assign(detail::g_msg_table.entries.begin() + base,
+                                 detail::g_msg_table.entries.end());
+            slot.salt_used = detail::g_msg_table.salt - salt0;
+        } else {
+            // HIT: replay the recorded handlers + salt advance so the token
+            // table matches a fresh build (keeps this node's taps resolvable
+            // AND every later sibling's order-derived token correct).
+            detail::g_msg_table.entries.insert(detail::g_msg_table.entries.end(),
+                                               slot.handlers.begin(), slot.handlers.end());
+            detail::g_msg_table.salt += slot.salt_used;
+        }
+        slot.seen = detail::g_memo_gen;
         return slot.node;
     }(std::make_index_sequence<sizeof...(Args) - 1>{});
 }
@@ -112,7 +171,20 @@ struct Component {
         std::uint64_t deps = detail::hash_props(props...);
         std::uint64_t key = detail::type_salt<Fn>() ^ deps;
         auto& slot = detail::g_memo2[key];
-        if (!slot.node || slot.deps != deps) { slot.deps = deps; slot.node = fn(props...); }
+        if (!slot.node || slot.deps != deps) {
+            std::size_t base = detail::g_msg_table.entries.size();
+            std::uint64_t salt0 = detail::g_msg_table.salt;
+            slot.deps = deps;
+            slot.node = fn(props...);
+            slot.handlers.assign(detail::g_msg_table.entries.begin() + base,
+                                 detail::g_msg_table.entries.end());
+            slot.salt_used = detail::g_msg_table.salt - salt0;
+        } else {
+            detail::g_msg_table.entries.insert(detail::g_msg_table.entries.end(),
+                                               slot.handlers.begin(), slot.handlers.end());
+            detail::g_msg_table.salt += slot.salt_used;
+        }
+        slot.seen = detail::g_memo_gen;
         return slot.node;
     }
 };
