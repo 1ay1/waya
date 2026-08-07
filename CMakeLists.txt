@@ -144,6 +144,17 @@ if(WAYA_BUILD_EXAMPLES)
         list(APPEND WAYA_EXAMPLE_TARGETS ${ex})
     endforeach()
 
+    # Multi-file example: examples/matrix/ — a Matrix-style hacker terminal.
+    # One component per header (rain / terminal / hud / boot), composed in
+    # app.cpp. Shows a heavily component-based waya app.
+    file(GLOB WAYA_MATRIX_SRCS CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/examples/matrix/*.cpp")
+    if(WAYA_MATRIX_SRCS)
+        add_executable(matrix ${WAYA_MATRIX_SRCS})
+        target_link_libraries(matrix PRIVATE waya::waya waya_dev_flags)
+        list(APPEND WAYA_EXAMPLE_TARGETS matrix)
+    endif()
+
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
     # Uses the first discovered example as the subject.
     if(WAYA_BUILD_TESTS AND UNIX AND WAYA_EXAMPLE_TARGETS)
