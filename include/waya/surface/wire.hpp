@@ -10,6 +10,7 @@
 #include "diff.hpp"
 
 #include <string>
+#include <unordered_set>
 
 namespace waya::surface {
 
@@ -26,6 +27,16 @@ inline std::pair<std::string,std::string> render_fragment(const Node& n){
     DomBackend b; auto out = b.render(n); return { out.html, out.css };
 }
 
+/// Render just the node's OWN element (attrs + wiring, empty body) for a
+/// `set_paint` op — the client morphs attributes in place and keeps the
+/// existing children, so shipping the subtree is wasted bytes+CPU. Falls back
+/// to a full fragment for kinds that aren't shallow-safe (see wants_shell()).
+inline std::pair<std::string,std::string> render_paint(const Node& n){
+    DomBackend b;
+    auto out = DomBackend::wants_shell(n.kind) ? b.render_shallow(n) : b.render(n);
+    return { out.html, out.css };
+}
+
 /// A patch/frame → JSON. ONE shape for everything the terminal ever receives:
 ///
 ///   {"css": "<rules>", "ops": [ [op, path, payload?], ... ]}
@@ -37,7 +48,11 @@ inline std::pair<std::string,std::string> render_fragment(const Node& n){
 /// full frame at any moment (reconnect, drift) with no negotiation.
 inline std::string ops_json(const Patch& p, std::string& css_out){
     std::string ops="[";
-    auto add_css=[&](const std::string& c){ if(!c.empty() && css_out.find(c)==std::string::npos) css_out+=c; };
+    // dedup css by exact chunk in O(1), not an O(len) substring scan per op
+    // (that was quadratic in the number of ops × accumulated css length). The
+    // set OWNS its keys — the css string handed in is a temporary.
+    std::unordered_set<std::string> seen;
+    auto add_css=[&](const std::string& c){ if(!c.empty() && seen.insert(c).second) css_out+=c; };
     for(std::size_t i=0;i<p.size();++i){
         if(i) ops+=',';
         const auto& op=p[i];
@@ -46,7 +61,11 @@ inline std::string ops_json(const Patch& p, std::string& css_out){
         ops+='['; ops+=std::to_string(wire); ops+=','; detail::jstr(ops,op.path);
         switch(op.op){
             case Op::set_text: case Op::set_src: ops+=','; detail::jstr(ops, op.s); break;
-            case Op::set_paint: case Op::set_path: case Op::replace: {
+            case Op::set_paint: {
+                if(op.node){ auto [html,c]=render_paint(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
+                else ops+=",\"\"";
+                break; }
+            case Op::set_path: case Op::replace: {
                 if(op.node){ auto [html,c]=render_fragment(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
                 else ops+=",\"\"";
                 break; }

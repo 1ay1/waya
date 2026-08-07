@@ -25,9 +25,11 @@
 #include "node.hpp"
 #include "dom.hpp"
 #include "diff.hpp"
+#include "wire.hpp"   // render_fragment / render_paint
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace waya::surface {
@@ -61,7 +63,10 @@ inline void put_path(std::string& o, std::string_view path) {
 /// their css) exactly like the JSON path, then packs everything.
 inline std::string encode_delta(const Patch& p) {
     std::string css, ops; std::uint64_t n = 0;
-    auto add_css = [&](const std::string& c){ if(!c.empty() && css.find(c)==std::string::npos) css += c; };
+    // O(1) css dedup (was an O(len) substring scan per op = quadratic). The set
+    // owns its keys since the css handed in is a temporary from render_*.
+    std::unordered_set<std::string> seen;
+    auto add_css = [&](const std::string& c){ if(!c.empty() && seen.insert(c).second) css += c; };
     for (const auto& op : p) {
         ++n;
         // Keyed inserts carry a target index: encode as insert_at (9). `move`
@@ -73,7 +78,13 @@ inline std::string encode_delta(const Patch& p) {
         switch (op.op) {
             case Op::set_text: case Op::set_src:
                 bin::put_str(ops, op.s); break;
-            case Op::set_paint: case Op::set_path: case Op::replace: {
+            case Op::set_paint: {
+                // client morphs attrs in place + keeps children -> ship a shell,
+                // not the whole subtree.
+                if (op.node) { auto [html,c] = render_paint(*op.node); add_css(c); bin::put_str(ops, html); }
+                else bin::put_str(ops, "");
+                break; }
+            case Op::set_path: case Op::replace: {
                 if (op.node) { auto [html,c] = render_fragment(*op.node); add_css(c); bin::put_str(ops, html); }
                 else bin::put_str(ops, "");
                 break; }

@@ -27,6 +27,23 @@ public:
         return { std::move(html), std::move(css) };
     }
 
+    // Render ONLY the node's own element — open tag + class + attrs + wiring —
+    // with an EMPTY body (no children). This is what a `set_paint` op needs:
+    // the client's morphAttrs() copies attributes from the fragment's root and
+    // NEVER reads its children (they're reconciled by their own deeper ops), so
+    // serialising the subtree is pure waste — O(subtree) bytes + CPU per frame
+    // for a change that only touched THIS node. A shallow shell is O(1) in the
+    // subtree size. Only kinds that morph in place (box/text/media/markup)
+    // benefit; a control or a kind whose children the client actually re-parses
+    // falls back to a full render (see wants_shell()).
+    Output render_shallow(const Node& root) {
+        rules_.clear(); names_.clear();
+        std::string html; emit_shell(html, root);
+        std::string css;
+        for (std::size_t i = 0; i < rules_.size(); ++i) css += rules_[i];
+        return { std::move(html), std::move(css) };
+    }
+
 private:
     std::vector<std::string> rules_, names_;
 
@@ -332,6 +349,22 @@ private:
             }
         }
     }
+
+    // Emit the node's element with an EMPTY body. Only meaningful for a box
+    // (a container with children the client reconciles independently); every
+    // other kind is either a leaf already (text/media) or has body the client
+    // re-parses (control/path/markup), so we defer to the full emit for those.
+    void emit_shell(std::string& o, const Node& nd){
+        if(nd.kind != Kind::box){ emit(o, nd); return; }
+        const std::string& tg = nd.tag.empty() ? std::string("div") : nd.tag;
+        o+='<'; o+=tg; open_attrs(o,nd); o+='>'; o+="</"; o+=tg; o+='>';
+    }
+
+public:
+    // Which kinds gain from a shallow set_paint render? Only a box: its children
+    // are separate DOM nodes the client keeps and diffs on their own. A leaf or
+    // a body-bearing kind must ship whole.
+    static bool wants_shell(Kind k){ return k == Kind::box; }
 };
 
 } // namespace waya::surface
