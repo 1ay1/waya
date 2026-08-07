@@ -34,25 +34,25 @@ touch on a phone too.
 
 ## How it's built (the waya-idiomatic parts)
 
-Styled as a **handheld LCD game** (Game & Watch / Mattel era): an olive-green LCD
-panel where everything — the car, the scrolling road, the tachometer — is drawn as
-a grid of lit / faint-"ghost" segments. The whole browser window *is* the screen.
+Faithful to the **original Activision screen**: two horizontal lanes seen from
+the side (you on top, a rival below), a purple sky over mint-green ground with
+distance ticks rushing past, a black blocky dragster sliding down each lane, the
+signature **green tachometer with a red redline**, big blocky **TIME / GEAR**
+digits, and the ACTIVISION wordmark — cleaned up, no CRT noise. The whole browser
+window is the screen.
 
 - **`store.hpp` / `store.cpp`** — the model + the pure `update(Model, Msg)` game
   loop. Every `Tick` (a 30 fps *server* clock via `Sub::every`) advances RPM,
-  checks the redline/blow, computes speed and distance, and detects the finish.
-- **`screen.hpp` / `screen.cpp`** — the LCD: a `grid_cols`/`grid_rows` matrix of
-  segments. The dragster is a fixed pixel sprite; lane dashes and the road scroll
-  toward you (keyed to `m.pos`) to sell speed. The tachometer is drawn in the
-  same segment language, so it reads as one device. Built from waya's real style
-  Mods — `raw_css` only for the LCD sheen (a gradient overlay).
-- **`console.hpp`** — `hud_pill`, the glassy control button (tap = the same Msg as
-  the key).
-- **`theme.hpp`** — the LCD palette (olive panel, near-black lit segments, faint
-  ghost segments) + the sheen.
-- **`app.cpp`** — the `Program`: `init` / `update` / `subscribe` (the clock only
-  ticks while a countdown or race is live) / `view`, the phase overlays (staging
-  tree, FINISH / BLOWN / FOUL), the floating HUD, SSR `Meta`, and the hotkeys.
+  checks the redline/blow, moves you and the opponent down the strip.
+- **`screen.hpp` / `screen.cpp`** — the two-lane picture: each lane is a sky+ground
+  band with scrolling ticks and a side-view **pixel-sprite** dragster (a
+  `grid_cols`/`grid_rows` bitmap) that slides across by distance; plus the
+  green/red tachometer. Built from waya's real style Mods.
+- **`console.hpp`** — `hud_pill`, the control button (tap = the same Msg as a key).
+- **`theme.hpp`** — the Dragster/TIA palette (purple, mint, black, tach green/red).
+- **`app.cpp`** — the `Program`: `init` / `update` / `subscribe` / `view`, the big
+  digit HUD + ACTIVISION footer, the phase overlays (staging tree, FINISH /
+  BLOWN / FOUL), SSR `Meta`, and the hotkeys.
 
 The server holds the game state; the browser is a thin client that paints binary
 diffs pushed over a WebSocket. First paint is real SSR HTML — it renders (and is

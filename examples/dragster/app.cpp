@@ -37,19 +37,19 @@ struct Dragster {
     // a full-screen dim overlay with a title + prompt.
     static NodeRef overlay(std::string title, std::string sub, std::uint32_t tc, bool showStart = true) {
         auto prompt = showStart
-            ? box(text("▶  PRESS ENTER / TAP TO RACE") | fg(lcd) | font(13) | weight(Weight::black) | term)
+            ? box(text("▶  PRESS ENTER / TAP TO RACE") | fg(0x000000) | font(13) | weight(Weight::black) | term)
                 | pad_x(18) | pad_y(12) | round(px(6)) | pointer
-                | bg(seg) | animate("dr-glow", 1400)
+                | bg(0xffffff) | animate("dr-glow", 1400)
                 | tap(Start{})
             : nothing();
         return col(
-            text(std::move(title)) | fg(tc) | font(40) | weight(Weight::black) | term
+            text(std::move(title)) | fg(tc) | font(44) | weight(Weight::black) | term
                 | tracking_em(0.06f) | text_align(Justify::center),
-            text(std::move(sub)) | fg(ink) | font(14) | term | text_align(Justify::center),
+            text(std::move(sub)) | fg(0xffffff) | font(14) | term | text_align(Justify::center),
             prompt
         ) | gap(18) | center
           | absolute() | pin() | z(10)
-          | bg(waya::rgba(lcd, 0.86f)) | backdrop_blur(2);
+          | bg(waya::rgba(0x000000, 0.78f)) | backdrop_blur(2);
     }
 
     // the christmas-tree staging lights during the countdown.
@@ -57,8 +57,8 @@ struct Dragster {
         int stage = 3 - (m.count / 20);            // 0,1,2 amber, then GO
         auto bulb = [&](int idx, std::uint32_t c){
             bool lit = stage > idx;
-            return box() | size(px(34)) | round(pct(50)) | border(2, frame)
-                   | bg(lit ? waya::rgb(c) : waya::rgb(ghost).alpha(0.3f));
+            return box() | size(px(34)) | round(pct(50)) | border(2, 0x000000)
+                   | bg(lit ? waya::rgb(c) : waya::rgba(0xffffff, 0.15f));
         };
         bool green = m.count <= 6;
         return col(
@@ -66,7 +66,7 @@ struct Dragster {
             text(green ? "GREEN!" : "GET SET…") | fg(green ? good : amber)
                 | font(22) | weight(Weight::black) | term | text_align(Justify::center)
         ) | gap(14) | center
-          | absolute() | pin() | z(9) | bg(waya::rgba(lcd, 0.6f));
+          | absolute() | pin() | z(9) | bg(waya::rgba(0x000000, 0.5f));
     }
 
     static NodeRef fx() {
@@ -97,45 +97,50 @@ struct Dragster {
                 ? overlay("RED-LIGHT FOUL", "shifted before the green — press enter", warn)
           : (nothing());
 
-        // ── HUD, floating on top of the LCD panel ─────────────────────────
-        // a stat chip: tiny label + big value, in LCD-dark ink on the olive.
-        auto chip = [&](std::string label, std::string value, std::uint32_t c){
-            return col(
-                text(std::move(label)) | fg(inkSoft) | font(9) | term | uppercase | tracking_em(0.24f),
-                text(std::move(value)) | fg(c) | font(30) | term | weight(Weight::black)
-                    | tabular_nums | leading(1.0f)
-            ) | gap(2) | items_center;
-        };
+        // ── HUD in the style of the original: big blocky digits on the black
+        // bands (TIME + GEAR), the tach in the middle band, ACTIVISION at the
+        // bottom. Positioned over the two-lane screen.
         std::uint32_t etc = m.phase==Phase::Finished ? good
-                          : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : ink;
+                          : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
 
-        // top bar: brand left, timing chips right — on a faint dark bezel strip.
-        auto topbar = row(
-            col(text("DRAGSTER") | fg(ink) | font(18) | term | weight(Weight::black) | tracking_em(0.16f),
-                text("activision · 1980") | fg(inkSoft) | font(8) | term | uppercase | tracking_em(0.26f)) | gap(1),
-            spacer(),
-            chip("time", et, etc),
-            chip("best", best, good),
-            chip("gear", m.gear ? std::to_string(m.gear) : "N", ink)
-        ) | items_center | gap(20) | w_full;
-
-        // bottom bar: the tach across the width + the tap-controls + hint.
-        auto botbar = col(
-            tachometer(m),
-            row(
-                hud_pill(m.gas ? "THROTTLE ◉" : "THROTTLE", GasTog{}, warn, m.gas),
-                hud_pill("SHIFT ▲", Shift{}, amber, false),
+        // big seven-segment-ish digits: TIME  .  GEAR
+        auto digits = [&](std::string time, std::string gear, std::uint32_t tc){
+            return row(
+                text(std::move(time)) | fg(tc) | font(40) | term | weight(Weight::black)
+                    | tabular_nums | tracking_em(0.06f),
                 spacer(),
-                hud_pill(m.phase==Phase::Race||m.phase==Phase::Count ? "RACING" : "START", Start{}, good, false)
-            ) | items_center | gap(10) | w_full,
-            text("space throttle   ·   ↑ / shift up   ·   enter start")
-                | fg(inkSoft) | font(9) | term | text_align(Justify::center) | w_full | tracking_em(0.08f)
-        ) | gap(12) | w_full;
+                text(std::move(gear)) | fg(0xffffff) | font(40) | term | weight(Weight::black) | tabular_nums
+            ) | items_center | w_full;
+        };
 
-        // The HUD frame doesn't intercept clicks (no_pointer); the pills opt back
-        // in to pointer events themselves.
-        auto hud = col(topbar, spacer(), botbar)
-            | absolute() | pin() | z(5) | pad(20) | safe_area() | no_pointer;
+        // the tach lives in the middle black band (between the two lanes).
+        auto midband = box(tachometer(m))
+            | absolute() | left(pct(0)) | right(pct(0)) | top(pct(49)) | h(pct(6))
+            | pad_x(rem(1)) | center;
+
+        // TIME + GEAR digits sit on the lower edge of the top lane's band.
+        auto topDigits = box(digits(et, m.gear ? std::to_string(m.gear) : "N", etc))
+            | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(46)) | pad_x(rem(1.4f));
+
+        // brand + best-time strip along the very bottom (the ACTIVISION line).
+        auto footer = row(
+            text("ACTIVISION") | fg(0xffffff) | font(15) | term | weight(Weight::black) | tracking_em(0.22f),
+            spacer(),
+            text(std::string("BEST ") + best) | fg(waya::rgba(0xffffff, 0.7f)) | font(12) | term | weight(Weight::black) | tabular_nums
+        ) | items_center | w_full
+          | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(0)) | h(pct(6))
+          | pad_x(rem(1.4f)) | bg(band);
+
+        // control pills (bottom-right, above the footer) — for touch/click.
+        auto controls = row(
+            hud_pill(m.gas ? "GAS ◉" : "GAS", GasTog{}, warn, m.gas),
+            hud_pill("SHIFT ▲", Shift{}, amber, false),
+            hud_pill(m.phase==Phase::Race||m.phase==Phase::Count ? "RUN" : "START", Start{}, good, false)
+        ) | gap(8)
+          | absolute() | right(pct(2)) | bottom(pct(8)) | z(6);
+
+        auto hud = box(midband, topDigits, controls, footer)
+            | absolute() | pin() | z(5) | safe_area() | no_pointer;
 
         // the whole window: full-bleed screen, HUD over it, overlay on top. dvh/
         // dvw (dynamic viewport) has no Len unit — the one place raw_css is right.

@@ -1,12 +1,12 @@
-/// dragster/screen.cpp — the LCD panel. Everything is drawn as a grid of square
-/// "segments" that are either LIT (near-black) or a faint GHOST (the unlit shape
-/// you can still see on a real LCD). A top-down view down the strip: the
-/// dragster sits at the bottom, lane dashes and distance ticks scroll toward you
-/// to sell speed, and a progress bar counts down to the finish line. Plus the
-/// tachometer, drawn in the same segment style.
+/// dragster/screen.cpp — the real Dragster layout: two horizontal lanes seen
+/// from the side. Each lane is a purple sky band over mint-green ground with
+/// pale distance ticks scrolling past; a black blocky dragster (a pixel sprite)
+/// sits in the lane and slides left→right as it covers the strip. Between/around
+/// the lanes: the signature green tachometer with its red redline marker.
 ///
-/// Built from waya's real Mods (grid_cols/grid_rows/gap/bg/round/aspect/…);
-/// raw_css only for the LCD sheen (a gradient overlay) — everything else is a Mod.
+/// Built from waya's real Mods (grid_cols/absolute/left/w/h/bg/gradient/…);
+/// raw_css appears only where there is no primitive (a couple of gradients and
+/// dvh sizing handled up in app.cpp).
 #include "screen.hpp"
 #include "theme.hpp"
 
@@ -24,91 +24,119 @@ namespace {
 
 using waya::rgb;
 
-constexpr int COLS = 9;    // lanes across the strip
-constexpr int ROWS = 11;   // rows down the strip (near = bottom)
-constexpr int CAR_COL = 4; // the dragster's lane (centre)
-constexpr int CAR_ROW = 9; // the dragster's row (near the bottom)
+// ── the side-view dragster, as a pixel sprite ───────────────────────────────
+// Facing right: a fat rear slick on the left, a long body, a small front wheel,
+// a driver bump. 1 = filled (black), 0 = empty. 14 wide × 7 tall.
+constexpr int SW = 14, SH = 7;
+constexpr const char* SPRITE[SH] = {
+    "..###.........",   // driver head/rollbar
+    ".#####..#####.",   // body top
+    "###############",  // full body line
+    "###############",  // full body line
+    "###############",  // full body line
+    ".####...#####.",   // underbody
+    "##..##.....##.",   // rear slick + front wheel
+};
 
-// One LCD cell: LIT (dark segment) or GHOST (faint unlit shape). `warm` tints a
-// lit cell toward the redline brown.
-NodeRef cell(bool lit, bool warm = false) {
-    return box()
-        | round(px(2))
-        | bg(lit ? rgb(warm ? hot : seg) : rgb(ghost).alpha(0.22f));
+NodeRef sprite() {
+    std::vector<NodeRef> cells;
+    cells.reserve(SW * SH);
+    for (int r = 0; r < SH; ++r)
+        for (int c = 0; c < SW; ++c) {
+            bool on = SPRITE[r][c] == '#';
+            cells.push_back(box() | (on ? bg(car) : opacity(0.0f)) | round(px(1)));
+        }
+    return box_(std::move(cells))
+        | grid_cols(SW) | grid_rows(SH) | gap(1)
+        | w(pct(100)) | h(pct(100));
 }
 
-// The dragster sprite, as a set of (col,row) offsets from CAR_COL/CAR_ROW.
-// A little top-down funny car: nose, body, two rear slicks.
-bool is_car(int c, int r) {
-    int dc = c - CAR_COL, dr = r - CAR_ROW;
-    // nose (row -2), body (rows -1..0), rear axle (row +0 wide)
-    if (dr == -2 && dc == 0) return true;                 // nose
-    if (dr == -1 && (dc == 0)) return true;               // body
-    if (dr ==  0 && (dc >= -1 && dc <= 1)) return true;   // cabin + axle
-    if (dr ==  1 && (dc == -1 || dc == 1)) return true;   // rear slicks
-    return false;
+// One lane: purple sky over mint ground, scrolling distance ticks, and a car
+// sliding across by `progress` (0..1). `hero` = the player's lane (crisper).
+NodeRef lane(double progress, int scroll, bool moving) {
+    // distance ticks along the top of the sky, scrolling left as you move.
+    std::vector<NodeRef> ticks;
+    const int N = 16;
+    for (int i = 0; i < N; ++i) {
+        double x = ((double)i / N * 108.0 - (scroll % 100) / 100.0 * 6.75);
+        if (x < -3) x += 108;
+        ticks.push_back(
+            box() | absolute() | left(pct((float)x)) | top(pct(0)) | w(pct(2.2f)) | h(pct(26))
+                  | bg(tick));
+    }
+    auto sky_band   = box_(std::move(ticks))
+        | absolute() | top(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(52))
+        | gradient(sky, skyLo, 180) | overflow("hidden");
+    auto ground_band = box()
+        | absolute() | bottom(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(48))
+        | gradient(ground, groundLo, 180);
+
+    // the car sits low in the lane, slides 4%..78% across as progress runs.
+    double cx = 4.0 + progress * 74.0;
+    auto car_l = box(sprite())
+        | absolute() | left(pct((float)cx)) | bottom(pct(20)) | w(pct(20)) | h(pct(52))
+        | (moving ? transition("left .1s linear") : Mod{});
+
+    return box(sky_band, ground_band, car_l)
+        | absolute() | pin() | overflow("hidden");
+}
+
+// A lane placed in a fixed vertical slice of the screen [top%, height%].
+NodeRef lane_at(float topPct, float hPct, double progress, int scroll, bool moving) {
+    return box(lane(progress, scroll, moving))
+        | absolute() | top(pct(topPct)) | left(pct(0)) | right(pct(0)) | h(pct(hPct))
+        | overflow("hidden");
 }
 
 } // namespace
 
 NodeRef strip_screen(const Model& m) {
-    // How far the road has scrolled (in cells). Faster gears scroll faster.
-    int scroll = (m.phase == Phase::Race) ? (int)(m.pos + m.speed) : (int)m.pos;
+    const bool racing = (m.phase == Phase::Race);
+    const int scroll = racing ? (int)(m.pos + m.speed) : (int)m.pos;
+    const double you = (double)m.pos     / STRIP_LEN;
+    const double opp = (double)m.opp_pos / STRIP_LEN;
 
-    // Build the ROWS×COLS matrix.
-    std::vector<NodeRef> cells;
-    cells.reserve(ROWS * COLS);
-    for (int r = 0; r < ROWS; ++r) {
-        for (int c = 0; c < COLS; ++c) {
-            bool lit = false;
-            // the dragster
-            if (is_car(c, r)) lit = true;
-            // lane dashes down the two lane-lines (cols 2 and 6), scrolling.
-            else if ((c == 2 || c == 6) && ((r + scroll) % 3 == 0)) lit = true;
-            // centre-line dashes (col 4) scrolling at the same cadence, offset.
-            else if (c == 4 && ((r + scroll) % 4 == 0) && !is_car(c, r)) lit = true;
-            cells.push_back(cell(lit));
-        }
-    }
+    // two lanes stacked: player on top, opponent below, black bands between.
+    auto top_lane = lane_at(2,  40, you, scroll, racing);
+    auto bot_lane = lane_at(56, 40, opp, scroll, racing);
 
-    auto matrix = box_(std::move(cells))
-        | grid_cols(COLS) | grid_rows(ROWS)
-        | gap(4) | w_full | h_full;
+    // black separator bands top / middle / bottom (the reference's letterbox).
+    auto bandT = box() | absolute() | top(pct(0))  | left(pct(0)) | right(pct(0)) | h(pct(2))  | bg(band);
+    auto bandM = box() | absolute() | top(pct(48)) | left(pct(0)) | right(pct(0)) | h(pct(8))  | bg(band);
+    auto bandB = box() | absolute() | bottom(pct(0))| left(pct(0)) | right(pct(0)) | h(pct(4)) | bg(band);
 
-    // The LCD panel fills the whole window: olive screen, matte inner frame, a
-    // soft sheen on top. The HUD (brand, timing, tach, buttons) floats over it
-    // in dark LCD ink, so the whole page reads as one big handheld screen.
-    return box(matrix, box() | sheen() | absolute() | pin() | no_pointer)
-        | absolute() | pin() | overflow("hidden")
-        | pad(rem(1.1f)) | gradient(lcd, lcdLo, 160)
-        | detail::raw_css("box-shadow", "inset 0 0 0 3px " + rgb(frame).css()
-                          + ", inset 0 0 60px " + rgb(0x000000).alpha(0.16f).css());
+    return box(top_lane, bot_lane, bandT, bandM, bandB)
+        | absolute() | pin() | overflow("hidden") | bg(page);
 }
 
 NodeRef tachometer(const Model& m) {
-    // A row of LCD segments; the top ~4 are the redline (warm). Lit fills with
-    // rpm — the same segment language as the screen, so it reads as one device.
-    std::vector<NodeRef> segs;
-    segs.reserve(TACH_ZONES);
-    const int lit = (m.rpm * TACH_ZONES) / REDLINE;
-    for (int i = 0; i < TACH_ZONES; ++i) {
-        const bool redzone = i >= TACH_ZONES - 4;
-        segs.push_back(
-            box() | grow() | h_full | round(px(2))
-                  | bg(i < lit ? rgb(redzone ? hot : seg) : rgb(ghost).alpha(0.22f)));
-    }
-    auto bar = row_(std::move(segs)) | gap(3) | h_full | align(Align::stretch) | w_full;
+    // the signature Dragster tach: a wide green bar; the top zone is a red
+    // redline block; a bright marker sits where the current rpm is.
+    const double frac = std::min(1.0, (double)m.rpm / REDLINE);
+    const double redStart = 0.8;   // last 20% is the redline
 
-    return col(
-        row(text("TACH") | fg(inkSoft) | font(9) | uppercase | tracking_em(0.2f) | term,
-            spacer(),
-            text(m.rpm > REDLINE ? "REDLINE" : (m.over > 0 ? "hot" : ""))
-                | fg(ink) | font(9) | weight(Weight::black) | term
-        ) | items_center | w_full,
-        box(bar) | h(px(16)) | w_full
-            | pad(px(3)) | round(px(4)) | bg(rgb(lcdLo).alpha(0.5f))
-            | detail::raw_css("box-shadow", "inset 0 0 0 1px " + rgb(frame).css())
-    ) | gap(4) | w_full;
+    auto greenFill = box()
+        | absolute() | top(pct(0)) | bottom(pct(0)) | left(pct(0))
+        | w(pct((float)(frac * 100.0)))
+        | bg(m.rpm > REDLINE ? tachRed : tachOk)
+        | transition("width .08s linear");
+    auto redZone = box()
+        | absolute() | top(pct(0)) | bottom(pct(0)) | right(pct(0)) | w(pct((float)((1-redStart)*100)))
+        | bg(rgb(tachRed).alpha(0.35f));
+    // a bright marker line at the current rpm position.
+    auto marker = box()
+        | absolute() | top(pct(-15)) | bottom(pct(-15)) | left(pct((float)(frac*100.0)))
+        | w(px(3)) | bg(0xffffff)
+        | transition("left .08s linear");
+
+    auto bar = box(redZone, greenFill, marker)
+        | absolute() | pin();
+
+    return box(bar)
+        | w_full | h(px(18)) | round(px(3)) | overflow("hidden")
+        | detail::raw_css("position", "relative")
+        | bg(rgb(band).alpha(0.85f))
+        | detail::raw_css("box-shadow", "inset 0 0 0 2px " + rgb(band).css());
 }
 
 } // namespace dr

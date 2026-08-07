@@ -136,6 +136,10 @@ std::pair<Model, Cmd<Msg>> update(Model m, Msg msg) {
             m.speed = gear_speed(m.gear, m.rpm);
             m.pos  += std::max(0, m.speed) / 20;
 
+            // The opponent (lane 2): a steady, beatable pace — finishes ~4.4s if
+            // you dawdle, so a clean run wins.
+            m.opp_pos = std::min(STRIP_LEN, (int)(m.elapsed * STRIP_LEN / 132));
+
             if (m.pos >= STRIP_LEN) {
                 m.pos = STRIP_LEN;
                 m.phase = Phase::Finished;

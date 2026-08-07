@@ -44,6 +44,7 @@ struct Model {
 
     // race state
     int   pos     = 0;          // distance down the strip, 0..STRIP_LEN
+    int   opp_pos = 0;          // the opponent's distance (lane 2)
     int   speed   = 0;          // current speed (derived from gear+rpm)
     int   count   = 0;          // countdown frames remaining (Count phase)
     long  frame   = 0;          // global tick counter
