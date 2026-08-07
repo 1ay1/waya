@@ -64,7 +64,8 @@ inline NodeRef progress(float pct, Tone tone = Tone::primary) {
     return box(bar) | w(pct_(100)) | h(8) | round(999)
         | detail::raw_css("background", "var(--wa-line, rgba(255,255,255,.12))")
         | detail::raw_css("overflow", "hidden")
-        | role("progressbar") | aria("valuenow", std::to_string((int)p));
+        | role("progressbar") | aria("valuenow", std::to_string((int)p))
+        | aria("valuemin", "0") | aria("valuemax", "100");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,12 +84,12 @@ NodeRef slider(float value, float min, float max, Msg msg, float step = 1) {
         "box-shadow:0 1px 4px rgba(0,0,0,.4)}"
         "input.wa-range::-moz-range-thumb{width:16px;height:16px;border-radius:999px;"
         "background:var(--wa-primary,#6366f1);cursor:pointer;border:2px solid #fff}");
-    auto n = input(std::to_string((int)value));
+    auto n = input(detail::numstr(value));
     n->input_type = "range";
     return n | attr("class", "wa-range")
-        | attr("min", std::to_string((int)min))
-        | attr("max", std::to_string((int)max))
-        | attr("step", std::to_string((int)step))
+        | attr("min", detail::numstr(min))
+        | attr("max", detail::numstr(max))
+        | attr("step", detail::numstr(step))
         | on_input(msg);
 }
 
