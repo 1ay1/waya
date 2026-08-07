@@ -36,8 +36,8 @@ target_include_directories(waya_dsl INTERFACE
 # of the headers into src/. Empty is legal (an OBJECT-less STATIC lib) until the
 # first .cpp lands; kept explicit (not GLOB) like maya's MAYA_LIB_SOURCES.
 set(WAYA_RUNTIME_SOURCES
-    # src/net/http.cpp
-    # src/net/ws.cpp
+    src/net/http.cpp
+    src/net/ws.cpp
     # src/json.cpp
     # src/surface/http_util.cpp
     # src/surface/session.cpp

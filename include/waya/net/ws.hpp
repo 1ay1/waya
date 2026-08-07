@@ -55,78 +55,35 @@ struct Sha1 {
     }
 };
 
-inline std::string base64(std::string_view in){
-    static const char* T="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string o; int val=0,bits=-6;
-    for(unsigned char c:in){ val=(val<<8)+c; bits+=8;
-        while(bits>=0){ o.push_back(T[(val>>bits)&0x3F]); bits-=6; } }
-    if(bits>-6) o.push_back(T[((val<<8)>>(bits+8))&0x3F]);
-    while(o.size()%4) o.push_back('=');
-    return o;
-}
+std::string base64(std::string_view in);
 } // namespace detail
 
 /// Compute the Sec-WebSocket-Accept value from the client key.
-inline std::string accept_key(std::string_view client_key){
-    static constexpr std::string_view GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    detail::Sha1 s;
-    return detail::base64(s.digest(std::string(client_key)+std::string(GUID)));
-}
+std::string accept_key(std::string_view client_key);
 
 /// Extract the Sec-WebSocket-Key header value from a raw HTTP request, if this
 /// is a WebSocket upgrade. Returns the handshake RESPONSE to send, or nullopt.
-inline std::optional<std::string> try_handshake(std::string_view req){
-    auto has = [&](std::string_view h){ return req.find(h) != std::string_view::npos; };
-    if(!has("Upgrade: websocket") && !has("Upgrade: WebSocket")) return std::nullopt;
-    auto kpos = req.find("Sec-WebSocket-Key:");
-    if(kpos == std::string_view::npos) return std::nullopt;
-    kpos += 18;
-    while(kpos<req.size() && (req[kpos]==' '||req[kpos]=='\t')) ++kpos;
-    auto end = req.find("\r\n", kpos);
-    std::string_view key = req.substr(kpos, end-kpos);
-    return "HTTP/1.1 101 Switching Protocols\r\n"
-           "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-           "Sec-WebSocket-Accept: " + accept_key(key) + "\r\n\r\n";
-}
+std::optional<std::string> try_handshake(std::string_view req);
 
-// ── Frame codec ─────────────────────────────────────────────────────────────
+// ── Frame codec ──────────────────────────────────────────────────
 
 /// Encode a text frame (server→client: no mask). FIN + opcode 0x1.
-inline std::string encode_text(std::string_view payload){
-    std::string f; f.push_back((char)0x81);
-    std::size_t n = payload.size();
-    if(n<126){ f.push_back((char)n); }
-    else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }
-    else { f.push_back((char)127); for(int i=7;i>=0;--i) f.push_back((char)((n>>(i*8))&0xFF)); }
-    f.append(payload);
-    return f;
-}
+std::string encode_text(std::string_view payload);
 
 /// Encode a BINARY frame (FIN + opcode 0x2) — for the packed frame protocol.
-inline std::string encode_binary(std::string_view payload){
-    std::string f; f.push_back((char)0x82);
-    std::size_t n = payload.size();
-    if(n<126){ f.push_back((char)n); }
-    else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }
-    else { f.push_back((char)127); for(int i=7;i>=0;--i) f.push_back((char)((n>>(i*8))&0xFF)); }
-    f.append(payload);
-    return f;
-}
+std::string encode_binary(std::string_view payload);
 
 /// Encode a close frame.
-inline std::string encode_close(){ return std::string{(char)0x88,(char)0x00}; }
-inline std::string encode_pong(std::string_view payload){
-    std::string f; f.push_back((char)0x8A); f.push_back((char)payload.size());
-    f.append(payload); return f;
-}
+std::string encode_close();
+
+/// A PONG frame (opcode 0xA) answering a client ping.
+std::string encode_pong(std::string_view payload);
+
 /// A PING frame (opcode 0x9). The server sends these on an idle connection so
 /// proxies/tunnels/load-balancers (nginx, Cloudflare, ngrok, ALB — all with
 /// ~60s idle timeouts) don't tear the socket down; a compliant client answers
 /// with a pong automatically. Payload is kept tiny (≤125 bytes, no ext length).
-inline std::string encode_ping(std::string_view payload = ""){
-    std::string f; f.push_back((char)0x89); f.push_back((char)(payload.size() & 0x7F));
-    f.append(payload); return f;
-}
+std::string encode_ping(std::string_view payload = "");
 
 /// One decoded incoming frame.
 struct Frame { int opcode = -1; std::string payload; bool ok = false; };
@@ -141,27 +98,6 @@ inline constexpr std::uint64_t kMaxFrame = 16u * 1024u * 1024u;
 /// Returns {ok=false} if incomplete OR malformed/oversized. `consumed` gets the
 /// bytes used. On an oversized/overflowing length it sets fr.opcode = -2 as a
 /// distinct "protocol error, close the connection" signal.
-inline Frame decode(std::string_view buf, std::size_t& consumed){
-    Frame fr; consumed = 0;
-    if(buf.size() < 2) return fr;
-    int opcode = buf[0] & 0x0F;
-    bool masked = buf[1] & 0x80;
-    std::uint64_t len = buf[1] & 0x7F;
-    std::size_t pos = 2;
-    if(len == 126){ if(buf.size()<4) return fr; len=((unsigned char)buf[2]<<8)|(unsigned char)buf[3]; pos=4; }
-    else if(len == 127){ if(buf.size()<10) return fr; len=0; for(int i=0;i<8;i++) len=(len<<8)|(unsigned char)buf[2+i]; pos=10; }
-    // Reject an oversized frame BEFORE allocating. This also makes the
-    // `buf.size() < pos+len` check below immune to uint64 overflow: len is now
-    // bounded well under SIZE_MAX, so pos+len cannot wrap.
-    if(len > kMaxFrame){ fr.opcode = -2; return fr; }
-    unsigned char mask[4]={0,0,0,0};
-    if(masked){ if(buf.size()<pos+4) return fr; for(int i=0;i<4;i++) mask[i]=buf[pos+i]; pos+=4; }
-    if(buf.size() < pos+len) return fr;
-    std::string payload; payload.resize(len);
-    for(std::uint64_t i=0;i<len;i++) payload[i]= masked ? (buf[pos+i]^mask[i&3]) : buf[pos+i];
-    fr.opcode = opcode; fr.payload = std::move(payload); fr.ok = true;
-    consumed = pos + len;
-    return fr;
-}
+Frame decode(std::string_view buf, std::size_t& consumed);
 
 } // namespace waya::ws

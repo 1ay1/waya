@@ -1,0 +1,251 @@
+/// \file src/net/http.cpp
+/// Out-of-line definitions for the blocking HTTP/1.1 client declared in
+/// waya/net/http.hpp. Compiled ONCE into waya_runtime instead of being
+/// re-emitted by every translation unit that includes the header.
+
+#include "waya/net/http.hpp"
+
+#include <cstdlib>
+#include <string>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
+
+#ifdef WAYA_TLS
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
+
+namespace waya::http {
+
+namespace detail {
+
+Url parse_url(const std::string& url) {
+    Url u; u.port = 80; u.scheme = "http"; u.path = "/";
+    std::string rest = url;
+    if (auto p = rest.find("://"); p != std::string::npos) {
+        u.scheme = rest.substr(0, p); rest = rest.substr(p + 3);
+    }
+    u.port = (u.scheme == "https") ? 443 : 80;
+    auto slash = rest.find('/');
+    std::string hostport = slash == std::string::npos ? rest : rest.substr(0, slash);
+    u.path = slash == std::string::npos ? "/" : rest.substr(slash);
+    if (auto c = hostport.find(':'); c != std::string::npos) {
+        u.host = hostport.substr(0, c); u.port = std::atoi(hostport.substr(c + 1).c_str());
+    } else u.host = hostport;
+    return u;
+}
+
+int tcp_connect(const std::string& host, int port, int timeout_ms) {
+    addrinfo hints{}; hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    if (::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0 || !res) return -1;
+    int fd = -1;
+    for (addrinfo* ai = res; ai; ai = ai->ai_next) {
+        fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) continue;
+        // non-blocking connect with select() timeout
+        int fl = ::fcntl(fd, F_GETFL, 0); ::fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+        int rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
+        if (rc == 0) { ::fcntl(fd, F_SETFL, fl); break; }
+        if (errno == EINPROGRESS) {
+            fd_set wf; FD_ZERO(&wf); FD_SET(fd, &wf);
+            timeval tv{ timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
+            if (::select(fd + 1, nullptr, &wf, nullptr, &tv) > 0) {
+                int err = 0; socklen_t len = sizeof(err);
+                ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
+                if (err == 0) { ::fcntl(fd, F_SETFL, fl); break; }
+            }
+        }
+        ::close(fd); fd = -1;
+    }
+    ::freeaddrinfo(res);
+    if (fd >= 0) {
+        // apply a read timeout for the response
+        timeval tv{ timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    }
+    return fd;
+}
+
+bool iequals(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if ((a[i] | 32) != (b[i] | 32)) return false;
+    return true;
+}
+
+std::string build_request(const Url& u, const Request& r) {
+    std::string req = r.method + " " + u.path + " HTTP/1.1\r\n";
+    req += "Host: " + u.host + "\r\n";
+    req += "Connection: close\r\n";
+    bool has_len = false, has_ua = false;
+    for (auto& [k, v] : r.headers) {
+        req += k + ": " + v + "\r\n";
+        if (iequals(k, "Content-Length")) has_len = true;
+        if (iequals(k, "User-Agent"))     has_ua = true;
+    }
+    if (!has_ua) req += "User-Agent: waya/0.1\r\n";
+    if (!r.body.empty() && !has_len) req += "Content-Length: " + std::to_string(r.body.size()) + "\r\n";
+    req += "\r\n";
+    req += r.body;
+    return req;
+}
+
+Response parse_response(const std::string& raw) {
+    Response r;
+    auto he = raw.find("\r\n\r\n");
+    std::string head = he == std::string::npos ? raw : raw.substr(0, he);
+    r.body = he == std::string::npos ? "" : raw.substr(he + 4);
+    // status line
+    if (auto sp = head.find(' '); sp != std::string::npos)
+        r.status = std::atoi(head.substr(sp + 1).c_str());
+    // headers
+    std::size_t pos = head.find("\r\n");
+    while (pos != std::string::npos) {
+        std::size_t next = head.find("\r\n", pos + 2);
+        std::string line = head.substr(pos + 2, (next == std::string::npos ? head.size() : next) - pos - 2);
+        if (auto c = line.find(':'); c != std::string::npos) {
+            std::string k = line.substr(0, c);
+            std::string v = line.substr(c + 1);
+            while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.erase(v.begin());
+            r.headers.emplace_back(std::move(k), std::move(v));
+        }
+        pos = next;
+    }
+    // de-chunk if needed. A hostile/truncated response can declare a chunk
+    // length longer than the actual body, or a negative/overflowing hex length;
+    // every access below is bounds-checked so a bad response yields a short body
+    // rather than an out_of_range throw or an OOB read.
+    for (auto& [k, v] : r.headers) {
+        if (iequals(k, "Transfer-Encoding") && v.find("chunked") != std::string::npos) {
+            std::string out; std::size_t i = 0;
+            while (i < r.body.size()) {
+                std::size_t nl = r.body.find("\r\n", i); if (nl == std::string::npos) break;
+                // parse the hex chunk size (ignoring any ;chunk-extension)
+                std::string szline = r.body.substr(i, nl - i);
+                errno = 0;
+                long long len = std::strtoll(szline.c_str(), nullptr, 16);
+                if (len <= 0 || errno) break;                      // 0 = terminator; <0/overflow = malformed
+                std::size_t data = nl + 2;                          // start of chunk data
+                if (data > r.body.size()) break;
+                std::size_t avail = r.body.size() - data;
+                std::size_t take = (std::size_t)len <= avail ? (std::size_t)len : avail;
+                out.append(r.body, data, take);
+                if (take < (std::size_t)len) break;                 // truncated: stop cleanly
+                i = data + take + 2;                                // skip data + trailing CRLF
+            }
+            r.body = std::move(out);
+            break;
+        }
+    }
+    return r;
+}
+
+} // namespace detail
+
+Response request(const Request& r) {
+    detail::Url u = detail::parse_url(r.url);
+    Response resp;
+
+    if (u.scheme == "https") {
+#ifndef WAYA_TLS
+        return resp;   // status 0: HTTPS needs -DWAYA_TLS (OpenSSL)
+#else
+        int fd = detail::tcp_connect(u.host, u.port, r.timeout_ms);
+        if (fd < 0) return resp;
+        static bool inited = [] { SSL_library_init(); SSL_load_error_strings(); return true; }();
+        (void)inited;
+        SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+        if (!ctx) { ::close(fd); return resp; }
+        SSL_CTX_set_default_verify_paths(ctx);
+        SSL* ssl = SSL_new(ctx);
+        SSL_set_tlsext_host_name(ssl, u.host.c_str());   // SNI
+        SSL_set_fd(ssl, fd);
+        if (SSL_connect(ssl) == 1) {
+            std::string req = detail::build_request(u, r);
+            SSL_write(ssl, req.data(), (int)req.size());
+            std::string raw; char b[8192]; int n;
+            while ((n = SSL_read(ssl, b, sizeof(b))) > 0) raw.append(b, n);
+            resp = detail::parse_response(raw);
+        }
+        SSL_shutdown(ssl); SSL_free(ssl); SSL_CTX_free(ctx); ::close(fd);
+        return resp;
+#endif
+    }
+
+    // plain HTTP
+    int fd = detail::tcp_connect(u.host, u.port, r.timeout_ms);
+    if (fd < 0) return resp;
+    std::string req = detail::build_request(u, r);
+    ::send(fd, req.data(), req.size(), 0);
+    std::string raw; char b[8192]; ssize_t n;
+    while ((n = ::recv(fd, b, sizeof(b), 0)) > 0) raw.append(b, n);
+    ::close(fd);
+    return detail::parse_response(raw);
+}
+
+Response get(const std::string& url, int timeout_ms) {
+    return request({ .method = "GET", .url = url, .timeout_ms = timeout_ms });
+}
+
+Response post(const std::string& url, std::string body,
+              std::string content_type, int timeout_ms) {
+    return request({ .method = "POST", .url = url,
+                     .headers = {{"Content-Type", std::move(content_type)}},
+                     .body = std::move(body), .timeout_ms = timeout_ms });
+}
+
+std::vector<std::pair<std::string,std::string>> parse_cookies(std::string_view header) {
+    std::vector<std::pair<std::string,std::string>> out;
+    std::size_t i = 0;
+    while (i < header.size()) {
+        std::size_t semi = header.find(';', i);
+        std::string_view part = header.substr(i, (semi == std::string_view::npos ? header.size() : semi) - i);
+        std::size_t eq = part.find('=');
+        if (eq != std::string_view::npos) {
+            std::string k(part.substr(0, eq)), v(part.substr(eq + 1));
+            auto trim = [](std::string& s){ while(!s.empty()&&(s.front()==' '||s.front()=='\t'))s.erase(s.begin());
+                                            while(!s.empty()&&(s.back()==' '||s.back()=='\t'))s.pop_back(); };
+            trim(k); trim(v);
+            if (!k.empty()) out.emplace_back(std::move(k), std::move(v));
+        }
+        if (semi == std::string_view::npos) break;
+        i = semi + 1;
+    }
+    return out;
+}
+
+std::string cookie_header(std::string_view raw_request) {
+    // case-insensitive line scan for "cookie:"
+    std::size_t i = 0;
+    while (i < raw_request.size()) {
+        std::size_t nl = raw_request.find("\r\n", i);
+        std::string_view line = raw_request.substr(i, (nl == std::string_view::npos ? raw_request.size() : nl) - i);
+        if (line.size() >= 7) {
+            bool m = true; const char* k = "cookie:";
+            for (int j = 0; j < 7; ++j) if ((line[j]|32) != k[j]) { m = false; break; }
+            if (m) { std::string v(line.substr(7)); while(!v.empty()&&v.front()==' ')v.erase(v.begin()); return v; }
+        }
+        if (nl == std::string_view::npos) break;
+        i = nl + 2;
+    }
+    return {};
+}
+
+std::string set_cookie(const std::string& name, const std::string& value,
+                       long max_age_secs, bool http_only,
+                       bool secure, std::string same_site) {
+    std::string c = name + "=" + value + "; Path=/";
+    if (max_age_secs > 0) c += "; Max-Age=" + std::to_string(max_age_secs);
+    if (!same_site.empty()) c += "; SameSite=" + same_site;
+    if (http_only) c += "; HttpOnly";
+    if (secure)    c += "; Secure";
+    return c;
+}
+
+} // namespace waya::http
