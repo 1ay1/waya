@@ -5,6 +5,15 @@ project(waya
     DESCRIPTION "A C++26 server-side web framework with a type-state HTML DSL"
     LANGUAGES CXX)
 
+# A waya app is a LIVE server: it runs view/diff/compress on every frame, so an
+# unoptimised build feels laggy for real-time UIs (30fps animations, etc.).
+# Default to Release when the user didn't pick a config — `./waya build/run` then
+# gets -O2 automatically. Override with -DCMAKE_BUILD_TYPE=Debug when debugging.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 # ── The library (header-only for now) ───────────────────────────────────────
 add_library(waya INTERFACE)
 add_library(waya::waya ALIAS waya)
