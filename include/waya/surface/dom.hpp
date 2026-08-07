@@ -83,9 +83,13 @@ private:
         switch(s.flow){ case Flow::row:o+="display:flex;flex-direction:row;";break;
             case Flow::col:o+="display:flex;flex-direction:column;";break;
             // stack = ZStack: a 1-cell grid where every child occupies the SAME
-            // cell (overlaid), centred by default. For badges, overlays, hero
-            // text on an image. The child-overlap rule is emitted in intern().
-            case Flow::stack:o+="display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;";break;
+            // cell (overlaid). Children STRETCH to fill the cell by default — the
+            // layering use-case (a backdrop behind content, an overlay over an
+            // image/canvas, a full-bleed SVG under a tap grid) wants each layer
+            // to fill, not sit at its intrinsic size in the middle. A child that
+            // wants to be centred small says so itself (center / an explicit
+            // size / position:absolute). The child-overlap rule is in intern().
+            case Flow::stack:o+="display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:stretch;";break;
             // grid = a real CSS grid; grid-template-columns/rows/areas come in
             // through the extra channel via grid_cols()/grid_rows()/grid_areas().
             case Flow::grid:o+="display:grid;";break;

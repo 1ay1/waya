@@ -855,7 +855,7 @@ inline Mod fit(std::string how){ return sty([=](Style& s){ s.extra.emplace_back(
 inline const Mod w_full = sty([](Style& s){ s.w={100,Unit::pct}; });
 inline const Mod h_full = sty([](Style& s){ s.h={100,Unit::pct}; });
 inline const Mod w_half = sty([](Style& s){ s.w={50,Unit::pct}; });
-inline const Mod w_screen = sty([](Style& s){ s.extra.emplace_back("width","100vw"); });
+inline const Mod w_screen = sty([](Style& s){ s.extra.emplace_back("width","100%"); });
 inline const Mod h_screen = sty([](Style& s){ s.extra.emplace_back("min-height","100vh"); });
 inline Mod w_frac(int num, int den){ return sty([=](Style& s){ s.w={100.f*num/den, Unit::pct}; }); }
 /// `square(px)` / `circle(px)` — equal-sided box; circle also rounds fully.
@@ -902,17 +902,20 @@ inline std::string rgba_hex(std::uint32_t c, float a){
     char buf[3]; std::snprintf(buf, sizeof(buf), "%02x", (int)(a*255+0.5f)); return hexstr(c)+buf; }
 }
 /// `radial(color, x%, y%)` — a soft radial glow bloom over a base, positioned at
-/// (x,y). The signature backdrop for hero sections. Fades to transparent.
-inline Mod radial(std::uint32_t color, int x=50, int y=-10, std::uint32_t base=0x090b14, int size=60){
+/// (x,y). The signature backdrop for hero sections. Fades to transparent. The
+/// bloom size is a fraction of the VIEWPORT (vmax), so it fills a small phone
+/// and a 4K monitor proportionally instead of staying a fixed rem blob.
+inline Mod radial(std::uint32_t color, int x=50, int y=-10, std::uint32_t base=0x090b14, int size=90){
     return sty([=](Style& s){ s.extra.emplace_back("background",
-        "radial-gradient("+std::to_string(size)+"rem "+std::to_string(size-10)+"rem at "+std::to_string(x)+"% "+std::to_string(y)+"%,"
+        "radial-gradient("+std::to_string(size)+"vmax "+std::to_string(size-15)+"vmax at "+std::to_string(x)+"% "+std::to_string(y)+"%,"
         +detail::rgba_hex(color,0.18f)+", transparent 60%), "+detail::hexstr(base)); }); }
 /// `mesh(a, b, base)` — a two-blob mesh gradient (top-left + top-right), the
-/// modern "ambient light" backdrop. Beautiful behind a dark hero.
+/// modern "ambient light" backdrop. Beautiful behind a dark hero. Sized in vmax
+/// so it scales with the viewport.
 inline Mod mesh(std::uint32_t a, std::uint32_t b, std::uint32_t base=0x090b14){
     return sty([=](Style& s){ s.extra.emplace_back("background",
-        "radial-gradient(55rem 40rem at 15% -5%,"+detail::rgba_hex(a,0.20f)+", transparent 60%),"
-        "radial-gradient(50rem 40rem at 90% 10%,"+detail::rgba_hex(b,0.14f)+", transparent 55%), "+detail::hexstr(base)); }); }
+        "radial-gradient(80vmax 60vmax at 15% -5%,"+detail::rgba_hex(a,0.20f)+", transparent 60%),"
+        "radial-gradient(70vmax 55vmax at 90% 10%,"+detail::rgba_hex(b,0.14f)+", transparent 55%), "+detail::hexstr(base)); }); }
 /// `gradient_bg(a, b, deg)` — a linear-gradient FILL (alias for gradient, reads
 /// clearer when you mean "the background").
 inline Mod gradient_bg(std::uint32_t a, std::uint32_t b, int deg=135){ return gradient(a,b,deg); }

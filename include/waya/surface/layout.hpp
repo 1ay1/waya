@@ -33,8 +33,8 @@ inline NodeRef spacer(){ auto n = box(); n->style.has_grow=true; n->style.grow=1
 /// bounds. `text("Hi") | fluid_font(24, 48)` grows on big screens, shrinks on
 /// small \u2014 no media queries.
 inline Mod fluid_font(float min_px, float max_px){
-    return detail::raw_css("font-size", "clamp(" + std::to_string((int)min_px) + "px,"
-        + std::to_string(min_px/16.f) + "rem + 2vw," + std::to_string((int)max_px) + "px)");
+    return detail::raw_css("font-size", "clamp(" + detail::numstr(min_px) + "px,"
+        + detail::numstr(min_px/16.f) + "rem + 2vw," + detail::numstr(max_px) + "px)");
 }
 /// `fluid(minLen, idealVw, maxLen)` \u2014 a general clamp() length for any prop.
 inline std::string fluid(std::string min_, std::string ideal, std::string max_){
@@ -74,8 +74,10 @@ template <typename... Cs> NodeRef center_col(Cs... cs){
 /// they STACK by themselves (no breakpoint). `sidebar(nav, main, 16rem)`.
 /// (Every Layout's Sidebar, via flex-wrap + flex-basis.)
 inline NodeRef sidebar(NodeRef side, NodeRef main_, Len side_w = rem(16)){
-    // side: don't grow, basis = side_w; main: grow, min-width triggers wrap.
-    side->style.has_grow=true; side->style.grow=1;
+    // side: FIXED width — don't grow (flex-grow:0), basis = side_w. A growing
+    // side rail would eat the free space and defeat the point of a sidebar.
+    side->style.has_grow=false; side->style.has_shrink=true; side->style.shrink=1;
+    side->style.extra.emplace_back("flex-grow", "0");
     side->style.extra.emplace_back("flex-basis", [&]{ std::string o; switch(side_w.unit){
         case Unit::px:o=std::to_string((int)side_w.value)+"px";break; case Unit::rem:o=std::to_string((int)side_w.value)+"rem";break; default:o="16rem"; } return o; }());
     finalize(*side);
