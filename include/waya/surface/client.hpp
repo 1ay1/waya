@@ -111,6 +111,21 @@ inline std::string client(int port) {
     // reads geometry. This is the single biggest responsiveness win for
     // real-time surfaces.
     "var q=[],raf=0;"
+    // CSS dedup: the server re-emits a class rule whenever it re-renders a node
+    // carrying it (the per-frame seen-set doesn't persist across frames), so a
+    // long-running app would append the SAME rules to the <style> forever and
+    // the sheet would grow without bound. We track which class selectors are
+    // already installed and only append rules we haven't seen. Keeps the
+    // stylesheet bounded no matter how long the app animates.
+    "var _css={};"
+    // Split a CSS string into top-level rules and append only unseen ones.
+    // Rules end at a top-level '}' (depth 0), so @keyframes/@media blocks with
+    // nested braces stay intact. Each rule string (e.g. '.ws-ab12{...}') is a
+    // stable dedup key, so a re-sent rule is appended at most once.
+    "function addCss(text){if(!text)return;var depth=0,start=0,add='';"
+    "for(var i=0;i<text.length;i++){var ch=text[i];if(ch==='{')depth++;else if(ch==='}'){depth--;if(depth===0){var r=text.slice(start,i+1);start=i+1;if(!_css[r]){_css[r]=1;add+=r;}}}}"
+    "if(start<text.length){var tail=text.slice(start);if(tail&&!_css[tail]){_css[tail]=1;add+=tail;}}"
+    "if(add)S.appendChild(document.createTextNode(add));}"
     "function flipSnapshot(){var m={};document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');if(k)m[k]=el.getBoundingClientRect();});return m;}"
     "function flipPlay(prev){document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');var o=prev[k];var n=el.getBoundingClientRect();"
     "if(!o){el.animate([{opacity:0,transform:'translateY(8px) scale(.98)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.7,.2,1)'});return;}"
@@ -119,7 +134,7 @@ inline std::string client(int port) {
     // FLIP snapshot worth its forced reflow.
     "function structural(frames){for(var fi=0;fi<frames.length;fi++){var os=frames[fi].ops;for(var i=0;i<os.length;i++){var k=os[i][0];if(k===7||k===8||k===6||k===5||k===0)return true;}}return false;}"
     "function flush(){raf=0;var frames=q;q=[];var willMove=structural(frames);var prev=willMove?flipSnapshot():null;"
-    "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)S.textContent+=m.css;"
+    "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)addCss(m.css);"
     "for(var i=0;i<m.ops.length;i++){apply(m.ops[i]);}}"
     "if(prev&&Object.keys(prev).length)flipPlay(prev);}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
@@ -135,7 +150,7 @@ inline std::string client(int port) {
     "var _wshost=location.host||(location.hostname+':"+std::to_string(port)+"');"
     "ws=new WebSocket(_wsproto+_wshost+'/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
     "ws.binaryType='arraybuffer';"
-    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
+    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';_css={};}started=true;route();};"
     // Text frames are runtime control messages (navigation, dev hot-reload);
     // binary frames are paints. This keeps one socket doing input, output, effects.
     "ws.onmessage=function(ev){if(typeof ev.data==='string'){ctl(ev.data);return;}paint(readFrame(ev.data));};"
