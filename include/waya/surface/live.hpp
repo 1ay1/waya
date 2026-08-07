@@ -257,30 +257,43 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
 }
 
 template <typename P>
+bool serve_http(int conn, std::string_view req, int port,
+                std::uint32_t page_bg, const char* page_title);
+
+template <typename P>
 void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* page_title = "waya") {
     using Model = typename P::Model;
     using Msg   = typename P::Msg;
 
-    // Read the full HTTP request — headers can arrive across MULTIPLE recv()s
-    // (TCP segmentation, common behind a proxy) and a proxy fattens the header
-    // set (X-Forwarded-*, CF-*, cookies) well past a single small read. Loop
-    // until the end-of-headers marker, bounded so a slow-loris can't grow us
-    // without limit. On localhost a request usually arrives whole; a proxy is
-    // where the one-shot read silently truncated the handshake.
-    std::string reqbuf;
-    {
-        constexpr std::size_t kMaxHeaders = 64u * 1024u;
-        char rb[8192];
-        for (;;) {
-            ssize_t n = ::recv(conn, rb, sizeof(rb), 0);
-            if (n <= 0) { if (reqbuf.empty()) { ::close(conn); return; } break; }
-            reqbuf.append(rb, (std::size_t)n);
-            if (reqbuf.find("\r\n\r\n") != std::string::npos) break;   // headers complete
-            if (reqbuf.size() > kMaxHeaders) break;                    // guard: stop reading
+    // Persistent-connection loop: an HTTP/1.1 client (and every reverse proxy)
+    // reuses one socket for many requests. We read+serve requests in a loop and
+    // only close when the client asks (Connection: close), we're draining, the
+    // peer goes away, or a request is malformed/oversized. `carry` holds any
+    // pipelined bytes for the next iteration. read_request() enforces the size/
+    // header/body bounds, so a slow-loris or oversized request is rejected up
+    // front instead of pinning the worker.
+    std::string carry;
+    RequestLimits limits;
+    bool first = true;
+    for (;;) {
+        Request rq;
+        ReadStatus st = read_request(conn, rq, carry, limits);
+        if (st == ReadStatus::Closed || st == ReadStatus::Timeout) { ::close(conn); return; }
+        if (st == ReadStatus::TooLarge) {
+            std::string r = http_response("431 Request Header Fields Too Large",
+                "text/plain; charset=utf-8", "431\n", {}, false, false, false);
+            send_all(conn, r.data(), r.size()); ::close(conn); return;
         }
-    }
-    std::string_view req{reqbuf};
+        if (st == ReadStatus::Malformed) {
+            std::string r = http_response("400 Bad Request", "text/plain; charset=utf-8",
+                                          "400 Bad Request\n", {}, false, false, false);
+            send_all(conn, r.data(), r.size()); ::close(conn); return;
+        }
+        std::string_view req{rq.raw};
 
+    // The FIRST request may be a WebSocket upgrade — the live protocol. A
+    // proxy forwards Upgrade on the same connection it did HTTP on, so we
+    // must check every request-line, but in practice it's the first.
     if (auto resp = ws::try_handshake(req)) {
         detail::send_all(conn, resp->data(), resp->size());
 
@@ -508,49 +521,65 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         return;
     }
 
+        // Not a WebSocket upgrade → an ordinary HTTP request. Serve it; keep the
+        // connection for the next request only if both sides want to.
+        (void)first; first = false;
+        bool keep = serve_http<P>(conn, req, port, page_bg, page_title);
+        if (!keep || g_draining) { ::close(conn); return; }
+        // Loop for the next request on this persistent connection. `carry` holds
+        // any pipelined bytes already read.
+    }
+}
+
+// Serve ONE HTTP request (non-WebSocket) on an already-read request `req`.
+// Returns true to KEEP the connection alive for the next request, false to
+// close it. Never closes the socket itself — the keep-alive loop in handle()
+// owns the fd's lifetime.
+template <typename P>
+bool serve_http(int conn, std::string_view req, int port,
+                std::uint32_t page_bg, const char* page_title) {
+    using Model = typename P::Model;
+    using Msg   = typename P::Msg;
+
     // ── SSR FIRST PAINT ────────────────────────────────────────────
-    // Render the app's CURRENT screen for the REQUESTED route directly into the
-    // initial HTML, plus its CSS inline. The browser shows real content on the
-    // first byte — no blank flash, works before/without JS, and is crawlable.
-    // The WebSocket then takes over live; its first full paint reconciles onto
-    // this SSR'd DOM (same node structure → usually a no-op).
     std::string route = request_path(req);
     std::string_view method = request_method(req);
     bool head_only = (method == "HEAD");
-    // OPTIONS is answered with the allowed methods (RFC 9110 9.3.7) so a
-    // preflight/discovery probe gets a correct 204 instead of an SSR page.
+
+    // Persist the connection when the client wants it AND we're not draining.
+    // A single Request parse serves keep-alive + conditional-request lookups.
+    Request rq{std::string(req), {}};
+    const bool keep = rq.wants_keep_alive() && !g_draining;
+    const char* conn_hdr = keep ? "Connection: keep-alive\r\nKeep-Alive: timeout=60\r\n"
+                                : "Connection: close\r\n";
+
+    // OPTIONS is answered with the allowed methods (RFC 9110 9.3.7).
     if (method == "OPTIONS") {
         std::string r = "HTTP/1.1 204 No Content\r\n" + sec_headers() +
-                        "Allow: GET, HEAD, OPTIONS\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        send_all(conn, r.data(), r.size()); access_log(method, route, 204); ::close(conn); return;
+                        "Allow: GET, HEAD, OPTIONS\r\n" + conn_hdr + "Content-Length: 0\r\n\r\n";
+        send_all(conn, r.data(), r.size()); access_log(method, route, 204); return keep;
     }
-    // A live SSR server serves GET/HEAD only (state changes travel over the
-    // socket, not HTTP verbs). Anything else is 405 with an Allow header —
-    // correct, and it stops a stray POST from getting a 200 HTML page.
+    // A live SSR server serves GET/HEAD only. Anything else is 405 + Allow.
     if (method != "GET" && !head_only) {
         auto r = http_response("405 Method Not Allowed", "text/plain; charset=utf-8",
-                               "405 Method Not Allowed\n", "Allow: GET, HEAD, OPTIONS\r\n");
+                               "405 Method Not Allowed\n", "Allow: GET, HEAD, OPTIONS\r\n",
+                               false, false, keep);
         send_all(conn, r.data(), r.size());
         access_log(method, route, 405);
-        ::close(conn); return;
+        return keep;
     }
 
-    // Health check for load balancers / orchestrators (Docker, k8s, Fly.io).
-    // A cheap 200 that doesn't render the app — answers "is the process up?".
+    // Health check for load balancers / orchestrators.
     if (route == "/healthz" || route.rfind("/healthz?",0)==0) {
-        auto r = http_response("200 OK", "text/plain; charset=utf-8", "ok", {}, head_only);
-        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
+        auto r = http_response("200 OK", "text/plain; charset=utf-8", "ok", {}, head_only, false, keep);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); return keep;
     }
 
-    // SEO plumbing files, served automatically. robots.txt tells crawlers they
-    // may index everything and where the sitemap is; sitemap.xml lists the
-    // routes the app declared (P::sitemap()). Both are optional — default robots
-    // allows all. Cacheable (they change rarely).
     if (route == "/robots.txt" || route.rfind("/robots.txt?",0)==0) {
         std::string body = "User-agent: *\nAllow: /\n";
         if constexpr (requires { P::site_url(); }) body += "Sitemap: " + std::string(P::site_url()) + "/sitemap.xml\n";
-        auto r = http_response("200 OK", "text/plain; charset=utf-8", body, {}, head_only, /*cache=*/true);
-        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
+        auto r = http_response("200 OK", "text/plain; charset=utf-8", body, {}, head_only, /*cache=*/true, keep);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); return keep;
     }
     if (route == "/sitemap.xml" || route.rfind("/sitemap.xml?",0)==0) {
         std::string base; if constexpr (requires { P::site_url(); }) base = P::site_url();
@@ -561,15 +590,13 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">";
         for (auto& p : paths){ body += "<url><loc>"; body += base + p; body += "</loc></url>"; }
         body += "</urlset>";
-        auto r = http_response("200 OK", "application/xml; charset=utf-8", body, {}, head_only, /*cache=*/true);
-        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
+        auto r = http_response("200 OK", "application/xml; charset=utf-8", body, {}, head_only, /*cache=*/true, keep);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); return keep;
     }
-    // The dev-mode favicon: browsers auto-request /favicon.ico; answer it with a
-    // 204 so it isn't SSR'd as the app (and doesn't 404-noise the logs).
     if (route == "/favicon.ico") {
         std::string r = "HTTP/1.1 204 No Content\r\n" + sec_headers() +
-                        "Cache-Control: public, max-age=86400\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        send_all(conn, r.data(), r.size()); access_log(method, route, 204); ::close(conn); return;
+                        "Cache-Control: public, max-age=86400\r\n" + conn_hdr + "Content-Length: 0\r\n\r\n";
+        send_all(conn, r.data(), r.size()); access_log(method, route, 204); return keep;
     }
 
     auto [ssr_model, ssr_cmd] = detail::init_of<P, Model, Msg>();
@@ -600,11 +627,10 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         for (auto& [k,v] : hr.headers)     extra += k + ": " + v + "\r\n";
         std::string rr = http_response(hr.status_line(), "text/html; charset=utf-8",
                                        "<a href=\"" + hr.location + "\">Redirecting…</a>",
-                                       extra, head_only);
+                                       extra, head_only, false, keep);
         send_all(conn, rr.data(), rr.size());
         access_log(method, route, hr.status);
-        ::close(conn);
-        return;
+        return keep;
     }
 
     NodeRef ssr_root = detail::safe_view<P>(ssr_model);   // captures tokens into a fresh table
@@ -710,11 +736,12 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         std::string inm{ Request{std::string(req), {}}.header("If-None-Match") };
         if (!inm.empty() && inm.find(etag) != std::string_view::npos) {
             std::string r = "HTTP/1.1 304 Not Modified\r\n" + sec_headers() +
-                            "ETag: " + etag + "\r\nCache-Control: no-cache\r\n"
-                            "Connection: close\r\nContent-Length: 0\r\n\r\n";
+                            "ETag: " + etag + "\r\nCache-Control: no-cache\r\n" +
+                            std::string(keep ? "Connection: keep-alive\r\n" : "Connection: close\r\n") +
+                            "Content-Length: 0\r\n\r\n";
             send_all(conn, r.data(), r.size());
             access_log(method, route, 304);
-            ::close(conn); return;
+            return keep;
         }
     }
     const std::string etag_hdr = "ETag: " + etag + "\r\n";
@@ -723,15 +750,15 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         std::string gz = gzip(doc);
         if (!gz.empty()) {
             http = http_response("200 OK", "text/html; charset=utf-8", gz,
-                                 "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n" + etag_hdr, head_only);
+                                 "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n" + etag_hdr, head_only, false, keep);
         }
     }
 #endif
     if (http.empty())
-        http = http_response("200 OK", "text/html; charset=utf-8", doc, etag_hdr, head_only);
+        http = http_response("200 OK", "text/html; charset=utf-8", doc, etag_hdr, head_only, false, keep);
     send_all(conn, http.data(), http.size());
     access_log(method, route, status);
-    ::close(conn);
+    return keep;
 }
 
 } // namespace detail
