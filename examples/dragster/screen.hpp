@@ -16,4 +16,8 @@ NodeRef strip_screen(const Model& m);
 /// are the redline and glow hot when you're revving into them.
 NodeRef tachometer(const Model& m);
 
+/// Just the segmented shift-light BAR (no label/caption) — for embedding in the
+/// data strip where the caption is supplied by the strip itself.
+NodeRef tachometer_bar(const Model& m);
+
 } // namespace dr

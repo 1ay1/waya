@@ -140,11 +140,11 @@ NodeRef strip_screen(const Model& m) {
         | absolute() | pin() | overflow("hidden") | bg(page);
 }
 
-NodeRef tachometer(const Model& m) {
+NodeRef tachometer_bar(const Model& m) {
     // A segmented "shift-light" tach like a real race car: 16 chunky blocks that
     // fill with rpm — green → amber → red as you climb, the top blocks are the
-    // redline. Lit blocks glow; unlit are faint. Dramatic and readable at a
-    // glance, and it screams "shift NOW" as the reds light.
+    // redline. Lit blocks glow; unlit are faint. No caption — the strip supplies
+    // it. A little "SHIFT!"/"REDLINE!" tag rides at the right end.
     const int N = 16;
     const int lit = std::min(N, (int)((double)m.rpm / REDLINE * N + 0.5));
     const bool over = m.rpm > REDLINE;
@@ -159,19 +159,26 @@ NodeRef tachometer(const Model& m) {
         if (on) blk = blk | glow(c, i >= N - 4 ? 9 : 5);
         blocks.push_back(std::move(blk));
     }
-    auto bar = row_(std::move(blocks)) | gap(3) | h_full | align(Align::stretch) | w_full;
+    auto bar = row_(std::move(blocks)) | gap(3) | h_full | align(Align::stretch) | grow();
 
-    return col(
-        row(
-            text("TACH") | fg(rgb(0xffffff).alpha(0.55f)) | font(10) | term | weight(Weight::bold) | uppercase | tracking_em(0.22f),
-            spacer(),
-            text(over ? "REDLINE!" : (lit >= N - 4 ? "SHIFT!" : ""))
-                | fg(over ? warn : amber) | font(11) | term | weight(Weight::black) | tracking_em(0.12f)
-                | glow_text(over ? warn : amber, 8)
-        ) | items_center | w_full,
-        box(bar) | h(px(22)) | w_full | pad(px(4)) | round(px(6))
+    auto cue = text(over ? "REDLINE" : (lit >= N - 4 ? "SHIFT" : ""))
+        | fg(over ? warn : amber) | font(10) | term | weight(Weight::black) | tracking_em(0.12f)
+        | glow_text(over ? warn : amber, 8)
+        | detail::raw_css("min-width", "52px");
+
+    return row(
+        box(bar) | grow() | h(px(20)) | pad(px(3)) | round(px(5))
             | bg(0x0a0b10)
-            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)")
+            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)"),
+        cue
+    ) | items_center | gap(8) | w_full;
+}
+
+NodeRef tachometer(const Model& m) {
+    // labelled version (caption above the bar) — kept for standalone use.
+    return col(
+        text("TACH") | fg(rgb(0xffffff).alpha(0.55f)) | font(10) | term | weight(Weight::bold) | uppercase | tracking_em(0.22f),
+        tachometer_bar(m)
     ) | gap(5) | w_full;
 }
 

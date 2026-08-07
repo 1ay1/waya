@@ -101,63 +101,50 @@ struct Dragster {
                 ? overlay("RED-LIGHT FOUL", "shifted before the green — press enter", warn)
           : (nothing());
 
-        // ── a solid dashboard bar docked under the screen ──────────────────
+        // ── the data strip: one instrument row of evenly-spaced segments, each
+        // divided by a hairline, so it reads as a single cohesive panel ────────
         std::uint32_t etc = m.phase==Phase::Finished ? good
                           : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
         bool running = m.phase==Phase::Race || m.phase==Phase::Count;
 
-        // a compact stat: caption + value, vertically stacked and legible.
-        auto stat = [&](std::string label, std::string value, std::uint32_t c){
+        // a labelled field: caption over value, consistent baseline across cells.
+        auto field = [&](std::string label, NodeRef value){
             return col(
-                text(std::move(label)) | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
-                    | weight(Weight::bold) | uppercase | tracking_em(0.16f),
-                text(std::move(value)) | fg(c) | font(22) | mono_font | weight(Weight::black) | tabular_nums | leading(1.0f)
-            ) | gap(2);
+                text(std::move(label)) | fg(waya::rgba(0xffffff,0.5f)) | font(9) | term
+                    | weight(Weight::bold) | uppercase | tracking_em(0.2f),
+                value
+            ) | gap(4);
         };
+        auto val = [&](std::string v, std::uint32_t c, int size){
+            return text(std::move(v)) | fg(c) | font(size) | mono_font
+                 | weight(Weight::black) | tabular_nums | leading(1.0f);
+        };
+        // a hairline vertical divider between segments.
+        auto div = [&]{ return box() | w(px(1)) | h(px(34)) | bg(waya::rgba(0xffffff,0.09f)); };
 
-        // The HERO race timer — this is a best-time game, so the clock leads.
-        // A clean tabular monospace so the digits don't jitter, with a caption.
-        auto timer = col(
-            text("elapsed") | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
-                | weight(Weight::bold) | uppercase | tracking_em(0.22f),
-            text(std::string(et) + "s") | fg(etc) | font(44) | mono_font | weight(Weight::black)
-                | tabular_nums | leading(1.0f) | glow_text(etc, 14)
-        ) | gap(3);
-
-        // control key-hints: a key badge + label per action, grouped as one tray.
         auto controls = row(
             hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
             hud_pill("↑",     "SHIFT", Shift{},  amber, false),
             hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
-        ) | gap(10);
+        ) | gap(8);
 
-        // the readouts as one tidy cluster (timer big, gear/best beside it).
-        auto readouts = row(
-            timer,
-            box() | w(px(1)) | h(px(40)) | bg(waya::rgba(0xffffff,0.1f)),   // divider
-            stat("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff),
-            stat("best", best, good)
-        ) | items_center | gap(rem(1.3f));
-
-        auto dash = col(
-            // instrument row: readout cluster | tach (grows) | controls.
-            row(
-                readouts,
-                box(tachometer(m)) | grow(),
-                controls
-            ) | items_center | gap(rem(2.4f)) | w_full,
-            // brand strip, clearly separated below the instruments.
-            row(
-                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.7f)) | font(11) | term
-                    | weight(Weight::black) | tracking_em(0.34f),
-                spacer(),
-                text("DRAGSTER · 1980") | fg(waya::rgba(0xffffff,0.35f)) | font(10) | term
-                    | weight(Weight::bold) | tracking_em(0.24f)
-            ) | items_center | w_full
-        ) | gap(rem(1.1f))
-          | pad_x(rem(2.4f)) | pad_y(rem(1.4f))
-          | gradient(0x1a1d27, 0x0c0d13, 180)
-          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.09), 0 -10px 30px rgba(0,0,0,.4)")
+        auto dash = row(
+            field("time", val(std::string(et) + "s", etc, 30)),
+            div(),
+            field("gear", val(m.gear ? std::to_string(m.gear) : "N", 0xffffff, 22)),
+            div(),
+            field("best", val(best, good, 22)),
+            div(),
+            box(field("tach", tachometer_bar(m))) | grow(),   // the tach fills the middle
+            div(),
+            controls,
+            div(),
+            text("ACTIVISION") | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
+                | weight(Weight::black) | tracking_em(0.24f)
+        ) | items_center | gap(rem(1.1f))
+          | pad_x(rem(1.6f)) | pad_y(rem(1.0f))
+          | gradient(0x191c25, 0x0d0e14, 180)
+          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.08)")
           | detail::raw_css("border-top", "1px solid rgba(255,255,255,.08)")
           | safe_area();
 
