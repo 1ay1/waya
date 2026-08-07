@@ -160,7 +160,12 @@ inline void diff_node(const Node& a, const Node& b, const std::string& path,
             if (a.src != b.src) out.push_back({Op::set_paint, path, {}, bref});
             return;
         case Kind::markup:
-            if (a.text != b.text) out.push_back({Op::set_paint, path, {}, bref});
+            // A markup node's content lives in its innerHTML, not in attributes or
+            // child nodes the diff walks. set_paint (k=1) only morphs ATTRIBUTES
+            // on the client, so a changing SVG/HTML body would never repaint
+            // (this is why an animated markup() looked frozen). Emit a full
+            // replace so the client swaps the whole element.
+            if (a.text != b.text) out.push_back({Op::replace, path, {}, bref});
             return;
         case Kind::path:
             if (a.points != b.points || a.closed != b.closed)
