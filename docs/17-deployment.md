@@ -119,9 +119,15 @@ check to `/healthz`, done.
   (`WAYA_WORKERS`), so a burst of async work can't exhaust threads.
 - **Rate limiting**: each connection is capped (~120 msgs/sec, burst 60) so one
   client can't pin a core.
+- **Connection ceiling + backpressure**: past `WAYA_MAX_CONN` (default 10000) new
+  connections get a fast `503 Retry-After: 2` instead of the server falling over.
 
-!!! note "The concurrency model today"
-    The runtime is thread-per-connection: fine for typical apps and thousands of
-    connections. For very high fan-out (tens of thousands of idle sockets), an
-    epoll/kqueue reactor is the planned next step. Until then, run multiple
-    instances behind a proxy to scale horizontally.
+!!! note "The concurrency model"
+    The runtime is an **epoll gate + bounded worker pool**. Idle and
+    between-request keep-alive connections are *parked in epoll* — they cost a
+    socket + a little memory, **not a thread** — and are handed to a fixed worker
+    pool (`WAYA_WORKERS`, default `4×CPU`) only when a request is actually ready.
+    So tens of thousands of idle keep-alive sockets are cheap. A live WebSocket
+    session (long-lived + stateful) runs on its own thread, off the pool. For
+    still more throughput, run multiple instances behind the proxy — no sticky
+    sessions needed (session resumption is per-tab and in-process).

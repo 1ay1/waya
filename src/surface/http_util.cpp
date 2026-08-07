@@ -265,9 +265,12 @@ std::string http_response(const char* status, const std::string& ctype,
                           const std::string& body, const std::string& extra_headers,
                           bool head_only, bool cache, bool keep_alive){
     std::string h = "HTTP/1.1 " + std::string(status) + "\r\n";
-    // Date is a MUST for an origin server (RFC 9110 6.6.1).
-    { std::time_t t = std::time(nullptr); char d[40];
-      std::strftime(d, sizeof d, "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&t));
+    // Date is a MUST for an origin server (RFC 9110 6.6.1). gmtime_r is the
+    // thread-safe variant — plain gmtime shares a static tm and races across
+    // the worker pool.
+    { std::time_t t = std::time(nullptr); std::tm tmv{}; char d[40];
+      ::gmtime_r(&t, &tmv);
+      std::strftime(d, sizeof d, "%a, %d %b %Y %H:%M:%S GMT", &tmv);
       h += "Date: "; h += d; h += "\r\n"; }
     h += "Server: waya\r\n";
     h += "Content-Type: " + ctype + "\r\n";
@@ -289,7 +292,8 @@ void access_log(std::string_view method, const std::string& path, int status){
     static const bool on = std::getenv("WAYA_LOG") != nullptr;
     if (!on) return;
     std::time_t t = std::time(nullptr); char ts[32];
-    std::strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&t));
+    std::tm tmv{}; ::gmtime_r(&t, &tmv);
+    std::strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tmv);
     std::fprintf(stderr, "waya: %s %.*s %s %d\n", ts, (int)method.size(), method.data(), path.c_str(), status);
 }
 

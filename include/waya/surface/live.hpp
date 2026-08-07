@@ -260,41 +260,69 @@ template <typename P>
 bool serve_http(int conn, std::string_view req, int port,
                 std::uint32_t page_bg, const char* page_title);
 
+// The runtime's connection disposition, re-exported so the templated handlers
+// (which live in this header) can name it without pulling more of runtime.hpp.
+using RuntimeDisposition = Disposition;
+
 template <typename P>
-void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* page_title = "waya") {
+void run_ws_session(int conn, std::string req_str, int port,
+                    std::uint32_t page_bg, const char* page_title);
+
+// Handle ONE readiness event on `conn`: read+serve a single request (the gate
+// already knows the socket is readable), then tell the gate what to do with the
+// fd. `carry` carries pipelined bytes across keep-alive re-parks. A WebSocket
+// upgrade spins the (long-lived, stateful) session onto its OWN thread and
+// returns Owned so the bounded worker is freed immediately.
+template <typename P>
+RuntimeDisposition handle(int conn, std::string& carry, int port,
+                          std::uint32_t page_bg = 0x0b1020, const char* page_title = "waya") {
     using Model = typename P::Model;
     using Msg   = typename P::Msg;
+    (void)sizeof(Model); (void)sizeof(Msg);
 
-    // Persistent-connection loop: an HTTP/1.1 client (and every reverse proxy)
-    // reuses one socket for many requests. We read+serve requests in a loop and
-    // only close when the client asks (Connection: close), we're draining, the
-    // peer goes away, or a request is malformed/oversized. `carry` holds any
-    // pipelined bytes for the next iteration. read_request() enforces the size/
-    // header/body bounds, so a slow-loris or oversized request is rejected up
-    // front instead of pinning the worker.
-    std::string carry;
     RequestLimits limits;
-    bool first = true;
-    for (;;) {
-        Request rq;
-        ReadStatus st = read_request(conn, rq, carry, limits);
-        if (st == ReadStatus::Closed || st == ReadStatus::Timeout) { ::close(conn); return; }
-        if (st == ReadStatus::TooLarge) {
-            std::string r = http_response("431 Request Header Fields Too Large",
-                "text/plain; charset=utf-8", "431\n", {}, false, false, false);
-            send_all(conn, r.data(), r.size()); ::close(conn); return;
-        }
-        if (st == ReadStatus::Malformed) {
-            std::string r = http_response("400 Bad Request", "text/plain; charset=utf-8",
-                                          "400 Bad Request\n", {}, false, false, false);
-            send_all(conn, r.data(), r.size()); ::close(conn); return;
-        }
-        std::string_view req{rq.raw};
+    Request rq;
+    ReadStatus st = read_request(conn, rq, carry, limits);
+    if (st == ReadStatus::Closed || st == ReadStatus::Timeout) return RuntimeDisposition::Close;
+    if (st == ReadStatus::TooLarge) {
+        std::string r = http_response("431 Request Header Fields Too Large",
+            "text/plain; charset=utf-8", "431\n", {}, false, false, false);
+        send_all(conn, r.data(), r.size()); return RuntimeDisposition::Close;
+    }
+    if (st == ReadStatus::Malformed) {
+        std::string r = http_response("400 Bad Request", "text/plain; charset=utf-8",
+                                      "400 Bad Request\n", {}, false, false, false);
+        send_all(conn, r.data(), r.size()); return RuntimeDisposition::Close;
+    }
 
-    // The FIRST request may be a WebSocket upgrade — the live protocol. A
-    // proxy forwards Upgrade on the same connection it did HTTP on, so we
-    // must check every request-line, but in practice it's the first.
-    if (auto resp = ws::try_handshake(req)) {
+    // WebSocket upgrade -> hand the connection to a dedicated session thread and
+    // free this pool worker (the session is long-lived + stateful and must not
+    // occupy a bounded pool slot).
+    if (ws::try_handshake(rq.raw)) {
+        std::string req_copy = rq.raw;
+        std::thread(run_ws_session<P>, conn, std::move(req_copy), port, page_bg, page_title).detach();
+        return RuntimeDisposition::Owned;
+    }
+
+    // Ordinary HTTP request. Serve exactly one; keep the connection parked in
+    // epoll for the next request if both sides want to.
+    bool keep = serve_http<P>(conn, std::string_view{rq.raw}, port, page_bg, page_title);
+    if (keep && !g_draining) return RuntimeDisposition::KeepAlive;
+    return RuntimeDisposition::Close;
+}
+
+// The long-lived WebSocket session, run on its own thread. Owns `conn` and
+// closes it on exit.
+template <typename P>
+void run_ws_session(int conn, std::string req_str, int port,
+                    std::uint32_t page_bg, const char* page_title) {
+    using Model = typename P::Model;
+    using Msg   = typename P::Msg;
+    (void)port; (void)page_bg; (void)page_title;
+    std::string_view req{req_str};
+
+    {
+        auto resp = ws::try_handshake(req);
         detail::send_all(conn, resp->data(), resp->size());
 
         auto s = std::make_shared<Session>();
@@ -519,15 +547,6 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         detail::memo_reset();   // don't leak this session's cache onto a recycled thread
         ::close(conn);
         return;
-    }
-
-        // Not a WebSocket upgrade → an ordinary HTTP request. Serve it; keep the
-        // connection for the next request only if both sides want to.
-        (void)first; first = false;
-        bool keep = serve_http<P>(conn, req, port, page_bg, page_title);
-        if (!keep || g_draining) { ::close(conn); return; }
-        // Loop for the next request on this persistent connection. `carry` holds
-        // any pipelined bytes already read.
     }
 }
 
@@ -784,8 +803,8 @@ int live(LiveConfig cfg = {}) {
     auto page_bg = cfg.page_bg;
     auto title   = cfg.title;
     int  port    = cfg.port;
-    return detail::serve(sc, [port, page_bg, title](int conn){
-        detail::handle<P>(conn, port, page_bg, title);
+    return detail::serve(sc, [port, page_bg, title](int conn, std::string& carry){
+        return detail::handle<P>(conn, carry, port, page_bg, title);
     });
 }
 

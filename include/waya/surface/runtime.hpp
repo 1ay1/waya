@@ -21,9 +21,20 @@ struct ServeConfig {
     std::string     host  = "0.0.0.0";
     bool            open  = true;    // open a browser on start
     std::string     url_scheme = "http";
+    // Scale knobs (env-overridable in serve()):
+    int             max_conn = 0;    // live-connection ceiling; 0 = auto (see serve)
+    int             workers  = 0;    // handler thread-pool size; 0 = auto (CPU-based)
 };
 
 namespace detail {
+
+/// What the connection handler wants the gate to do with the fd afterwards.
+enum class Disposition {
+    Close,      // handler is done and has closed / will close the fd
+    KeepAlive,  // HTTP keep-alive: re-park the fd in epoll for the next request
+    Owned,      // handler took ownership (e.g. a WebSocket session on its own
+                // thread); the gate must forget the fd entirely and NOT close it
+};
 
 /// Set the speed/robustness socket options on an ACCEPTED connection fd:
 /// TCP_NODELAY (diffs are tiny frames — Nagle would add ~40ms latency per tap),
@@ -34,11 +45,16 @@ void tune_conn(int conn);
 /// Run the accept loop. Creates the listening socket (IPv6 dual-stack when
 /// host is 0.0.0.0/::, else the exact host; REUSEADDR + REUSEPORT), installs
 /// SIGINT/SIGTERM/SIGPIPE handling, prints the banner, optionally opens a
-/// browser, then loops accept()->tune_conn()->on_conn(fd) until Ctrl-C.
-/// Returns a process exit code (0 normal, 1 on bind failure). `on_conn` takes
-/// ownership of the fd (it is expected to close it). Each connection is handled
-/// on its own detached thread inside serve().
-int serve(const ServeConfig& cfg, std::function<void(int conn)> on_conn);
+/// browser, then drives an epoll gate: idle/keep-alive connections are PARKED in
+/// epoll (cheap — a slot, not a thread) and only handed to a BOUNDED worker pool
+/// when they have request bytes ready. A connection ceiling sheds excess load
+/// with a fast 503. `on_ready(fd, carry)` serves what's available and returns a
+/// Disposition telling the gate whether to re-park (KeepAlive), forget (Owned,
+/// e.g. a WebSocket that took its own thread) or drop (Close) the fd. `carry`
+/// holds bytes already read past one request, preserved across re-parks.
+/// Returns a process exit code (0 normal, 1 on bind failure).
+int serve(const ServeConfig& cfg,
+          std::function<Disposition(int fd, std::string& carry)> on_ready);
 
 } // namespace detail
 } // namespace waya::surface
