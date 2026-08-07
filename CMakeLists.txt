@@ -39,7 +39,7 @@ set(WAYA_RUNTIME_SOURCES
     src/net/http.cpp
     src/net/ws.cpp
     src/json.cpp
-    # src/surface/http_util.cpp
+    src/surface/http_util.cpp
     # src/surface/session.cpp
     # src/surface/hub.cpp
     # src/surface/pool.cpp

@@ -33,6 +33,7 @@
 #include "component.hpp"
 #include "client.hpp"
 #include "program.hpp"
+#include "http_util.hpp"  // non-templated HTTP/socket helpers (compiled into waya_runtime)
 
 #include <atomic>
 #include <algorithm>
@@ -101,166 +102,14 @@ struct LiveConfig { int port = 8080; const char* host = "0.0.0.0"; bool open = t
 
 namespace detail {
 
-inline std::atomic<int> g_fd{-1};
-inline void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
-    std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
-
-/// The machine's primary LAN IP — so a 0.0.0.0-bound app can print a URL other
-/// devices can reach. Trick: "connect" a UDP socket toward a public address (no
-/// packet is sent) and read back the local endpoint the OS picked. Empty on
-/// failure (offline / no route).
-inline std::string lan_ip() {
-    int s = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (s < 0) return {};
-    sockaddr_in to{}; to.sin_family = AF_INET; to.sin_port = htons(53);
-    to.sin_addr.s_addr = inet_addr("8.8.8.8");
-    std::string ip;
-    if (::connect(s, (sockaddr*)&to, sizeof(to)) == 0) {
-        sockaddr_in me{}; socklen_t len = sizeof(me);
-        if (::getsockname(s, (sockaddr*)&me, &len) == 0) {
-            char buf[INET_ADDRSTRLEN];
-            if (::inet_ntop(AF_INET, &me.sin_addr, buf, sizeof(buf))) ip = buf;
-        }
-    }
-    ::close(s);
-    return ip;
-}
-
-/// Reserved message id for route deliveries. The wire never carries this from a
-/// tap (taps are the app's own enum values, always >= 0 in practice); the
-/// runtime injects it when a "@route|<path>" frame arrives and routes it through
-/// the app's Sub::on_route handler. Chosen far from any plausible app enum.
-inline constexpr int kRouteMsg = -0x7ACE;
-/// Reserved message id for a topic broadcast delivery. The owner loop reads the
-/// topic+payload off the Deliver and maps it through the app's on_topic handler.
-inline constexpr int kTopicMsg = -0x7ACD;
-
-/// The request line's path, e.g. "/about?x=1" from "GET /about?x=1 HTTP/1.1".
-/// Used to SSR the CORRECT screen for the requested route on first paint.
-inline std::string request_path(std::string_view req){
-    auto sp = req.find(' ');
-    if (sp == std::string_view::npos) return "/";
-    auto start = sp + 1;
-    auto end = req.find(' ', start);
-    if (end == std::string_view::npos || end <= start) return "/";
-    std::string p{req.substr(start, end - start)};
-    return p.empty() ? "/" : p;
-}
-/// The HTTP method token, e.g. "GET" from "GET /about HTTP/1.1".
-inline std::string_view request_method(std::string_view req){
-    auto sp = req.find(' ');
-    return sp == std::string_view::npos ? std::string_view{"GET"} : req.substr(0, sp);
-}
-/// The set of response headers a production SSR page always carries: the type,
-/// a caching policy, and the security headers a hardened server sends. `extra`
-/// appends anything response-specific (Content-Encoding, Allow, ...).
-/// - no-store on the HTML so a personalised, live-upgraded page is never cached
-///   stale by a browser/proxy (the app streams its own updates over the socket);
-/// - nosniff stops content-type confusion attacks;
-/// - frame-ancestors 'self' + X-Frame-Options blocks clickjacking;
-/// - a strict-origin referrer policy leaks less on outbound links.
-inline std::string sec_headers(){
-    return "X-Content-Type-Options: nosniff\r\n"
-           "X-Frame-Options: SAMEORIGIN\r\n"
-           "Content-Security-Policy: frame-ancestors 'self'\r\n"
-           "Referrer-Policy: strict-origin-when-cross-origin\r\n";
-}
-/// Build a complete HTTP/1.1 response. `status` is the full status line text
-/// ("200 OK", "404 Not Found", "405 Method Not Allowed"), `ctype` the
-/// Content-Type. `head_only` sends headers but omits the body (HTTP HEAD).
-inline std::string http_response(const char* status, const std::string& ctype,
-                                 const std::string& body, const std::string& extra_headers = {},
-                                 bool head_only = false, bool cache = false){
-    std::string h = "HTTP/1.1 " + std::string(status) + "\r\n";
-    h += "Content-Type: " + ctype + "\r\n";
-    h += cache ? "Cache-Control: public, max-age=3600\r\n"
-               : "Cache-Control: no-store\r\n";
-    h += sec_headers();
-    h += extra_headers;
-    h += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-    h += "Connection: close\r\n\r\n";
-    if (!head_only) h += body;
-    return h;
-}
-/// A structured access-log line: method, path, status. Opt-in — off by default
-/// so a dev run isn't noisy, on when WAYA_LOG is set (production behind a proxy).
-/// One line per request to stderr, so it composes with journald/Docker logs.
-inline void access_log(std::string_view method, const std::string& path, int status){
-    static const bool on = std::getenv("WAYA_LOG") != nullptr;
-    if (!on) return;
-    std::time_t t = std::time(nullptr); char ts[32];
-    std::strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&t));
-    std::fprintf(stderr, "waya: %s %.*s %s %d\n", ts, (int)method.size(), method.data(), path.c_str(), status);
-}
-/// Write ALL bytes, looping over short/partial writes. A single ::send can
-/// short-write on a backpressured socket (far likelier through a proxy than on
-/// loopback), which would truncate an HTTP response or handshake. Returns false
-/// if the peer went away.
-inline bool send_all(int fd, const char* data, std::size_t len){
-    std::size_t off = 0;
-    while (off < len) {
-        ssize_t w = ::send(fd, data + off, len - off, WAYA_MSG_NOSIGNAL);
-        if (w > 0) { off += (std::size_t)w; continue; }
-        if (w < 0 && (errno == EINTR)) continue;
-        return false;   // EAGAIN on a blocking socket is rare; treat as failure
-    }
-    return true;
-}
-/// True if the client advertised gzip in Accept-Encoding.
-inline bool accepts_gzip(std::string_view req){
-    auto pos = req.find("Accept-Encoding:");
-    if (pos == std::string_view::npos) pos = req.find("accept-encoding:");
-    if (pos == std::string_view::npos) return false;
-    auto eol = req.find("\r\n", pos);
-    return req.substr(pos, (eol==std::string_view::npos?req.size():eol) - pos).find("gzip") != std::string_view::npos;
-}
-
-#ifdef WAYA_GZIP
-/// gzip a buffer (opt-in: compile with -DWAYA_GZIP and link zlib). Returns empty
-/// on failure so the caller falls back to sending the body uncompressed.
-inline std::string gzip(const std::string& in){
-    z_stream zs{};
-    if (deflateInit2(&zs, Z_BEST_SPEED, Z_DEFLATED, 15+16, 8, Z_DEFAULT_STRATEGY) != Z_OK) return {};
-    zs.next_in = (Bytef*)in.data(); zs.avail_in = (uInt)in.size();
-    std::string out; char buf[16384];
-    int ret;
-    do {
-        zs.next_out = (Bytef*)buf; zs.avail_out = sizeof(buf);
-        ret = deflate(&zs, Z_FINISH);
-        out.append(buf, sizeof(buf) - zs.avail_out);
-    } while (ret == Z_OK);
-    deflateEnd(&zs);
-    return ret == Z_STREAM_END ? out : std::string{};
-}
-#endif
-
 /// The Program hooks — dispatch/init_of/subs_of/meta_of (which shape of the
 /// app's update/init/subscribe/meta it uses) — live in surface/program.hpp.
 /// Below are the runtime-only helpers: error boundaries, the build id, etc.
-
-/// An error card — shown in place of the app when view()/update() throws, so a
-/// bug isolates the session instead of crashing the server. Valid HTML/CSS.
-inline std::string error_html(std::string_view what){
-    std::string safe; for(char c : what){ if(c=='<')safe+="&lt;"; else if(c=='>')safe+="&gt;"; else if(c=='&')safe+="&amp;"; else safe+=c; }
-    return "<div style=\"min-height:100dvh;display:flex;align-items:center;justify-content:center;"
-           "padding:24px;background:#0b1020;color:#e2e8f0;font-family:ui-sans-serif,system-ui,sans-serif\">"
-           "<div style=\"max-width:32rem;padding:24px;border-radius:16px;background:#141b2e;"
-           "border:1px solid #ef444455\">"
-           "<div style=\"font-size:15px;font-weight:700;color:#ef4444;margin-bottom:8px\">"
-           "Something went wrong</div>"
-           "<div style=\"font-size:13px;color:#94a3b8;line-height:1.6;white-space:pre-wrap\">" + safe +
-           "</div></div></div>";
-}
 
 /// Render P::view(model) with an ERROR BOUNDARY: if the app's view throws, we
 /// return an error card node instead of letting the exception unwind into the
 /// detached thread (which would std::terminate the whole process). Keeps the
 /// server and every other session alive.
-/// A build id unique to this compiled binary (the compile timestamp). Used by
-/// the dev hot-reload beacon: a rebuild produces a new id, so a reconnecting
-/// client can tell "the server was rebuilt" apart from "the network blipped."
-inline const char* build_id(){ return __DATE__ " " __TIME__; }
-
 template <typename P, typename Model>
 NodeRef safe_view(const Model& m){
     try {
