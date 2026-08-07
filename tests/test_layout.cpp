@@ -311,6 +311,20 @@ int main() {
         CHECK(has(gb, "padding-box") && has(gb, "border-box") && has(gb, "1px solid transparent"));
     }
 
+    // board() / board_() — a responsive horizontal-scroll track (kanban/carousel)
+    // that scrolls inside itself (never widens the page) and snaps + shrinks.
+    {
+        auto b = board(rem(18), box(), box(), box(), box());
+        auto c = css_of(b);
+        CHECK(has(c, "overflow-x:auto"));                 // scrolls internally
+        CHECK(has(c, "scroll-snap-type:x proximity"));    // snaps column-to-column
+        CHECK(has(c, "width:100%"));                       // contained to the page
+        CHECK(has(c, "clamp(min(18rem"));                  // items shrink on small screens
+        // vector form matches the variadic form
+        std::vector<NodeRef> items; for(int i=0;i<3;++i) items.push_back(box());
+        CHECK(has(css_of(board_(px(240), std::move(items))), "overflow-x:auto"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

@@ -125,6 +125,39 @@ template <typename... Cs> NodeRef hero(Cs... cs){
     finalize(*n); return n;
 }
 
+/// BOARD / HSCROLL — a horizontally-scrolling row of fixed-width items (a kanban,
+/// a carousel, a shelf of cards) that STAYS RESPONSIVE: it scrolls INSIDE itself
+/// and never widens the page, its items shrink on small screens (clamp), and it
+/// snaps item-to-item. The correct way to do "columns side by side" without the
+/// classic "4 fixed columns overflow the phone" bug.
+///
+///   board(rem(18), colA, colB, colC, colD)   // desktop: all four; phone: swipe
+///
+/// `item_w` is the ideal item width; each item becomes
+/// `flex: 0 0 clamp(min(item_w,86vw), item_w, item_w)` so it never exceeds the
+/// viewport. Give items your own content; this handles the track.
+/// `board_(item_w, items)` — the vector form (build items in a loop).
+inline NodeRef board_(Len item_w, std::vector<NodeRef> k){
+    std::string w = std::to_string((int)item_w.value) + (item_w.unit==Unit::rem?"rem":"px");
+    for (auto& c : k){
+        c->style.extra.emplace_back("flex", "0 0 clamp(min(" + w + ", 86vw), " + w + ", " + w + ")");
+        c->style.extra.emplace_back("scroll-snap-align", "start");
+        finalize(*c);
+    }
+    auto n = box(); n->kids = std::move(k);
+    n->style.flow = Flow::row; n->style.gap = px(16);
+    n->style.extra.emplace_back("overflow-x", "auto");
+    n->style.extra.emplace_back("scroll-snap-type", "x proximity");
+    n->style.extra.emplace_back("-webkit-overflow-scrolling", "touch");
+    n->style.extra.emplace_back("align-items", "flex-start");
+    n->style.extra.emplace_back("width", "100%");
+    finalize(*n); return n;
+}
+template <typename... Cs> NodeRef board(Len item_w, Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    return board_(item_w, std::move(k));
+}
+
 // ── fixed grids ─ the primitive that makes TABLES + card grids ALIGN ────────
 // Faking columns with a per-row `row(grow(1)…)` never aligns — each row splits
 // its own free space. A real grid gives every cell a SHARED column track, so

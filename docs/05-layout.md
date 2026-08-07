@@ -195,6 +195,33 @@ sections.
 hero(headline, subtitle, cta) | gap(24)
 ```
 
+### `board` — a responsive horizontal-scroll track (kanban, carousel, shelf)
+
+```cpp
+template <typename... Cs> NodeRef board(Len item_w, Cs... items);
+NodeRef board_(Len item_w, std::vector<NodeRef> items);   // vector form
+```
+
+A row of fixed-width items that **scrolls horizontally inside itself** and
+**never widens the page**. Each item shrinks on small screens (clamped to the
+viewport) and the track **snaps** item-to-item. This is the correct way to place
+"columns side by side" without the classic *"4 fixed columns overflow the
+phone"* bug — on desktop you see them all, on a phone you swipe.
+
+```cpp
+board(rem(18), column_a, column_b, column_c, column_d)
+// or build the columns in a loop:
+std::vector<NodeRef> cols;
+for (auto& lane : lanes) cols.push_back(lane_view(lane));
+board_(px(290), std::move(cols))
+```
+
+!!! tip "Board vs. grid"
+    Use **`grid(min)`** / **`auto_grid`** when items should *reflow* (wrap to
+    more rows as space allows) — a card gallery. Use **`board`** when items are
+    columns that stay in one row and *scroll* — a kanban, a media carousel, a
+    horizontally-paged shelf.
+
 ## Real grids (tables, dashboards, any 2-D layout)
 
 Faking columns with per-row `row(grow(1)…)` never aligns — each row splits its

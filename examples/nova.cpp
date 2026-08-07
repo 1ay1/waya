@@ -302,7 +302,7 @@ struct Nova {
             | detail::raw_css("outline","none");
 
         // the whole column is a drop target tagged with its own id
-        return col(header, stack, composer) | gap(12) | pad(12) | round(16) | w(pct_(100))
+        return col(header, stack, composer) | gap(12) | pad(12) | round(16)
              | detail::raw_css("background", detail::hexstr(panel))
              | detail::raw_css("border","1px solid " + detail::hexstr(line))
              | detail::raw_css("min-height","220px")
@@ -344,7 +344,7 @@ struct Nova {
                 | detail::raw_css("border","1px solid rgba(255,107,107,.25)")
                 | detail::raw_css("text-align","center")
                 | tap(Del{ c->id })
-        ) | gap(14) | pad(24) | h(pct_(100)) | w(px(380)) | stop()
+        ) | gap(14) | pad(24) | h(pct_(100)) | w(px(380)) | detail::raw_css("max-width","100vw") | stop()
           | detail::raw_css("background", detail::hexstr(0x0d111a))
           | detail::raw_css("border-left","1px solid " + detail::hexstr(line))
           | slide_in(200);
@@ -455,11 +455,12 @@ struct Nova {
 
     // ── view ─────────────────────────────────────────────────────────────────
     static NodeRef view(const Model& m){
+        // A responsive board: columns scroll horizontally INSIDE the board and
+        // never widen the page; each shrinks on small screens and snaps. This is
+        // the framework's board_() primitive doing the right thing by default.
         std::vector<NodeRef> cols;
         for(int c=0;c<NCOL;++c) cols.push_back(column_view(m, c));
-        auto board = box(); board->kids = std::move(cols); board->style.flow=Flow::grid;
-        board->style.extra.emplace_back("grid-template-columns","repeat(4, minmax(240px, 1fr))");
-        board->style.gap = 16_px; finalize(*board);
+        auto board = board_(px(290), std::move(cols)) | pad_x(22) | pad_y(20);
 
         // global keyboard: ⌘K opens palette, ⌘Z undoes, from anywhere
         auto keys = box()
@@ -477,12 +478,13 @@ struct Nova {
 
         return col(
             topbar(m),
-            box(board) | pad_x(22) | pad_y(20) | detail::raw_css("overflow-x","auto"),
+            board,
             keys,
             drawer(m),
             palette(m),
             flashbar
-        ) | detail::raw_css("min-height","100vh")
+        ) | detail::raw_css("min-height","100vh") | detail::raw_css("max-width","100%")
+          | detail::raw_css("overflow-x","hidden")
           | detail::raw_css("background",
                 "radial-gradient(1200px 560px at 12% -8%, rgba(124,140,255,.10), transparent 60%),"
                 "radial-gradient(900px 500px at 92% 4%, rgba(34,211,238,.06), transparent 55%), " + std::string(detail::hexstr(bg)))
