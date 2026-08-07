@@ -24,6 +24,18 @@ namespace {
 
 using waya::rgb;
 
+// Emit a frequently-CHANGING css property as an INLINE style attribute instead
+// of an interned class. A node whose left/width changes every frame would
+// otherwise mint a brand-new CSS class per unique value — unbounded stylesheet
+// growth and a full class-swap (set_shell) each frame. Inline style keeps the
+// class stable, so only a cheap attr delta ships. (Mirrors the framework's
+// at_pct() trick, generalised to any one property.)
+inline Mod inline_css(std::string prop, std::string value){
+    return attr("style", prop + ":" + value);
+}
+inline Mod inline_left(double pctv){ char b[32]; std::snprintf(b,sizeof b,"%.3f%%",pctv); return inline_css("left", b); }
+inline Mod inline_width(double pctv){ char b[32]; std::snprintf(b,sizeof b,"%.3f%%",pctv); return inline_css("width", b); }
+
 // ── the side-view dragster ───────────────────────────────────────────────
 // A clean, recognizable rail dragster facing RIGHT, built from real shapes (not
 // a pixel grid): a big rear slick, a small front wheel on a long axle beam, a
@@ -103,8 +115,9 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     for (int i = -1; i < N + 1; ++i) {
         double x = i * (108.0 / N) - off;
         dashes.push_back(
-            box() | absolute() | left(pct((float)x)) | bottom(pct(20)) | w(pct(6)) | h(pct(4))
-                  | round(px(2)) | bg(rgb(0xffffff).alpha(0.7f)));
+            box() | absolute() | bottom(pct(20)) | w(pct(6)) | h(pct(4))
+                  | round(px(2)) | bg(rgb(0xffffff).alpha(0.7f))
+                  | inline_left(x));   // dynamic left -> inline (stable class)
     }
     auto ground_band = box_(std::move(dashes))
         | absolute() | bottom(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(48))
@@ -120,8 +133,9 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     for (int i = -1; i < T + 1; ++i) {
         double x = i * (108.0 / T) - toff;
         ticks.push_back(
-            box() | absolute() | left(pct((float)x)) | top(pct(14)) | w(pct(1.6f)) | h(pct(30))
-                  | bg(rgb(tick).alpha(0.85f)));
+            box() | absolute() | top(pct(14)) | w(pct(1.6f)) | h(pct(30))
+                  | bg(rgb(tick).alpha(0.85f))
+                  | inline_left(x));   // dynamic left -> inline (stable class)
     }
     auto sky_band = box_(std::move(ticks))
         | absolute() | top(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(52))
@@ -131,12 +145,14 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     double cx = 3.0 + progress * 71.0;
     // a soft shadow ellipse under it.
     auto shadow = box()
-        | absolute() | left(pct((float)cx + 2)) | bottom(pct(15)) | w(pct(20)) | h(pct(7))
+        | absolute() | bottom(pct(15)) | w(pct(20)) | h(pct(7))
         | round(pct(50)) | bg(rgb(0x000000).alpha(0.3f))
-        | detail::raw_css("filter", "blur(2px)");
+        | detail::raw_css("filter", "blur(2px)")
+        | inline_left(cx + 2);           // dynamic left -> inline
     auto car_l = box(sprite(hue, firing))
-        | absolute() | left(pct((float)cx)) | bottom(pct(16)) | w(pct(26)) | h(pct(52))
-        | (moving ? transition("left .1s linear") : Mod{});
+        | absolute() | bottom(pct(16)) | w(pct(26)) | h(pct(52))
+        | (moving ? transition("left .1s linear") : Mod{})
+        | inline_left(cx);               // dynamic left -> inline
 
     return box(sky_band, ground_band, shadow, car_l)
         | absolute() | pin() | overflow("hidden");
