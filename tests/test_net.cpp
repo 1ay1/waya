@@ -189,6 +189,37 @@ int main() {
         check(true, "JSON fuzz: 30k random inputs, no crash");
     }
 
+    // ── build_request header detection (regression: was matched by LENGTH) ────
+    {
+        using namespace waya::http;
+        detail::Url u{ .scheme = "http", .host = "example.com", .path = "/", .port = 80 };
+
+        // A 10-char header name ("Connection") must NOT be mistaken for
+        // "User-Agent": the default UA should still be added.
+        Request r1; r1.headers = { {"Connection", "keep-alive"} };
+        std::string req1 = detail::build_request(u, r1);
+        check(req1.find("User-Agent: waya/0.1") != std::string::npos,
+              "build_request adds default UA even with a 10-char header present");
+
+        // An explicit User-Agent suppresses the default (case-insensitive).
+        Request r2; r2.headers = { {"user-agent", "custom/9"} };
+        std::string req2 = detail::build_request(u, r2);
+        check(req2.find("waya/0.1") == std::string::npos && req2.find("custom/9") != std::string::npos,
+              "build_request honours an explicit (lowercased) User-Agent");
+
+        // A 14-char header that ISN'T Content-Length must not suppress it.
+        Request r3; r3.headers = { {"Accept-Charset", "utf-8"} }; r3.body = "hi";
+        std::string req3 = detail::build_request(u, r3);
+        check(req3.find("Content-Length: 2") != std::string::npos,
+              "build_request adds Content-Length despite an unrelated 14-char header");
+
+        // An explicit Content-Length is honoured (not duplicated).
+        Request r4; r4.headers = { {"Content-Length", "5"} }; r4.body = "hello";
+        std::string req4 = detail::build_request(u, r4);
+        check(req4.find("Content-Length: 5") != std::string::npos,
+              "build_request honours explicit Content-Length");
+    }
+
     std::cout << "test_net: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

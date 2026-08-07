@@ -144,6 +144,18 @@ int main() {
       check(!has(h, "javascript:"), "attr(href, javascript:) is neutralised"); }
     { auto h = html_of(image("/ok.png") | alt("a") | attr("src", "javascript:evil()"));
       check(!has(h, "data-ev") && !has(h, "\"javascript:evil()\""), "attr(src, javascript:) neutralised"); }
+    // The PRIMITIVE src (image/video/audio) is scheme-sanitised too, not just the
+    // attr() escape hatch (regression: primitive src bypassed safe_url).
+    { auto h = html_of(image("javascript:evil()") | alt("a"));
+      check(!has(h, "javascript:"), "image(javascript:) primitive src neutralised"); }
+    { auto h = html_of(image("data:text/html,<script>") | alt("a"));
+      check(!has(h, "data:text/html"), "image(data:) primitive src neutralised"); }
+    { auto h = html_of(video("javascript:evil()"));
+      check(!has(h, "javascript:"), "video(javascript:) primitive src neutralised"); }
+    { auto h = html_of(audio("javascript:evil()"));
+      check(!has(h, "javascript:"), "audio(javascript:) primitive src neutralised"); }
+    { auto h = html_of(image("/photo.jpg") | alt("a"));
+      check(has(h, "/photo.jpg"), "image with a normal relative src is preserved"); }
     { auto h = html_of(box(text("x")) | attr("formaction", "javascript:evil()"));
       check(!has(h, "javascript:"), "attr(formaction, javascript:) neutralised"); }
     { auto h = html_of(box(text("x")) | attr("data-safe", "javascript:ok"));

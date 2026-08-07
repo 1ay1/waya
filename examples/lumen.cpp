@@ -73,7 +73,8 @@ struct Lumen {
     }
 
     static const Command* by_id(const std::string& id) {
-        for (auto& c : all()) if (c.id == id) return &c; return nullptr;
+        for (auto& c : all()) { if (c.id == id) return &c; }
+        return nullptr;
     }
     static Mod border(std::uint32_t c) { return detail::raw_css("border","1px solid "+detail::hexstr(c)); }
 

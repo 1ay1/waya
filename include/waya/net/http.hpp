@@ -116,6 +116,13 @@ inline int tcp_connect(const std::string& host, int port, int timeout_ms) {
     return fd;
 }
 
+inline bool iequals(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if ((a[i] | 32) != (b[i] | 32)) return false;
+    return true;
+}
+
 inline std::string build_request(const Url& u, const Request& r) {
     std::string req = r.method + " " + u.path + " HTTP/1.1\r\n";
     req += "Host: " + u.host + "\r\n";
@@ -123,8 +130,8 @@ inline std::string build_request(const Url& u, const Request& r) {
     bool has_len = false, has_ua = false;
     for (auto& [k, v] : r.headers) {
         req += k + ": " + v + "\r\n";
-        if (k.size() == 14) has_len = true;   // "Content-Length"
-        if (k.size() == 10) has_ua = true;    // "User-Agent"
+        if (iequals(k, "Content-Length")) has_len = true;
+        if (iequals(k, "User-Agent"))     has_ua = true;
     }
     if (!has_ua) req += "User-Agent: waya/0.1\r\n";
     if (!r.body.empty() && !has_len) req += "Content-Length: " + std::to_string(r.body.size()) + "\r\n";
@@ -159,7 +166,7 @@ inline Response parse_response(const std::string& raw) {
     // every access below is bounds-checked so a bad response yields a short body
     // rather than an out_of_range throw or an OOB read.
     for (auto& [k, v] : r.headers) {
-        if (k.size() == 17 && (k[0]|32) == 't' && v.find("chunked") != std::string::npos) {
+        if (iequals(k, "Transfer-Encoding") && v.find("chunked") != std::string::npos) {
             std::string out; std::size_t i = 0;
             while (i < r.body.size()) {
                 std::size_t nl = r.body.find("\r\n", i); if (nl == std::string::npos) break;

@@ -91,7 +91,8 @@ struct Orbit {
 
         auto hexstr = [](std::uint32_t c){
             static const char* Hx = "0123456789abcdef"; std::string o = "#";
-            for (int s = 20; s >= 0; s -= 4) o += Hx[(c >> s) & 0xF]; return o;
+            for (int s = 20; s >= 0; s -= 4) { o += Hx[(c >> s) & 0xF]; }
+            return o;
         };
         auto num = [](float f){ char b[32]; std::snprintf(b, sizeof b, "%.1f", f); return std::string(b); };
 

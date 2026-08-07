@@ -271,7 +271,7 @@ private:
                 const std::string& tg = nd.tag.empty() ? std::string("span") : nd.tag;
                 o+='<'; o+=tg; open_attrs(o,nd); o+='>'; esc(o,nd.text); o+="</"; o+=tg; o+='>'; return;
             }
-            case Kind::image: o+="<img src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+='>'; return;
+            case Kind::image: o+="<img src=\""; esc_attr(o,safe_url(nd.src)); o+='"'; open_attrs(o,nd); o+='>'; return;
             case Kind::input: {
                 o+="<input type=\""; esc_attr(o,nd.input_type.empty()?"text":nd.input_type); o+='"';
                 o+=" value=\""; esc_attr(o,nd.text); o+='"';
@@ -317,8 +317,8 @@ private:
             }
             case Kind::form: o+="<form"; open_attrs(o,nd); o+='>';
                 for(auto&k:nd.kids){ emit(o,*k); } o+="</form>"; return;
-            case Kind::video: o+="<video src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+="></video>"; return;
-            case Kind::audio: o+="<audio src=\""; esc_attr(o,nd.src); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
+            case Kind::video: o+="<video src=\""; esc_attr(o,safe_url(nd.src)); o+='"'; open_attrs(o,nd); o+="></video>"; return;
+            case Kind::audio: o+="<audio src=\""; esc_attr(o,safe_url(nd.src)); o+='"'; open_attrs(o,nd); o+="></audio>"; return;
             case Kind::markup: o+="<div"; open_attrs(o,nd); o+='>'; o+=nd.text /*raw, trusted*/; o+="</div>"; return;
             case Kind::path: {
                 // Compute the points' bounds → a viewBox, so the SVG SCALES to fit
