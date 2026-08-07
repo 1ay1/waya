@@ -250,6 +250,17 @@ inline void push(std::vector<NodeRef>&){}
 template<typename... R> void push(std::vector<NodeRef>& v, NodeRef n, R... r){ v.push_back(std::move(n)); push(v,std::move(r)...); }
 /// #rrggbb string from a 0xRRGGBB int — used by many colour-taking mods.
 inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; }
+/// Compact float→string: integral values print bare (no ".000000") and any
+/// fractional value has its trailing zeros trimmed, so scale(1.1f) emits "1.1"
+/// not "1.100000". std::to_string always pads to 6 decimals on libc++/libstdc++,
+/// which leaked into transform:/filter: CSS values — this is the shared fix.
+inline std::string numstr(float f){
+    long long i=(long long)f; if((float)i==f) return std::to_string(i);
+    std::string s=std::to_string(f);
+    while(s.size()&&s.back()=='0') s.pop_back();
+    if(s.size()&&s.back()=='.') s.pop_back();
+    return s;
+}
 /// Serialize a Len to CSS (px/%/rem/…) — used by edge-offset mods.
 inline std::string lenstr(Len l){
     auto n=[](float f){ long i=(long)f; return (float)i==f? std::to_string(i) : std::to_string(f); };
@@ -509,7 +520,7 @@ inline Mod leading(float lh){ return sty([=](Style& s){ s.has_lh=true; s.line_he
 inline Mod tracking(float ls){ return sty([=](Style& s){ s.has_ls=true; s.letter_spacing=ls; }); }
 /// `tracking_em(v)` — letter-spacing in em (scales with font size). Negative
 /// tightens display headings: `tracking_em(-0.03f)`.
-inline Mod tracking_em(float em){ return sty([=](Style& s){ s.extra.emplace_back("letter-spacing", std::to_string(em)+"em"); }); }
+inline Mod tracking_em(float em){ return sty([=](Style& s){ s.extra.emplace_back("letter-spacing", detail::numstr(em)+"em"); }); }
 inline const Mod nowrap_text = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); });
 inline const Mod truncate = sty([](Style& s){ s.extra.emplace_back("white-space","nowrap"); s.extra.emplace_back("overflow","hidden"); s.extra.emplace_back("text-overflow","ellipsis"); });
 /// `line_clamp(n)` — truncate multi-line text to n lines with an ellipsis.
@@ -572,7 +583,7 @@ inline Mod border_bottom(float w_, std::uint32_t c){ return sty([=](Style& s){ s
 inline Mod border_top(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-top", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
 inline Mod border_left(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-left", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
 inline Mod border_right(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-right", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
-inline Mod aspect(float ratio){ return sty([=](Style& s){ s.extra.emplace_back("aspect-ratio", std::to_string(ratio)); }); }
+inline Mod aspect(float ratio){ return sty([=](Style& s){ s.extra.emplace_back("aspect-ratio", detail::numstr(ratio)); }); }
 
 // ── layout ────────────────────────────────────────────────────────────────
 inline const Mod wrap = sty([](Style& s){ s.wrap=Wrap::wrap; });
@@ -726,7 +737,7 @@ inline Mod cursor(Cursor c){ return sty([=](Style& s){ s.cursor=c; }); }
 inline Mod transition(std::string spec="all .15s ease"){ return sty([=](Style& s){ s.has_transition=true; s.transition_spec=spec; }); }
 inline Mod blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("filter","blur("+std::to_string((int)px_)+"px)"); }); }
 inline Mod backdrop_blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("backdrop-filter","blur("+std::to_string((int)px_)+"px)"); }); }
-inline Mod scale(float f){ return sty([=](Style& s){ s.extra.emplace_back("transform","scale("+std::to_string(f)+")"); }); }
+inline Mod scale(float f){ return sty([=](Style& s){ s.extra.emplace_back("transform","scale("+detail::numstr(f)+")"); }); }
 inline Mod rotate(float deg){ return sty([=](Style& s){ s.extra.emplace_back("transform","rotate("+std::to_string((int)deg)+"deg)"); }); }
 /// `translate(x, y)` — nudge a node by px on each axis (offsets, tooltips, art).
 inline Mod translate(float x, float y=0){ return sty([=](Style& s){ s.extra.emplace_back("transform",
@@ -1048,7 +1059,7 @@ inline Mod hover_lift(float px_=3){
 }
 /// `press()` — the node scales down slightly while held (tactile button feel).
 inline Mod press(float to=0.96f){
-    return on(Active, detail::raw_css("transform", "scale("+std::to_string(to)+")"));
+    return on(Active, detail::raw_css("transform", "scale("+detail::numstr(to)+")"));
 }
 /// `hover_glow(color)` — a coloured halo blooms on hover (brand buttons, cards).
 inline Mod hover_glow(std::uint32_t color, int spread=26){

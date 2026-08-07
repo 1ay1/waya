@@ -50,7 +50,12 @@ static Node* parent_of(NodeRef root, const std::string& path, int& child_idx) {
     child_idx = std::stoi(path.substr(dot + 1));
     return &at(root, path.substr(0, dot));
 }
-static void apply(NodeRef root, const Patch& p) {
+// Replay a patch over `root`, mutating it in place. Named `replay_patch` (not
+// `apply`) deliberately: calling an unqualified `apply(root, vec<PatchOp>)`
+// drags in std::apply via ADL (vector's associated namespace is std), and
+// overload resolution then instantiates std::apply's tuple_size<vector<...>>
+// requirement into a hard error on libc++.
+static void replay_patch(NodeRef root, const Patch& p) {
     for (auto& op : p) {
         switch (op.op) {
             case Op::set_text: at(root, op.path).text = op.s; break;
@@ -178,7 +183,7 @@ int main() {
         CHECK(only_moves);   // reorder never re-renders a row
         // SOUND: replaying the patch over a reproduces b's order exactly.
         auto work = list({"1","2","3"});
-        apply(work, p);
+        replay_patch(work, p);
         CHECK(keys(work) == keys(b));
     }
 
@@ -187,7 +192,7 @@ int main() {
         auto a = list({"1","2","3","4","5"});
         auto b = list({"5","4","3","2","1"});
         auto work = list({"1","2","3","4","5"});
-        apply(work, diff(a, b));
+        replay_patch(work, diff(a, b));
         CHECK(keys(work) == keys(b));
     }
 
@@ -204,7 +209,7 @@ int main() {
         }
         CHECK(has_insert && has_remove && has_move);   // reorder produces a move too
         auto work = list({"a","b","c","d"});
-        apply(work, p);
+        replay_patch(work, p);
         CHECK(keys(work) == keys(b));
     }
 
@@ -251,7 +256,7 @@ int main() {
         for (auto& c : b->kids) { finalize(*c); } finalize(*b);
         auto p = diff(a, b);
         auto work = list({"1","2","3"});
-        apply(work, p);
+        replay_patch(work, p);
         CHECK(keys(work) == (std::vector<std::string>{"3","1","2"}));
     }
 
