@@ -287,6 +287,15 @@ int main() {
         CHECK(has(h, "draggable=\"true\"")); CHECK(has(h, "name=\"card-7\""));
     }
     CHECK(has(html_of(box() | on_drop(Dropped)), "data-ev-drop=\""));
+    // drop_arg tags a target with its id; drop_target does both in one mod, so a
+    // drop delivers "<payload>:<id>" to the mapper. (regression: data-drop-arg
+    // was read by the client but nothing emitted it.)
+    CHECK(has(html_of(box() | drop_arg("col-2")), "data-drop-arg=\"col-2\""));
+    {
+        auto h = html_of(box() | drop_target("col-3", [](std::string s){ (void)s; return Dropped; }));
+        CHECK(has(h, "data-ev-drop=\""));            // the handler is wired
+        CHECK(has(h, "data-drop-arg=\"col-3\""));   // AND the target id is tagged
+    }
 
     // form + on_submit
     {

@@ -232,6 +232,8 @@ constexpr Len hug;    // content-sized (auto)
 | `on_submit(Fn: std::string→Msg)` | Form submit; value is the query string. |
 | `draggable(std::string payload={})` | Make draggable. |
 | `on_drop(Fn: std::string→Msg)` | Drop target. |
+| `drop_arg(std::string id)` | Tag a drop target with its id. |
+| `drop_target(std::string id, Fn: std::string→Msg)` | Drop zone + id, in one mod. |
 | `on(std::string event, Msg, std::string arg={})` | Any DOM event → fixed message. |
 | `on_ev(std::string event, Fn, std::string arg={})` | Any DOM event → mapped message. |
 | `stop()` | Stop click propagation to an outer `tap`. |

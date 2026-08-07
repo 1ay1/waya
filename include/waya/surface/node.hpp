@@ -1223,6 +1223,19 @@ struct FormData {
 inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
 /// `on_drop(fn)` on a drop target — fn maps the dropped payload to a Msg.
 template <typename Fn> Mod on_drop(Fn fn){ return on_ev("drop", std::move(fn)); }
+/// `drop_arg(id)` — tag a drop target with WHERE it is (e.g. a column id). The
+/// client delivers `"<dragged-payload>:<id>"` to this node's on_drop mapper, so
+/// the app learns both what was dropped AND where. Pair with `on_drop(fn)`.
+inline Mod drop_arg(std::string id){ return {[=](Node& n){ n.attrs.emplace_back("data-drop-arg", id); }}; }
+/// `drop_target(id, fn)` — the one-liner: mark a node a drop zone tagged `id`,
+/// with `fn` mapping the delivered `"<payload>:<id>"` string to a Msg. Parse the
+/// two halves in your handler (payload before the last ':', target id after).
+template <typename Fn> Mod drop_target(std::string id, Fn fn){
+    return {[id, fn = std::move(fn)](Node& n){
+        on_drop(fn).apply(n);
+        n.attrs.emplace_back("data-drop-arg", id);
+    }};
+}
 
 // ── arbitrary attributes & accessibility ──────────────────────────────
 /// `attr("title","Save")` — set ANY HTML attribute. The escape hatch for the

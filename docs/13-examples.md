@@ -1,6 +1,6 @@
 # Examples Walkthrough
 
-waya ships ten complete, single-file apps in `examples/`. Each is a real
+waya ships eleven complete, single-file apps in `examples/`. Each is a real
 `SurfaceProgram` you can build, run, and learn from. The easiest way to run one
 is the CLI (it builds Release automatically and opens your browser):
 
@@ -24,9 +24,37 @@ There are three flavours, so you can compare "pure core" vs "batteries":
 
 | Flavour | Examples | Uses |
 |---|---|---|
+| **Real product** | **nova** — a full issue tracker | drag & drop + multiplayer + palette |
 | **Product UI** | aurora, pulse, prism, flow, lumen, showcase | `waya/ui.hpp` (components + patterns) |
 | **Live generative** | orbit | core `markup()` + a tick `Sub` |
 | **Nerdy compute** | life, mandel, sort | pure C++ in `update`, streamed as deltas |
+
+## nova — a real issue tracker (the flagship)
+
+**`nova` is the app that proves the point:** a complete, polished Linear/Trello-
+class issue tracker, built entirely in C++ with **no HTML, CSS, or JavaScript**
+and no client bundle. It does everything a modern web app does:
+
+- **Drag-and-drop** cards between columns — they *glide* to their new place,
+  because rows are keyed and the diff emits a `move`, not a re-render.
+- **Live multiplayer** — open two tabs: create, move, edit, or delete in one and
+  it appears in the other instantly (pub/sub `broadcast` + `on_topic`).
+- **Command palette** (⌘K / Ctrl-K anywhere) — fuzzy-filter actions, arrow-key
+  through them, Enter to run (`on_shortcut`).
+- **Inline card creation**, an editable **detail drawer**, **live search** +
+  priority filter, and **undo** (⌘Z).
+
+It's ~500 lines of pure `update` over a plain `Model`. Study it to see how the
+hard parts of a real web app — DnD, real-time sync, keyboard-first UX, optimistic
+state — all collapse into ordinary, testable C++.
+
+```bash
+waya run nova            # then open the printed URL in TWO tabs
+```
+
+**Learn from it:** `draggable` + `drop_target` for real DnD, `broadcast`/
+`on_topic` for multiplayer, `on_shortcut` for global keys, keyed lists for glide
+animation, and how a substantial stateful UI stays a pure function of its model.
 
 ---
 

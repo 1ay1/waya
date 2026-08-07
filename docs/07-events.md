@@ -185,24 +185,31 @@ photo | on_double(Like{ id })     // Instagram's heart-on-photo
 ```cpp
 Mod draggable(std::string payload = {});          // make a node draggable
 template <typename Fn> Mod on_drop(Fn fn);        // Fn: std::string -> Msg
+Mod drop_arg(std::string id);                     // tag a target with its id
+template <typename Fn> Mod drop_target(std::string id, Fn fn);  // both, in one mod
 ```
 
 The dragged node's `payload` (its `name`) is delivered to the drop target's
-`on_drop` mapper, optionally combined with the target's drop argument:
+mapper as `"<payload>:<id>"`, where `<id>` is the target's `drop_arg`. Use
+`drop_target(id, fn)` to declare a drop zone and its id in one call:
 
 ```cpp
 // draggable card carrying its id
 card(item) | draggable(std::to_string(item.id))
 
 // a column that accepts drops, tagged with which column it is
-column | on("drop-arg", "todo") | on_drop([](std::string s){
-    // s == "<dragged-payload>:<target-arg>", e.g. "42:todo"
-    return MoveCard{ parse(s) };
+column | drop_target("todo", [](std::string s){
+    // s == "<dragged-payload>:<id>", e.g. "42:todo"
+    auto colon = s.rfind(':');
+    int card_id = std::atoi(s.substr(0, colon).c_str());
+    std::string col = s.substr(colon + 1);
+    return MoveCard{ card_id, col };
 });
 ```
 
-This is enough to build a full Kanban board — drag a card between columns and
-reorder in `update`.
+That's a full Kanban column: drag a card onto it, and `update` gets both **what**
+was dropped and **where**. (See the `nova` example for a complete drag-and-drop
+issue tracker.)
 
 ## The general event mod
 
