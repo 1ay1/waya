@@ -97,11 +97,29 @@ cmd_new() {
     sh "$SCRIPTS/create-waya-app.sh" "$@"
 }
 
+# Kill whatever is already listening on the port we're about to bind, so
+# `waya run`/`waya dev` always just runs what you asked for instead of
+# dying with "address already in use" because a previous run (or a stray
+# systemd-managed instance) is still holding it.
+kill_port() {
+    _port="${WAYA_PORT:-8080}"
+    case "$_port" in ''|*[!0-9]*) return 0 ;; esac
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k -TERM "${_port}/tcp" >/dev/null 2>&1 && sleep 1
+        fuser -k -KILL "${_port}/tcp" >/dev/null 2>&1
+    elif command -v ss >/dev/null 2>&1; then
+        _pid="$(ss -tlnp 2>/dev/null | awk -v p=":$_port\$" '$4 ~ p {print $NF}' | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)"
+        [ -n "$_pid" ] && kill "$_pid" 2>/dev/null && sleep 1 && kill -9 "$_pid" 2>/dev/null
+    fi
+    return 0
+}
+
 cmd_dev() {
     parse_opts "$@"
     set -- $REST
     target="${1:-counter}"
     need_cmake
+    kill_port
     # dev.sh takes (target, build-dir) positionally; honours WAYA_PORT/HOST/JOBS.
     exec sh "$SCRIPTS/dev.sh" "$target" "$BUILD"
 }
@@ -139,6 +157,7 @@ cmd_run() {
     target="${1:-counter}"
     cmd_build "$target" -d "$BUILD"
     bin="$(find_binary "$target")" || die "no binary produced for '$target'."
+    kill_port
     say "running ${B}$target${Z}  (Ctrl-C to stop)"
     exec "$bin"
 }
