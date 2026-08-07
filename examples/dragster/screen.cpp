@@ -201,23 +201,26 @@ NodeRef tachometer_bar(const Model& m) {
 
     auto cue = text(over ? "REDLINE" : (lit >= N - 4 ? "SHIFT" : ""))
         | fg(over ? warn : amber) | font(10) | term | weight(Weight::black) | tracking_em(0.12f)
-        | glow_text(over ? warn : amber, 8)
-        | detail::raw_css("min-width", "52px");
+        | glow_text(over ? warn : amber, 8);
 
-    return row(
-        box(bar) | grow() | h(px(20)) | pad(px(3)) | round(px(5))
-            | bg(0x0a0b10)
-            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)"),
-        cue
-    ) | items_center | gap(8) | w_full;
+    // caption + cue on one line, then the bar full width beneath. The bar height
+    // is fluid (clamp) so it scales with the viewport instead of a fixed 20px.
+    return col(
+        row(
+            text("TACH") | fg(rgb(0xffffff).alpha(0.5f)) | font(9) | term | weight(Weight::bold) | uppercase | tracking_em(0.2f),
+            spacer(),
+            cue
+        ) | items_center | w_full,
+        box(bar) | w_full | pad(px(3)) | round(px(5)) | bg(0x0a0b10)
+            | detail::raw_css("height", "22px")
+            | detail::raw_css("flex", "0 0 auto")
+            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)")
+    ) | gap(5) | w_full;
 }
 
 NodeRef tachometer(const Model& m) {
-    // labelled version (caption above the bar) — kept for standalone use.
-    return col(
-        text("TACH") | fg(rgb(0xffffff).alpha(0.55f)) | font(10) | term | weight(Weight::bold) | uppercase | tracking_em(0.22f),
-        tachometer_bar(m)
-    ) | gap(5) | w_full;
+    // tachometer_bar already carries the TACH caption + cue row.
+    return tachometer_bar(m);
 }
 
 } // namespace dr

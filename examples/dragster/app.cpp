@@ -109,59 +109,51 @@ struct Dragster {
                           : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : ink;
         bool running = m.phase==Phase::Race || m.phase==Phase::Count;
 
-        // a labelled field: caption over value, consistent baseline across cells.
+        // a labelled field: caption over value; all fields share a baseline so
+        // the values line up cleanly regardless of caption/value size.
         auto field = [&](std::string label, NodeRef value){
             return col(
                 text(std::move(label)) | fg(inkFaint) | font(9) | term
-                    | weight(Weight::bold) | uppercase | tracking_em(0.22f),
+                    | weight(Weight::bold) | uppercase | tracking_em(0.18f),
                 value
-            ) | gap(4);
+            ) | gap(3);
         };
         auto val = [&](std::string v, std::uint32_t c, int size){
             return text(std::move(v)) | fg(c) | font(size) | mono_font
                  | weight(Weight::black) | tabular_nums | leading(1.0f);
         };
-        // a hairline vertical divider between segments (desktop only).
-        auto div = [&]{ return box() | w(px(1)) | h(px(30)) | bg(line_c) | hide_below(Md); };
 
         auto controls = row(
             hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
             hud_pill("↑",     "SHIFT", Shift{},  amber, false),
             hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
-        ) | gap(8) | wrap;
+        ) | gap(8) | wrap | detail::raw_css("row-gap", "8px");
 
-        // the readout cluster (time / gear / best) — stays a tidy group.
+        // readouts — a tidy group, values bottom-aligned so 30px TIME and 22px
+        // GEAR/BEST share one baseline.
         auto readouts = row(
-            field("time", val(std::string(et) + "s", etc, 30)),
-            div(),
+            field("time", val(std::string(et) + "s", etc, 28)),
             field("gear", val(m.gear ? std::to_string(m.gear) : "N", cyan, 22)),
-            div(),
             field("best", val(best, good, 22))
-        ) | items_center | gap(rem(1.0f));
+        ) | align(Align::end) | gap(rem(1.2f));
 
-        // Top line of the strip: readouts on the left, controls on the right.
-        // They sit on one line on desktop and WRAP (controls drop below) on
-        // narrow screens instead of overflowing.
-        auto topline = row(
-            readouts,
-            spacer(),
-            controls
-        ) | items_center | gap(rem(1.0f)) | w_full | wrap
-          | detail::raw_css("row-gap", "12px");
+        // Top line: readouts left, controls right; wraps (controls drop below)
+        // on narrow screens instead of overflowing.
+        auto topline = row(readouts, spacer(), controls)
+            | items_center | gap(rem(1.0f)) | w_full | wrap
+            | detail::raw_css("row-gap", "10px");
 
         // the tach spans the FULL width on its own line — always readable.
-        auto tachline = box(field("tach", tachometer_bar(m))) | w_full;
+        auto tachline = tachometer_bar(m) | w_full;
 
-        auto dash = col(
-            topline,
-            tachline
-        ) | gap(rem(0.9f))
+        auto dash = col(topline, tachline)
+          | gap(rem(0.7f))
           | gradient(panel, panelLo, 180)
           | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)")
           | detail::raw_css("border-top", "1px solid " + waya::rgb(line_c).css())
           | detail::raw_css("padding",
-              "0.9rem max(1.4rem, env(safe-area-inset-right)) "
-              "max(0.9rem, env(safe-area-inset-bottom)) max(1.4rem, env(safe-area-inset-left))");
+              "0.85rem max(1.2rem, env(safe-area-inset-right)) "
+              "max(0.85rem, env(safe-area-inset-bottom)) max(1.2rem, env(safe-area-inset-left))");
 
         // the screen area: the two-lane race, with the phase overlay on top.
         auto screen = box(strip_screen(m), ov)
