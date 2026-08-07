@@ -72,12 +72,20 @@ int main() {
         CHECK(!fr.ok);
     }
 
-    // ── close / pong encoders ───────────────────────────────────────────────
+    // ── close / pong / ping encoders ────────────────────────────────────
     {
         auto c = encode_close();
         CHECK((unsigned char)c[0] == 0x88);
         auto p = encode_pong("x");
         CHECK((unsigned char)p[0] == 0x8A);
+        // PING (0x89) — the keepalive the server sends on idle so proxies/tunnels
+        // don't drop the socket.
+        auto pi = encode_ping();
+        CHECK((unsigned char)pi[0] == 0x89);
+        CHECK((unsigned char)pi[1] == 0x00);        // empty payload
+        auto pi2 = encode_ping("hb");
+        CHECK((unsigned char)pi2[0] == 0x89 && (unsigned char)pi2[1] == 0x02);
+        CHECK(pi2.substr(2) == "hb");
     }
 
     // ── adversarial: an oversized 64-bit length is rejected pre-allocation ───

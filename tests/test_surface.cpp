@@ -6,6 +6,7 @@
 #include <waya/surface/dom.hpp>
 #include <waya/surface/diff.hpp>
 #include <waya/surface/wire.hpp>
+#include <waya/surface/client.hpp>
 
 #include <iostream>
 #include <string>
@@ -126,6 +127,18 @@ int main() {
         auto j = patch_json(diff(view(1), view(2)));
         CHECK(has(j, "\"css\":"));
         CHECK(has(j, "\"ops\":[[0,\"1\",\"2\"]]"));
+    }
+
+    // ── client WS URL is DEPLOYMENT-ROBUST (regression guard) ───────────────
+    // The live socket URL must be derived from the page, not hardcoded, or it
+    // breaks behind HTTPS/proxies/tunnels (mixed content + wrong port). This is
+    // the test that would have caught the `ws://host:8080` bug.
+    {
+        std::string js = waya::surface::detail::client(8080);
+        CHECK(has(js, "wss://"));                        // uses secure scheme on https
+        CHECK(has(js, "location.protocol"));            // scheme derived from the page
+        CHECK(has(js, "location.host"));                // host+port from the page, not hardcoded
+        CHECK(!has(js, "'ws://'+location.hostname+':8080"));  // the exact old bug is gone
     }
 
     // ── "anything": a 5000-point chart is ONE node ──────────────────────

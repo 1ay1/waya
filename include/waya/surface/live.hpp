@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <csignal>
+#include <cerrno>
 #include <concepts>
 #include <cstdio>
 #include <cstdlib>
@@ -141,6 +142,20 @@ inline std::string request_path(std::string_view req){
     if (end == std::string_view::npos || end <= start) return "/";
     std::string p{req.substr(start, end - start)};
     return p.empty() ? "/" : p;
+}
+/// Write ALL bytes, looping over short/partial writes. A single ::send can
+/// short-write on a backpressured socket (far likelier through a proxy than on
+/// loopback), which would truncate an HTTP response or handshake. Returns false
+/// if the peer went away.
+inline bool send_all(int fd, const char* data, std::size_t len){
+    std::size_t off = 0;
+    while (off < len) {
+        ssize_t w = ::send(fd, data + off, len - off, WAYA_MSG_NOSIGNAL);
+        if (w > 0) { off += (std::size_t)w; continue; }
+        if (w < 0 && (errno == EINTR)) continue;
+        return false;   // EAGAIN on a blocking socket is rare; treat as failure
+    }
+    return true;
 }
 /// True if the client advertised gzip in Accept-Encoding.
 inline bool accepts_gzip(std::string_view req){
@@ -589,13 +604,28 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     using Model = typename P::Model;
     using Msg   = typename P::Msg;
 
-    char buf[8192];
-    ssize_t n = ::recv(conn, buf, sizeof(buf)-1, 0);
-    if (n <= 0) { ::close(conn); return; }
-    std::string_view req{buf, (size_t)n};
+    // Read the full HTTP request — headers can arrive across MULTIPLE recv()s
+    // (TCP segmentation, common behind a proxy) and a proxy fattens the header
+    // set (X-Forwarded-*, CF-*, cookies) well past a single small read. Loop
+    // until the end-of-headers marker, bounded so a slow-loris can't grow us
+    // without limit. On localhost a request usually arrives whole; a proxy is
+    // where the one-shot read silently truncated the handshake.
+    std::string reqbuf;
+    {
+        constexpr std::size_t kMaxHeaders = 64u * 1024u;
+        char rb[8192];
+        for (;;) {
+            ssize_t n = ::recv(conn, rb, sizeof(rb), 0);
+            if (n <= 0) { if (reqbuf.empty()) { ::close(conn); return; } break; }
+            reqbuf.append(rb, (std::size_t)n);
+            if (reqbuf.find("\r\n\r\n") != std::string::npos) break;   // headers complete
+            if (reqbuf.size() > kMaxHeaders) break;                    // guard: stop reading
+        }
+    }
+    std::string_view req{reqbuf};
 
     if (auto resp = ws::try_handshake(req)) {
-        ::send(conn, resp->data(), resp->size(), 0);
+        detail::send_all(conn, resp->data(), resp->size());
 
         auto s = std::make_shared<Session>();
         s->conn = conn;
@@ -666,6 +696,12 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         // the socket is never closed out from under a blocking recv().
         std::thread reader([s, conn]{
             std::string acc;
+            // Keepalive: wake recv() every 25s of silence to send a PING, so an
+            // idle proxy/tunnel/LB (nginx/Cloudflare/ngrok/ALB, ~60s timeouts)
+            // never tears the socket down. A timed-out recv returns -1/EAGAIN,
+            // which we treat as "idle", not "dead".
+            { timeval tv{}; tv.tv_sec = 25; tv.tv_usec = 0;
+              ::setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)); }
             // Token-bucket rate limit: a client can't pin a core by flooding taps.
             // ~120 msgs/sec sustained, burst 60. Over-limit frames are dropped
             // (not disconnected) so a legit fast typer isn't punished.
@@ -679,10 +715,23 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                 if (tokens < 1.0) return false;
                 tokens -= 1.0; return true;
             };
+            int idle_pings = 0;
             for (;;) {
                 char fb[8192];
                 ssize_t r = ::recv(conn, fb, sizeof(fb), 0);
-                if (r <= 0) break;
+                if (r <= 0) {
+                    if (!s->alive) break;
+                    if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                        // idle: send a keepalive ping. If the peer is truly gone,
+                        // the send fails and marks the session dead, ending us.
+                        s->send_binary(ws::encode_ping());
+                        if (!s->alive) break;
+                        if (++idle_pings > 20) break;   // ~8min of total silence: give up
+                        continue;
+                    }
+                    break;   // real EOF / error
+                }
+                idle_pings = 0;
                 acc.append(fb, r);
                 // Bound the reassembly buffer: a peer that never completes a
                 // frame can't make us allocate without limit.
@@ -697,7 +746,8 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
                     acc.erase(0, used);
                     if (fr.opcode == 0x8) { s->stop(); return; }        // close
                     if (fr.opcode == 0x9) { s->send_binary(ws::encode_pong(fr.payload)); continue; }
-                    if (fr.opcode != 0x1) continue;                     // ignore non-text
+                    if (fr.opcode == 0xA) { continue; }                 // pong (reply to our ping): ignore
+                    if (fr.opcode != 0x1) continue;                     // ignore other non-text
                     if (!allow()) continue;                             // rate-limited: drop
 
                     // Upstream messages: taps "<msg>"; inputs "i<msg>|<value>"
@@ -811,7 +861,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     if (route == "/healthz" || route.rfind("/healthz?",0)==0) {
         const char* http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
                            "Content-Length: 2\r\nConnection: close\r\n\r\nok";
-        ::send(conn, http, std::strlen(http), 0); ::close(conn); return;
+        send_all(conn, http, std::strlen(http)); ::close(conn); return;
     }
 
     // SEO plumbing files, served automatically. robots.txt tells crawlers they
@@ -823,7 +873,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         if constexpr (requires { P::site_url(); }) body += "Sitemap: " + std::string(P::site_url()) + "/sitemap.xml\n";
         std::string http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
             std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-        ::send(conn, http.data(), http.size(), 0); ::close(conn); return;
+        send_all(conn, http.data(), http.size()); ::close(conn); return;
     }
     if (route == "/sitemap.xml" || route.rfind("/sitemap.xml?",0)==0) {
         std::string base; if constexpr (requires { P::site_url(); }) base = P::site_url();
@@ -836,7 +886,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         body += "</urlset>";
         std::string http = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-Length: " +
             std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-        ::send(conn, http.data(), http.size(), 0); ::close(conn); return;
+        send_all(conn, http.data(), http.size()); ::close(conn); return;
     }
 
     auto [ssr_model, ssr_cmd] = detail::init_of<P, Model, Msg>();
@@ -956,7 +1006,7 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     if (http.empty())
         http = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
                "Content-Length: " + std::to_string(doc.size()) + "\r\nConnection: close\r\n\r\n" + doc;
-    ::send(conn, http.data(), http.size(), 0);
+    send_all(conn, http.data(), http.size());
     ::close(conn);
 }
 
@@ -969,21 +1019,40 @@ int live(LiveConfig cfg = {}) {
     check_program<P>();   // readable diagnostics before anything else
     if (const char* p = std::getenv("WAYA_PORT")) cfg.port = std::atoi(p);
     if (const char* h = std::getenv("WAYA_HOST")) cfg.host = h;
-    int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
-    int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    sockaddr_in a{}; a.sin_family=AF_INET; a.sin_port=htons((uint16_t)cfg.port); a.sin_addr.s_addr=inet_addr(cfg.host);
-    if (::bind(lfd,(sockaddr*)&a,sizeof(a))<0) { std::perror("waya: bind"); return 1; }
-    ::listen(lfd, 16);
+
+    // Bind IPv6 dual-stack for the default all-interfaces case: bind `::` with
+    // IPV6_V6ONLY off, so ONE socket accepts BOTH IPv4 and IPv6 clients. Many
+    // proxies/tunnels/`localhost` resolvers reach the server over IPv6 (::1),
+    // which an IPv4-only 0.0.0.0 socket refuses. A specific WAYA_HOST still uses
+    // the exact IPv4 address given. Falls back to IPv4 if IPv6 is unavailable.
+    bool all_ifaces = std::string(cfg.host) == "0.0.0.0" || std::string(cfg.host) == "::";
+    int lfd = -1;
+    if (all_ifaces) {
+        lfd = ::socket(AF_INET6, SOCK_STREAM, 0);
+        if (lfd >= 0) {
+            int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+            int v6only = 0; ::setsockopt(lfd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+            sockaddr_in6 a6{}; a6.sin6_family=AF_INET6; a6.sin6_port=htons((uint16_t)cfg.port); a6.sin6_addr=in6addr_any;
+            if (::bind(lfd,(sockaddr*)&a6,sizeof(a6)) < 0) { ::close(lfd); lfd = -1; }  // fall back to IPv4
+        }
+    }
+    if (lfd < 0) {   // specific host, or IPv6 unavailable → IPv4
+        lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        sockaddr_in a{}; a.sin_family=AF_INET; a.sin_port=htons((uint16_t)cfg.port);
+        a.sin_addr.s_addr = all_ifaces ? INADDR_ANY : inet_addr(cfg.host);
+        if (::bind(lfd,(sockaddr*)&a,sizeof(a))<0) { std::perror("waya: bind"); return 1; }
+    }
+    ::listen(lfd, 64);
     detail::g_fd = lfd;
     std::signal(SIGINT, detail::on_sigint); std::signal(SIGPIPE, SIG_IGN);
 #ifdef SIGTERM
     std::signal(SIGTERM, detail::on_sigint);   // Docker/systemd stop -> clean exit
 #endif
 
-    // When bound to 0.0.0.0 (all interfaces), "http://0.0.0.0" isn't a browsable
+    // When bound to all interfaces, "http://0.0.0.0"/"[::]" isn't a browsable
     // address — open localhost locally, and ALSO print the LAN address so other
     // devices (a phone on the same wifi) know where to point.
-    bool all_ifaces = std::string(cfg.host) == "0.0.0.0";
     std::string open_host = all_ifaces ? "localhost" : std::string(cfg.host);
     std::string url = "http://" + open_host + ":" + std::to_string(cfg.port);
     std::fprintf(stderr, "waya: surface app on %s  (Ctrl-C to stop)\n", url.c_str());
@@ -1003,7 +1072,11 @@ int live(LiveConfig cfg = {}) {
     }
     for (;;) {
         int conn = ::accept(lfd, nullptr, nullptr);
-        if (conn < 0) { if (detail::g_fd < 0) break; continue; }
+        if (conn < 0) {
+            if (detail::g_fd < 0) break;      // shutting down
+            if (errno == EINTR) continue;     // interrupted by a signal, retry
+            continue;                          // transient accept error, keep serving
+        }
         std::thread([conn, port=cfg.port, bg=cfg.page_bg, title=cfg.title]{ detail::handle<P>(conn, port, bg, title); }).detach();
     }
     return 0;

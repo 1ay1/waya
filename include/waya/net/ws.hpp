@@ -119,6 +119,14 @@ inline std::string encode_pong(std::string_view payload){
     std::string f; f.push_back((char)0x8A); f.push_back((char)payload.size());
     f.append(payload); return f;
 }
+/// A PING frame (opcode 0x9). The server sends these on an idle connection so
+/// proxies/tunnels/load-balancers (nginx, Cloudflare, ngrok, ALB — all with
+/// ~60s idle timeouts) don't tear the socket down; a compliant client answers
+/// with a pong automatically. Payload is kept tiny (≤125 bytes, no ext length).
+inline std::string encode_ping(std::string_view payload = ""){
+    std::string f; f.push_back((char)0x89); f.push_back((char)(payload.size() & 0x7F));
+    f.append(payload); return f;
+}
 
 /// One decoded incoming frame.
 struct Frame { int opcode = -1; std::string payload; bool ok = false; };
