@@ -69,11 +69,12 @@ struct Board {
 
     static Mod border(std::uint32_t c = line) { return detail::raw_css("border", "1px solid " + detail::hexstr(c)); }
 
-    static NodeRef ctrl(std::string ico, Msg msg) {
+    static NodeRef ctrl(std::string ico, std::string label, Msg msg) {
         return box(icon(ico, 15) | fg(body_c))
              | square(28) | center | round(7) | pointer
              | on(Hover, detail::raw_css("background", "rgba(255,255,255,.06)"))
              | on(Hover, fg(ink))
+             | role("button") | aria_label(std::move(label)) | tab_index(0)
              | tap(msg) | transition("background-color .15s ease");
     }
 
@@ -84,8 +85,8 @@ struct Board {
                     text(prio_name(c.prio)) | fg(body_c) | font(12) | weight(Weight::medium)) | gap(6) | items_center,
                 text("#" + std::to_string(c.id)) | fg(faint) | font(12) | tabular_nums,
                 box() | grow(),
-                ctrl("chevron-left", Back{ c.id }),
-                ctrl("chevron-right", Advance{ c.id })) | gap(4) | items_center
+                ctrl("chevron-left", "Move card back", Back{ c.id }),
+                ctrl("chevron-right", "Move card forward", Advance{ c.id })) | gap(4) | items_center
         ) | gap(12) | pad(14) | round(12)
           | detail::raw_css("background", "#131926")
           | border()
@@ -112,6 +113,7 @@ struct Board {
                  | gap(7) | center | pad_y(11) | round(10)
                  | detail::raw_css("border", "1px dashed #232c3d")
                  | pointer | on(Hover, detail::raw_css("background", "rgba(255,255,255,.03)"))
+                 | role("button") | aria_label("Add card to " + std::string(lane_name(lane))) | tab_index(0)
                  | tap(Add{ lane }) | transition("background-color .15s ease");
 
         return col(head, col_(std::move(cards)) | gap(10), add)
@@ -151,7 +153,7 @@ struct Board {
                    | gap(16) | items_start | wrap;
 
         return col(header | fade_up(450), board)
-             | gap(28) | pad(32) | max_w(1080) | center_x | min_h(100_vh)
+             | gap(28) | pad_fluid(16, 40) | w_full | max_w(1300) | center_x | min_h(100_vh)
              | detail::raw_css("background",
                  "radial-gradient(1100px 520px at 15% -10%, rgba(109,124,255,.14), transparent 60%),"
                  "radial-gradient(800px 480px at 90% 10%, rgba(0,212,255,.08), transparent 55%), #080b13")

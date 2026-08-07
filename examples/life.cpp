@@ -149,18 +149,23 @@ struct Life {
         svg += "</svg>";
 
         // an overlay of transparent tap targets, keyed so only toggled cells diff.
-        // No fixed size — the grid's WxH 1fr tracks make each cell scale with the
-        // container, so taps stay aligned with the SVG on any screen.
+        // Cells are a pointer-first drawing surface (like a canvas); making all
+        // W*H of them tab stops would be a terrible keyboard experience, so they
+        // carry tabindex=-1 (focusable programmatically, not in the tab order) +
+        // a gridcell role. Keyboard users draw via the preset buttons instead.
         std::vector<NodeRef> cells;
         cells.reserve(W * H);
         for (int y = 0; y < H; ++y)
             for (int x = 0; x < W; ++x) {
                 int i = idx(x, y);
-                cells.push_back(box() | pointer | tap(Toggle{ i }) | key(std::to_string(i)));
+                cells.push_back(box() | pointer | role("gridcell") | tab_index(-1)
+                    | aria_label(std::to_string(x + 1) + "," + std::to_string(y + 1))
+                    | tap(Toggle{ i }) | key(std::to_string(i)));
             }
         auto overlay = box_(std::move(cells))
             | detail::raw_css("position", "absolute") | detail::raw_css("inset", "0")
             | detail::raw_css("display", "grid")
+            | role("grid") | aria_label("Game of Life cells — click to toggle")
             | detail::raw_css("grid-template-columns", "repeat(" + std::to_string(W) + ",1fr)")
             | detail::raw_css("grid-template-rows", "repeat(" + std::to_string(H) + ",1fr)");
 

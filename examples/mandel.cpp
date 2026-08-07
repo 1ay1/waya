@@ -159,6 +159,8 @@ struct Mandel {
             for (int gx = 0; gx < 3; ++gx) {
                 double fx = (gx + 0.5) / 3.0, fy = (gy + 0.5) / 3.0;
                 zones.push_back(box() | detail::raw_css("cursor", "crosshair")
+                    | role("button") | tab_index(0)
+                    | aria_label("Zoom into region " + std::to_string(gy * 3 + gx + 1))
                     | tap(Zoom{ fx, fy }));
             }
 

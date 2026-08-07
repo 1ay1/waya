@@ -133,12 +133,13 @@ struct Orbit {
         return svg;
     }
 
-    static NodeRef ctrl(std::string ico, Msg msg) {
+    static NodeRef ctrl(std::string ico, std::string label, Msg msg) {
         return box(icon(ico, 16) | fg(0xd6def0))
              | square(36) | center | round(9)
              | detail::raw_css("background", "rgba(255,255,255,.05)")
              | detail::raw_css("border", "1px solid rgba(255,255,255,.10)")
              | pointer | on(Hover, detail::raw_css("background", "rgba(255,255,255,.10)"))
+             | role("button") | aria_label(std::move(label)) | tab_index(0)
              | tap(msg) | transition("background-color .15s ease");
     }
 
@@ -172,14 +173,16 @@ struct Orbit {
                 stat_("speed", std::to_string(m.speed) + "x"),
                 stat_("frame", std::to_string(m.t))) | gap(24),
             box() | grow(),
-            row(ctrl("minus", Fewer{}), ctrl("plus", More{}),
+            row(ctrl("minus", "Fewer nodes", Fewer{}), ctrl("plus", "More nodes", More{}),
                 divider,
-                ctrl("chevron-left", Slower{}), ctrl("chevron-right", Faster{}),
+                ctrl("chevron-left", "Slower", Slower{}), ctrl("chevron-right", "Faster", Faster{}),
                 divider,
                 box(icon(m.running ? "x" : "chevron-right", 16) | fg(0xffffff))
                     | square(36) | center | round(9)
                     | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#00d4ff)")
-                    | pointer | on(Hover, brightness(110)) | tap(Toggle{}))
+                    | pointer | on(Hover, brightness(110))
+                    | role("button") | aria_label(m.running ? "Pause" : "Play") | tab_index(0)
+                    | tap(Toggle{}))
                 | gap(8) | items_center
         ) | items_center | gap(20) | wrap | w_full
           | pad(14) | round(14)
@@ -188,7 +191,7 @@ struct Orbit {
           | detail::raw_css("border", "1px solid rgba(255,255,255,.08)");
 
         return col(bar, stage)
-             | gap(16) | pad(24) | max_w(1000) | center_x | min_h(100_vh) | justify_center
+             | gap(16) | pad_fluid(16, 40) | w_full | max_w(1500) | center_x | min_h(100_vh) | justify_center
              | detail::raw_css("background",
                  "radial-gradient(1000px 600px at 30% 10%, rgba(109,124,255,.14), transparent 55%),"
                  "radial-gradient(800px 500px at 80% 90%, rgba(0,212,255,.10), transparent 55%), #060912")
