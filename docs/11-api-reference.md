@@ -157,6 +157,7 @@ constexpr Len hug;    // content-sized (auto)
 | `fixed` / `sticky` / `relative` | Position modes. |
 | `inset(Len t, Len r, Len b, Len l)` | Inset offsets. |
 | `pin()` | `inset: 0`. |
+| `at_pct(float top%, float left%)` | Absolutely position at a percentage of the ancestor, centred, via **inline style** — for per-frame-moving nodes (no interned-class explosion). |
 | `z(int)` | z-index. |
 
 ### Effects
@@ -170,6 +171,10 @@ constexpr Len hug;    // content-sized (auto)
 | `backdrop_blur(float px)` | Frosted-glass backdrop blur. |
 | `scale(float)` / `rotate(float deg)` | Transforms. |
 | `transition(std::string="all .15s ease")` | Animate changes. |
+| `tap_pop()` | Instant client-side press "pop" on pointer-down — zero-round-trip tactile feedback. |
+| `optimistic()` | Instant busy state (dim + disabled) on click, cleared on the next paint. |
+| `ripple(std::uint32_t color=0xffffff)` | Material-style click ripple from the pointer. |
+| `interactive()` | `pointer` + `hover_lift(2)` + `press()` in one. |
 
 ### Animation
 
@@ -342,6 +347,20 @@ the core. See [The Component Library](14-components.md) for the full guide.
 | `dialog(open, close_msg, panel…)` | A complete modal. |
 | `toast(message, Tone=neutral)` / `toast_layer(nodes)` | Toast + its fixed stack. |
 | `light()` `midnight()` `ocean()` `rose()` | Ready-made `Theme` presets. |
+
+---
+
+## Performance & memoisation (`component.hpp`)
+
+Make `view()` O(changed) for large or high-frequency screens. See
+[Performance](24-performance.md) for the model and numbers.
+
+| Signature | Description |
+|---|---|
+| `memo(Props..., Fn build)` | Cache a subtree by its props; `build` runs only when a prop changes. Safe on interactive subtrees (tokens replayed on hit); cache is generation-swept. |
+| `component(Fn)` | Wrap `fn(Props...) -> NodeRef` into an auto-memoised, reusable component. |
+| `list(std::uint64_t id, range, key_fn, view_fn, Flow=col)` | A memoised keyed list: builds each row and caches the container by child identity. |
+| `list_versioned(std::uint64_t id, std::uint64_t version, range, key_fn, view_fn, Flow=col)` | O(1) when `version` is unchanged — the range is never iterated. |
 
 ---
 

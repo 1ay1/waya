@@ -62,20 +62,43 @@ Surface Model's promise: swap the backend and the app is unchanged.
 ## Retained surfaces & diffing
 
 waya keeps the last surface for each session. After `update`, it renders the new
-surface and **diffs** it against the retained one, producing a minimal patch:
+surface and **diffs** it against the retained one, producing a minimal patch.
+The op set is small and substrate-neutral:
 
-- text changes → a `set-text` op,
-- attribute/class changes → `set-attr`/`remove-attr`,
-- structural changes → `insert`/`remove`/`replace`,
+- text change → `set_text`,
+- style / attribute / handler change → `set_paint` (the client morphs the live
+  element's attributes in place),
+- vector-path change → `set_path`,
+- structural change → `insert` / `remove` / `replace` / `move`,
 
-each addressed by a node path. Only the changed nodes travel. A counter click
-that changes one number produces a handful of bytes, not a re-rendered page.
+each addressed by a node path (a dotted sequence of child indices). Only the
+changed nodes travel. A counter click that changes one number produces a handful
+of bytes, not a re-rendered page.
+
+!!! note "`set_paint` ships a shell, not a subtree"
+    The client applies `set_paint` by **morphing the element's own attributes**
+    and leaving its children alone (they reconcile via their own deeper ops). So
+    the server serialises only the element *shell* — its open tag + attributes,
+    with an empty body — not the whole subtree. For a deep node that only changed
+    a style, that's the difference between shipping ~130 bytes and ~600.
 
 ### Keyed lists
 
 For lists that reorder or grow, give rows a `key(...)`. The diff then matches
 rows by key and emits **moves** instead of rebuilding, so a reordered or
 prepended list updates minimally and preserves focus/scroll where possible.
+
+### Memoisation: making `view()` O(changed)
+
+`view()` is pure, so by default it rebuilds the whole surface each frame; the
+diff then discards the unchanged parts. For large or high-frequency screens the
+`memo` / `list` / `list_versioned` primitives (`surface/component.hpp`) cache
+built subtrees keyed by their inputs, so an unchanged region is neither rebuilt
+nor re-hashed — the *whole frame* becomes proportional to what changed. The memo
+cache is generation-swept (so churning keys don't leak) and records + replays a
+subtree's wire tokens on a cache hit (so memoising an **interactive** subtree
+doesn't break its taps). See [Performance](../24-performance.md) for the model
+and the numbers.
 
 ## The client runtime
 

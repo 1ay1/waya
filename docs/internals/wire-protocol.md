@@ -53,7 +53,7 @@ The diff emits one of these operations per changed node
 | Opcode | Meaning |
 |---|---|
 | `set_text` | Replace a text node's text. |
-| `set_paint` | Re-apply a node's class/attributes (style changed). |
+| `set_paint` | Re-apply a node's class/attributes (style/handler changed). Ships only the element **shell** — open tag + attributes, empty body — because the client morphs attributes in place and keeps the existing children. |
 | `set_path` | Update an SVG `path`'s geometry. |
 | `set_src` | Update an image/media `src`. |
 | `replace` | Replace a subtree (kind changed). |
@@ -75,10 +75,16 @@ in-progress CSS transitions).
 The client:
 
 1. reads the binary frame,
-2. appends any new CSS to a single `<style>`,
+2. appends any new CSS to a single `<style>` (chunks are deduplicated in O(1), so
+   a frame that touches many nodes doesn't rescan the accumulated stylesheet),
 3. applies each op to the DOM by node-path,
 4. coalesces every op of a frame into **one `requestAnimationFrame`**, so the
    DOM is touched once per frame regardless of how many nodes changed.
+
+FLIP motion (for `animated()` keyed rows) is only computed on frames that carry a
+**structural** op (`insert`/`move`/`remove`): a pure text/attribute/path tick
+never forces the layout read that FLIP needs, so a 60 fps animation doesn't
+thrash layout.
 
 Text frames (`@route|…`, `@url|…`) are handled as history/navigation control.
 

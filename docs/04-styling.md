@@ -222,6 +222,77 @@ spinner | spin(700)
 skeleton | shimmer()
 ```
 
+## Making it beautiful
+
+waya ships a deep set of **decorative mods** so a plain app looks designed
+without a stylesheet, a component kit, or a designer. These are the pieces the
+[`nova` example](13-examples.md#nova-the-flagship-an-animated-aurora-landing-live-analytics)
+composes into a marketing-grade page — read it alongside this table.
+
+### Backgrounds & surfaces
+
+| Mod | Effect |
+|---|---|
+| `gradient(a, b, deg=90)` | Linear-gradient background. |
+| `gradient_bg(a, b, deg=135)` | Alias with a diagonal default. |
+| `radial(color, x=50, y=-10, base, size=60)` | A radial glow bloom over a base colour — the classic "spotlight" hero backdrop. |
+| `mesh(a, b, base)` | A drifting multi-stop mesh gradient — an animated aurora backdrop. |
+| `glass(blur=14, tint, alpha)` | Frosted glass: blur + tint + hairline in one. |
+| `frost(blur=14, alpha=0.05)` | A lighter frosted-glass panel. |
+| `tint(color=white, alpha=0.04)` | A whisper of colour wash. |
+| `hairline(color=white, alpha=0.10)` | A 1px inner border for definition. |
+
+### Edges, glow & depth
+
+| Mod | Effect |
+|---|---|
+| `gradient_border(a, b, width=1, deg=135)` | A glowing gradient edge around a card. |
+| `glow(color, spread=24)` | A coloured outer glow (box-shadow bloom). |
+| `drop_shadow(color, blur=24, alpha=0.25)` | A coloured drop shadow — great on charts/sparklines. |
+| `elevation(0..5)` | Preset neutral shadow depth. |
+| `hover_lift(px=3)` | Lift the card on hover. |
+| `hover_glow(color, spread=26)` | Bloom a glow on hover. |
+| `interactive()` | `pointer` + `hover_lift(2)` + `press()` in one. |
+
+### Text as art
+
+| Mod | Effect |
+|---|---|
+| `gradient_text(a, b, deg=90)` | Fill glyphs with a gradient. |
+| `aurora_text(a, b, c, secs=8)` | An animated three-colour aurora sweep across the text — the hero headline. |
+| `glow_text(color, blur=24)` | A neon text glow. |
+
+### Ambient motion
+
+| Mod | Effect |
+|---|---|
+| `float_(secs=4)` | A gentle up-and-down bob — for an icon or badge. |
+| `breathe(secs=3)` | A soft scale/opacity "breathing" pulse — for a live dot. |
+| `aurora(a, b, c, secs=18)` | A slow animated gradient wash on a surface. |
+
+A whole gorgeous card, from these pieces:
+
+```cpp
+col(
+    row(text("Revenue") | fg(muted) | caption | semibold,
+        push(),
+        box() | size(7) | round(999) | bg(0x8b5cf6) | breathe()),   // live dot
+    text("$84,210") | font_fluid(26, 34) | weight(Weight::black),
+    line_chart(history) | stroke(0x8b5cf6, 2.5f) | drop_shadow(0x8b5cf6, 14, 0.5f)
+)
+| gap(10) | pad(22) | round(20)
+| frost(12) | gradient_border(0x8b5cf6, 0x22d3ee, 1)   // glass + glowing edge
+| hover_lift(4) | hover_glow(0x8b5cf6, 34)             // reacts to the cursor
+| fade_up(600) | delay(120);                           // staggered entrance
+```
+
+!!! tip "Design taste, built in"
+    The default palette (`ink`/`muted`/`brand`/…) and the theme presets
+    (`midnight()`, `ocean()`, `rose()`, `light()`) are tuned to look good
+    together. Pick a theme, use `frost`/`gradient_border`/`glow` for hierarchy,
+    `fade_up` + `delay` for a staggered reveal, and one accent colour throughout
+    — that's the whole recipe behind `nova`.
+
 ## States (`:hover`, `:focus`, `:active`, `:disabled`)
 
 Apply a bundle of mods that only take effect in a UI state:

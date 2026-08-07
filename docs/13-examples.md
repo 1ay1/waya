@@ -9,9 +9,46 @@ cmake -S . -B build && cmake --build build -j
 ```
 
 `counter`, `splash`, and `orbit` use only the **core** (`waya/surface/*`).
-`studio`, `pulse`, `blog`, and `dash` also pull in the **component library**
-(`#include <waya/ui.hpp>`) for cards, buttons, dialogs, and theme presets — a
-good side-by-side of "pure core" vs "batteries."
+`studio`, `pulse`, `blog`, `dash`, `nova`, and `swarm` also pull in the
+**component library** (`#include <waya/ui.hpp>`) for cards, buttons, dialogs,
+charts, and theme presets — a good side-by-side of "pure core" vs "batteries."
+
+## `nova` — the flagship: an animated aurora landing + live analytics
+
+The example to open first. A marketing-grade hero — an animated **aurora**
+headline over a drifting **mesh** backdrop — flows into a live analytics
+dashboard: **glass** metric cards with **gradient-border** rings and colored
+**glow**, live-ticking sparklines, an interactive area chart with a segmented
+time-range switch, and **staggered `fade_up` reveals**. Every effect is a
+one-line mod; the whole page server-renders and streams only deltas as the
+numbers tick.
+
+**Learn from it:** how the full design vocabulary composes — `aurora_text`,
+`mesh`, `frost`/`glass`, `gradient_border`, `glow`/`hover_glow`, `hover_lift`,
+`drop_shadow`, `breathe`, `fade_up` + `delay`, `font_fluid` — and how a rich,
+animated screen still costs only tiny deltas per frame (`memo` on the chart).
+
+```bash
+./build/nova
+```
+
+## `swarm` — a real-time multiplayer game
+
+Stars drift across a glowing field on a physics tick; tap one before it escapes
+and it bursts into a keyed, FLIP-animated shard cloud. Every pop **broadcasts**
+your score to a shared, live leaderboard — open two tabs and both boards update
+the instant either of you scores. It's also the reference for the performance
+mods: memoised static regions, `at_pct` sprites, and `tap_pop` for instant tap
+feedback.
+
+**Learn from it:** `Cmd::broadcast` + `Sub::on_topic` (multiplayer), `Sub::batch`
+(several timers), `at_pct` (per-frame motion without a class explosion),
+`tap_pop` (instant feedback), and `memo` (only the moving stars rebuild). See
+[Performance](24-performance.md#animating-without-layout-thrash).
+
+```bash
+./build/swarm    # open two browser tabs
+```
 
 ## `dash` — the component library, end to end
 
@@ -182,8 +219,9 @@ effects, and a11y compose in one place.
 Start from the [counter in Getting Started](01-getting-started.md), then reach
 for the example closest to your goal:
 
-- **Marketing / landing:** `splash`.
-- **Dashboard / data:** `pulse`.
+- **Marketing / landing / "wow":** `nova`, then `splash`.
+- **Dashboard / data:** `nova`, `dash`, or `pulse`.
+- **Real-time / multiplayer / games:** `swarm`, `pulse`.
 - **Content / docs / blog:** `blog`.
 - **Graphics / visualisation:** `orbit`.
 - **Theming / design system:** `studio`.

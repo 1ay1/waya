@@ -77,6 +77,7 @@ nav:
       - Effects & Subscriptions: 08-effects.md
       - Routing & SEO: 09-routing-seo.md
       - Scaling to Big Apps: 10-scaling.md
+      - Performance: 24-performance.md
       - The Component Library: 14-components.md
       - Assets & Global CSS: 15-assets.md
       - Correctness & Safety: 16-safety.md

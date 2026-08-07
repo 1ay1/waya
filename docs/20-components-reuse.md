@@ -53,10 +53,17 @@ Card("Revenue", m.revenue); // a separate slot; its own props
 Props are hashed to decide freshness — arithmetic, `bool`, `enum`, `std::string`,
 and `Color` all work out of the box.
 
-!!! note "memo is for distinct subtrees, not loop bodies"
+!!! success "Safe on interactive subtrees, and bounded"
+    A memoised subtree may contain `tap`/`on_input`/`on_key` handlers: their wire
+    tokens are recorded on build and replayed on every cache hit, so they always
+    resolve. The cache is also swept on a timer, so memo keys may **churn
+    freely** without leaking. You never manage it. See
+    [Performance](24-performance.md#making-view-ochanged) for the details.
+
+!!! note "memo is for a single subtree; use `list` for a loop"
     Use `memo`/`component` for a subtree that appears **once** per frame. For a
-    **list**, use `each_keyed` (below) — it gives each item identity so the diff
-    reconciles by key, which is both faster and what enables the animations.
+    **list**, use `list`/`list_versioned` (below) — they give each item identity
+    *and* memoise the container, which is faster and enables the animations.
 
 ## Beautiful: keyed lists that glide
 
@@ -73,7 +80,41 @@ for (auto& it : sorted_filtered(m.items))
     rows.push_back(todo_row(it) | key("todo-" + std::to_string(it.id)));
 ```
 
-Or the combinator form:
+### `list(id, range, key_fn, view_fn)` — a memoised keyed list
+
+The combinator that makes a big list cheap. It builds each row (wrap the row in
+`memo` so an unchanged row is an O(1) hit) **and** memoises the container itself,
+so a frame where no row changed reuses the same parent node — no vector build, no
+re-hash. Rows are keyed, so reorders reconcile as `move` ops.
+
+```cpp
+list(0, m.items,
+    [](const Item& it){ return std::to_string(it.id); },        // key
+    [&](const Item& it){ return memo(it.id, it.done, it.title,   // row (memoised)
+                                     [&]{ return todo_row(it); }); });
+```
+
+### `list_versioned(id, version, range, key_fn, view_fn)` — O(1) when unchanged
+
+The fastest list. Supply a cheap `version` you bump in `update()` whenever the
+list's data changes; on a frame where the version is unchanged the whole list is
+returned in **O(1)** — the range is never even iterated. Ideal for a big list on
+a hot loop where *other* state repaints every frame but the list rarely moves.
+
+```cpp
+// Model: bump rows_ver whenever you touch rows
+list_versioned(0, m.rows_ver, m.rows,
+    [](const Row& r){ return std::to_string(r.id); },
+    [&](const Row& r){ return row_view(r); });
+```
+
+See [Performance](24-performance.md#the-numbers) for the measured impact — a
+1 000-row list drops from ~13.7 ms to ~11 µs per frame, flat in list size.
+
+### `each_keyed(range, key_fn, view_fn)` — the low-level keyed map
+
+When you want the keyed rows but will place them in your own container, `each_keyed`
+maps a range to keyed nodes (no container memo):
 
 ```cpp
 each_keyed(m.items,
