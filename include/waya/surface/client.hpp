@@ -85,15 +85,27 @@ inline std::string client(int port) {
     // With FLIP: before applying, snapshot the positions of [data-wa-flip]
     // elements; after, animate each from its old box to its new one (a smooth
     // reorder). Freshly-inserted [data-wa-flip] nodes get an entrance instead.
+    //
+    // PERF: the snapshot forces a synchronous layout (getBoundingClientRect on
+    // every flip node), so a live/animated app that repaints 30-60x/s would
+    // thrash layout every frame even when nothing reordered. We therefore scan
+    // the queued frames FIRST and only take the snapshot when a frame actually
+    // carries a structural op (insert/insert_at/remove/move) — a pure attribute/
+    // text/path tick (the common animation case) skips FLIP entirely and never
+    // reads geometry. This is the single biggest responsiveness win for
+    // real-time surfaces.
     "var q=[],raf=0;"
     "function flipSnapshot(){var m={};document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');if(k)m[k]=el.getBoundingClientRect();});return m;}"
     "function flipPlay(prev){document.querySelectorAll('[data-wa-flip]').forEach(function(el){var k=el.getAttribute('data-wa-flip');var o=prev[k];var n=el.getBoundingClientRect();"
     "if(!o){el.animate([{opacity:0,transform:'translateY(8px) scale(.98)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.7,.2,1)'});return;}"
     "var dx=o.left-n.left,dy=o.top-n.top;if(dx||dy){el.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration:260,easing:'cubic-bezier(.2,.7,.2,1)'});}});}"
-    "function flush(){raf=0;var frames=q;q=[];var prev=flipSnapshot();var moved=false;"
+    // does any queued frame carry a structural (reordering) op? only then is a
+    // FLIP snapshot worth its forced reflow.
+    "function structural(frames){for(var fi=0;fi<frames.length;fi++){var os=frames[fi].ops;for(var i=0;i<os.length;i++){var k=os[i][0];if(k===8||k===9||k===6||k===5)return true;}}return false;}"
+    "function flush(){raf=0;var frames=q;q=[];var willMove=structural(frames);var prev=willMove?flipSnapshot():null;"
     "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)S.textContent+=m.css;"
-    "for(var i=0;i<m.ops.length;i++){var op=m.ops[i];if(op[0]===8||op[0]===9||op[0]===6||op[0]===5)moved=true;apply(op);}}"
-    "if(moved&&Object.keys(prev).length)flipPlay(prev);}"
+    "for(var i=0;i<m.ops.length;i++){apply(m.ops[i]);}}"
+    "if(prev&&Object.keys(prev).length)flipPlay(prev);}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
     // A stable per-tab session id, kept in sessionStorage so it SURVIVES a
@@ -143,6 +155,12 @@ inline std::string client(int port) {
     "ink.style.width=ink.style.height=d+'px';ink.style.left=(ev.clientX-r.left-d/2)+'px';ink.style.top=(ev.clientY-r.top-d/2)+'px';"
     "ink.style.background=t.getAttribute('data-wa-ripple-color')||'#fff';ink.style.opacity='.35';"
     "t.appendChild(ink);setTimeout(function(){ink.remove();},600);});"
+    // tap_pop: on pointerdown of a [data-wa-pop] element, retrigger the wa-pop
+    // scale animation immediately — instant tactile feedback with no round-trip.
+    // Removing+reflowing+re-adding the class restarts the animation on rapid
+    // repeated taps. Pure client polish; no Model state.
+    "document.addEventListener('pointerdown',function(ev){var t=ev.target.closest&&ev.target.closest('[data-wa-pop]');if(!t)return;"
+    "t.classList.remove('wa-tap-pop-go');void t.offsetWidth;t.classList.add('wa-tap-pop-go');},true);"
     // input/change carry a payload. Checkboxes & radios send their checked
     // state ("true"/"false"); every other control sends its value. So one path
     // serves text, textarea, select, checkbox and radio uniformly.

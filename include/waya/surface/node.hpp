@@ -698,6 +698,24 @@ inline Mod inset(Len t, Len r, Len b, Len l){
 /// `pin()` — stretch to all four edges of the nearest positioned ancestor
 /// (inset:0). Pair with `absolute`/`fixed`. The overlay/full-bleed primitive.
 inline Mod pin(){ return sty([](Style& s){ s.extra.emplace_back("inset", "0"); }); }
+/// `at_pct(top%, left%)` — absolutely position a node at a PERCENTAGE of its
+/// positioned ancestor, centred on that point, via INLINE style (not an interned
+/// class). This matters for animation: a node whose position changes every frame
+/// (a moving game piece, a drifting particle) would otherwise mint a brand-new
+/// interned CSS class per unique coordinate — unbounded class growth and a
+/// defeated style cache. Emitting top/left as an inline style keeps the class
+/// stable (only the cheap attr delta changes each tick) and rides the fast
+/// morphAttrs paint path. Centres via translate(-50%,-50%) and hints the
+/// compositor with will-change, so motion stays on the GPU. Pair with a sized,
+/// rounded child for a dot/sprite; the node itself becomes position:absolute.
+inline Mod at_pct(float top_pct, float left_pct){
+    char buf[96];
+    std::snprintf(buf, sizeof(buf),
+        "position:absolute;top:%.3f%%;left:%.3f%%;transform:translate(-50%%,-50%%);will-change:top,left",
+        top_pct, left_pct);
+    std::string style = buf;
+    return {[style](Node& n){ n.attrs.emplace_back("style", style); }};
+}
 inline Mod z(int zi){ return sty([=](Style& s){ s.has_z=true; s.z=zi; }); }
 
 // ── effects ──────────────────────────────────────────────────────────────
@@ -1281,6 +1299,18 @@ inline Mod ripple(std::uint32_t color=0xffffff){
     return {[color](Node& n){ n.attrs.emplace_back("data-wa-ripple", "");
         char b[8]; std::snprintf(b,sizeof(b),"#%06x",color&0xFFFFFF);
         n.attrs.emplace_back("data-wa-ripple-color", b); }}; }
+/// `tap_pop()` — instant client-side press feedback for a tap target. On
+/// pointerdown the element plays a tiny scale "pop" (down-then-back) RIGHT AWAY,
+/// with zero Model round-trip — so an action feels immediate even when the
+/// server is a network hop away and the real result paints a moment later. This
+/// is the perceptual counterpart to `optimistic()` (which dims + disables): use
+/// `tap_pop()` on lively targets (game pieces, toggles, cards) where you want
+/// snappy tactile response rather than a busy state. Pure CSS + one delegated
+/// pointerdown hook keyed on a marker; needs no state in your Model.
+inline Mod tap_pop(){
+    assets().css("@keyframes wa-tap-pop{0%{transform:scale(1)}40%{transform:scale(.86)}100%{transform:scale(1)}}"
+        ".wa-tap-pop-go{animation:wa-tap-pop .18s cubic-bezier(.2,.7,.2,1)}");
+    return {[](Node& n){ n.attrs.emplace_back("data-wa-pop", ""); }}; }
 inline Mod title(std::string t){ return attr("title", std::move(t)); }
 inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
 /// `safe_url(s)` — neutralise a dangerous URL scheme. `javascript:`, `data:`,
