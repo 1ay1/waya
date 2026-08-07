@@ -72,7 +72,13 @@ inline NodeRef embed(std::string url, std::string title = "Embedded content"){
         " sandbox=\"allow-scripts allow-same-origin allow-popups allow-forms\""
         " allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\""
         " referrerpolicy=\"no-referrer-when-downgrade\" allowfullscreen></iframe>";
-    return markup(std::move(html));
+    // The wrapper fills its parent so the iframe's height:100% has a real box to
+    // resolve against. Give the embed a height (via video_box / h()) and it fills.
+    auto n = markup(std::move(html));
+    n->style.extra.emplace_back("display", "block");
+    n->style.extra.emplace_back("width", "100%");
+    n->style.extra.emplace_back("height", "100%");
+    return n;
 }
 
 /// `youtube("VIDEO_ID")` — a YouTube player embed by id. Combine with
@@ -119,7 +125,7 @@ inline NodeRef svg_raw(std::string full){ return markup(std::move(full)); }
 /// target. It scales to its CSS box; `w`/`h` here are the drawing buffer size.
 inline NodeRef canvas(int w = 300, int h = 150){
     return markup("<canvas width=\"" + std::to_string(w) + "\" height=\"" + std::to_string(h)
-                  + "\" style=\"display:block;max-width:100%\"></canvas>");
+                  + "\" style=\"display:block;width:100%;height:100%\"></canvas>");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
