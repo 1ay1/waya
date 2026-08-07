@@ -729,6 +729,55 @@ inline Mod at_pct(float top_pct, float left_pct){
 }
 inline Mod z(int zi){ return sty([=](Style& s){ s.has_z=true; s.z=zi; }); }
 
+// ── frame-animated properties ─ inline style, class-stable (see at_pct) ──────
+// A property that CHANGES EVERY FRAME (a moving sprite's `left`, a progress
+// bar's `width`, a live `transform`) must NOT go through the interned style
+// mods (left/w/translate/…): each unique value would mint a brand-new CSS class,
+// so a 30fps animation leaks thousands of one-off classes, bloats the
+// stylesheet, and ships a full class-swap (set_shell) every tick. These emit the
+// property as INLINE style so the element's class stays stable and only a tiny
+// attr delta travels each frame. Use them for anything that moves continuously;
+// keep the static properties (size, colour, rounding) on the normal mods.
+/// `animate_style("left", "42.5%")` — set ONE property inline (class-stable).
+/// The general form; the named helpers below cover the common animated axes.
+/// Multiple animate_style/at_* mods on one node MERGE into a single style attr
+/// (so `at_left(x) | at_width(w)` both apply instead of the second winning).
+inline Mod animate_style(std::string prop, std::string value){
+    return {[prop=std::move(prop), value=std::move(value)](Node& n){
+        std::string decl = prop + ":" + value;
+        for(auto& a : n.attrs){
+            if(a.first == "style"){
+                if(!a.second.empty() && a.second.back() != ';') a.second += ';';
+                a.second += decl;
+                return;
+            }
+        }
+        n.attrs.emplace_back("style", std::move(decl));
+    }};
+}
+namespace detail {
+inline std::string pctstr(float v){ char b[24]; std::snprintf(b,sizeof b,"%.3f%%",v); return b; }
+inline std::string pxstr (float v){ char b[24]; std::snprintf(b,sizeof b,"%.2fpx",v); return b; }
+}
+/// `at_left(pct)` / `at_top(pct)` — a continuously-moving position, inline
+/// (class-stable). Percentage of the positioned ancestor. Unlike at_pct these
+/// don't centre the node (no translate) — the element's own edge is placed.
+inline Mod at_left(float pct){ return animate_style("left", detail::pctstr(pct)); }
+inline Mod at_top (float pct){ return animate_style("top",  detail::pctstr(pct)); }
+/// `at_width(pct)` / `at_height(pct)` — a continuously-changing size, inline
+/// (class-stable). The progress-bar / meter fill case.
+inline Mod at_width (float pct){ return animate_style("width",  detail::pctstr(pct)); }
+inline Mod at_height(float pct){ return animate_style("height", detail::pctstr(pct)); }
+/// `at_left_px(x)` etc. — the pixel variants for px-based motion.
+inline Mod at_left_px(float x){ return animate_style("left", detail::pxstr(x)); }
+inline Mod at_top_px (float y){ return animate_style("top",  detail::pxstr(y)); }
+/// `move_xy(x, y)` — a live translate offset, inline (the transform-based motion
+/// path; cheapest for the compositor as it never triggers layout).
+inline Mod move_xy(float x, float y=0){
+    char b[48]; std::snprintf(b,sizeof b,"translate(%.2fpx,%.2fpx)", x, y);
+    return animate_style("transform", b);
+}
+
 // ── effects ──────────────────────────────────────────────────────────────
 inline Mod shadow(std::string spec=""){ return sty([=](Style& s){ s.has_shadow=true; s.shadow_spec=spec; }); }
 inline Mod opacity(float o){ return sty([=](Style& s){ s.has_opacity=true; s.opacity=o; }); }

@@ -366,6 +366,32 @@ int main() {
         CHECK(has(css_of(masonry(rem(16), box(), box())), "column-width:16rem"));
     }
 
+    // Frame-animated inline mods (at_left/at_width/animate_style/move_xy): a
+    // changing value must NOT mint a new CSS class — it goes to inline style so
+    // an animation stays class-stable (no stylesheet leak, cheap deltas).
+    {
+        auto html_of = [](NodeRef n){ return DomBackend{}.render(*n).html; };
+        // the value lands in an inline style attr
+        CHECK(has(html_of(box() | at_left(42.5f)), "style=\"left:42.500%\""));
+        CHECK(has(html_of(box() | at_width(80.f)), "width:80.000%"));
+        CHECK(has(html_of(box() | move_xy(12, 3)), "transform:translate(12.00px,3.00px)"));
+        // two moving nodes with DIFFERENT positions share ONE class (stable):
+        // render both in a parent; the css has just the shared box rule, and the
+        // differing positions are inline, so no per-value class is minted.
+        auto twoP = DomBackend{}.render(*(box(box() | at_left(10.f), box() | at_left(90.f))));
+        // both children carry inline left, and their class strings are identical.
+        std::string h = twoP.html;
+        CHECK(has(h, "left:10.000%") && has(h, "left:90.000%"));
+        // multiple animate mods on one node MERGE into a single style attr.
+        auto merged = html_of(box() | at_left(5.f) | at_width(50.f));
+        CHECK(has(merged, "left:5.000%;width:50.000%"));
+        // exactly one style= attribute (merged, not two)
+        {
+            std::size_t f = merged.find("style=");
+            CHECK(f != std::string::npos && merged.find("style=", f+1) == std::string::npos);
+        }
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }
