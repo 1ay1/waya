@@ -43,23 +43,41 @@ NodeRef icon_button(){
 
 The rules:
 
-| Rule | Catches |
-|------|---------|
-| `form-control-name` | an `input`/`select`/`textarea`/`checkbox`/`radio` in a `form` with no `name` — its value would never reach `update()` |
-| `nested-interactive` | a tap target / button / link inside another one (invalid HTML; the browser splits your DOM) |
-| `void-element` | children on a leaf primitive (`image`/`input`/`checkbox`/`radio`/`path`) |
-| `img-alt` | an image with no `alt` text (accessibility) |
-| `orphan-option` | a stray `<option>` not built through `select(...)` |
-| `empty-select` | a `select` with no options — an unusable, unchoosable dropdown |
-| `duplicate-key` | two sibling nodes sharing a `key` — silently corrupts the keyed-list move-diff |
-| `dead-handler` | an event handler wired to no real `Msg` — a click that does nothing |
-| `markup-unsafe` | `markup(...)` whose raw HTML carries a `<script>` / `javascript:` / `on*=` handler — almost always user input in the trusted channel |
+| Rule | Severity | Catches |
+|------|----------|---------|
+| `form-control-name` | error | an `input`/`select`/`textarea`/`checkbox`/`radio` in a `form` with no `name` — its value would never reach `update()` |
+| `nested-interactive` | error | a tap target / button / link inside another one (invalid HTML; the browser splits your DOM) |
+| `void-element` | error | children on a leaf primitive (`image`/`input`/`checkbox`/`radio`/`path`) |
+| `img-alt` | error | an image with no `alt` text (accessibility) |
+| `orphan-option` | error | a stray `<option>` not built through `select(...)` |
+| `empty-select` | error | a `select` with no options — an unusable, unchoosable dropdown |
+| `duplicate-key` | error | two sibling nodes sharing a `key` — silently corrupts the keyed-list move-diff |
+| `dead-handler` | error | an event handler wired to no real `Msg` — a click that does nothing |
+| `input-on-non-control` | error | `on_input`/`on_change` on a `box`/`text`/`button` — the client only wires those on real controls, so the handler never fires |
+| `href-on-non-anchor` | error | `href` on a node that isn't an `<a>` — the browser ignores it; use `link_to`/`href`/`as("a")` |
+| `markup-unsafe` | error | `markup(...)` whose raw HTML carries a `<script>` / `javascript:` / `on*=` handler — almost always user input in the trusted channel |
+| `unlabeled-interactive` | warning | an interactive node with no accessible name (an icon-only button) — add text or `aria("label", …)` |
+| `keyboard-unreachable` | warning | a tap target on a plain box (or an ARIA interactive role) that isn't keyboard-focusable — add `tab_index(0)`, or use `button()`/`link_to()` |
+
+### Two severity tiers
+
+Every violation is an **error** or a **warning**:
+
+- **Errors** mean the UI is genuinely *broken* — a value that never reaches
+  `update()`, a corrupted keyed diff, invalid HTML, a dead handler. The strict
+  gate (`assert_valid` / `-DWAYA_STRICT`) refuses to render these.
+- **Warnings** mean the UI *works* but violates a best practice — almost always
+  an accessibility nudge (an interactive `box` that a keyboard can't reach).
+  They're printed in debug logs but **never block rendering**, so the idiomatic
+  `text(…) | tap(…)` stays ergonomic while still teaching you to add
+  `focusable()` + `role(…)` where it matters. `verify()` returns `true` for a
+  warning-only tree; `has_errors(check(root))` tells you if anything is fatal.
 
 These are the "wait, it caught that?" moments — the mistakes every web dev makes
 on autopilot, surfaced immediately with a message that tells you the fix. The
-`duplicate-key` and `dead-handler` rules in particular catch *silent* bugs: the
-UI renders, but interactions are quietly lost — exactly the failures the surface
-model exists to prevent.
+`duplicate-key`, `dead-handler`, and `input-on-non-control` rules in particular
+catch *silent* bugs: the UI renders, but interactions are quietly lost — exactly
+the failures the surface model exists to prevent.
 
 ## Context-aware escaping
 

@@ -55,19 +55,31 @@ namespace waya::surface {
 
 /// One structural problem found in a tree. `path` is the dotted child path
 /// (e.g. "0.2.1") so you can locate it; `rule` names the invariant; `detail`
-/// explains the fix.
+/// explains the fix. `severity` separates the two tiers:
+///   • Error   — the UI is BROKEN (a dead handler, a value that never reaches
+///               update(), a corrupted keyed diff, invalid HTML). The hard gate
+///               (assert_valid / WAYA_STRICT) refuses to render these.
+///   • Warning — the UI works but violates a best practice (usually an a11y
+///               nudge: an interactive box that isn't keyboard-reachable). These
+///               are reported in debug logs but never block rendering, so the
+///               idiomatic `text | tap(…)` stays ergonomic while still teaching.
 struct Violation {
+    enum class Severity { Error, Warning };
     std::string path;
     std::string rule;
     std::string detail;
-    std::string message() const { return "[" + rule + "] at node " + (path.empty()?"(root)":path) + ": " + detail; }
+    Severity    severity = Severity::Error;
+    bool is_error() const { return severity == Severity::Error; }
+    std::string message() const {
+        return std::string(severity == Severity::Warning ? "[warn " : "[") +
+               rule + "] at node " + (path.empty()?"(root)":path) + ": " + detail;
+    }
 };
 
 namespace detail {
 
 inline bool is_interactive(const Node& n){
-    return n.on_tap >= 0 || n.kind == Kind::button ||
-           (n.kind == Kind::box && !n.tag.empty() && n.tag == "a");
+    return n.on_tap >= 0 || n.kind == Kind::button || n.tag == "a";
 }
 constexpr bool is_void(Kind k){
     return k == Kind::image || k == Kind::input || k == Kind::checkbox ||
@@ -77,13 +89,31 @@ constexpr bool is_control(Kind k){
     return k == Kind::input || k == Kind::textarea || k == Kind::checkbox ||
            k == Kind::radio || k == Kind::select;
 }
+/// Natively keyboard-focusable elements (reachable + activatable without a
+/// tabindex): real controls, buttons, and anchors with an href.
+inline bool is_natively_focusable(const Node& n){
+    if (n.kind == Kind::button || is_control(n.kind)) return true;
+    return false;   // <a> needs href, checked by the caller via has_attr
+}
 inline bool has_attr(const Node& n, std::string_view key){
     for (auto& [k, v] : n.attrs) if (k == key) return true;
     return false;
 }
+inline std::string_view attr_val(const Node& n, std::string_view key){
+    for (auto& [k, v] : n.attrs) if (k == key) return v;
+    return {};
+}
 /// A control has a name if it carries one directly (radio/checkbox group name,
 /// form field name) or via an explicit attr("name", …).
 inline bool has_name(const Node& n){ return !n.name.empty() || has_attr(n, "name"); }
+/// Does this node have an ACCESSIBLE label — visible text, an aria-label, an
+/// aria-labelledby, or a title? An interactive node with none is a screen-reader
+/// dead-end ("button" announced with no name).
+inline bool has_accessible_label(const Node& n){
+    if (!n.text.empty()) return true;
+    if (!n.kids.empty()) return true;   // could contain a labelling child (icon+text, etc.)
+    return has_attr(n, "aria-label") || has_attr(n, "aria-labelledby") || has_attr(n, "title");
+}
 
 inline void walk(const Node& n, const std::string& path, bool in_form, bool in_interactive,
                  std::vector<Violation>& out) {
@@ -141,6 +171,51 @@ inline void walk(const Node& n, const std::string& path, bool in_form, bool in_i
             out.push_back({path, "dead-handler",
                 "an event handler (\"" + h.event + "\") references no message — wire it with a real Msg"});
 
+    // on_input / on_change only fire on real form controls — the client wires
+    // them off the control's own value. Put on a box/text/button they are
+    // silently dead ("my field's on_input never fires"). Catch it.
+    if ((n.on_input >= 0 || n.on_change >= 0) && !is_control(n.kind))
+        out.push_back({path, "input-on-non-control",
+            "on_input/on_change only fire on a form control (input/textarea/select/checkbox/radio) — "
+            "this node is a " + std::string(n.kind == Kind::box ? "box" : "non-control") +
+            ", so the handler never fires. Use tap() for a clickable, or an actual control."});
+
+    // href only navigates on an anchor. On any other node the browser ignores
+    // it — a common "my link does nothing" bug. link_to()/link()/href() tag the
+    // node <a> for you; a raw attr("href", …) on a plain box does not.
+    if (has_attr(n, "href") && n.tag != "a")
+        out.push_back({path, "href-on-non-anchor",
+            "href only navigates on an <a> — use link_to(label,url) / href(url) / as(\"a\") so it "
+            "renders an anchor, or use tap() + Cmd::navigate for an in-app route"});
+
+    // an interactive node needs an ACCESSIBLE NAME or a screen reader announces
+    // "button" with no label. Icon-only buttons are the usual offender — add
+    // aria("label", …) (or a title). Skip nodes that carry text/children.
+    if (is_interactive(n) && !has_accessible_label(n))
+        out.push_back({path, "unlabeled-interactive",
+            "an interactive node has no accessible name — add visible text, a labelling child, "
+            "or aria(\"label\", \"…\") (icon-only buttons especially need this)",
+            Violation::Severity::Warning});
+
+    // a node given an interactive ARIA role (or a tap on a plain box) must be
+    // KEYBOARD-REACHABLE, or keyboard/AT users can't activate it. Natively
+    // focusable elements (button/control/<a href>) are fine; otherwise it needs
+    // tab_index (any tabindex attr) to enter the tab order.
+    {
+        std::string_view r = attr_val(n, "role");
+        bool interactive_role = r == "button" || r == "link" || r == "checkbox" ||
+                                r == "switch" || r == "tab" || r == "menuitem" || r == "option";
+        bool tap_on_plain_box = n.on_tap >= 0 && n.kind == Kind::box && n.tag != "a";
+        bool anchor_with_href = n.tag == "a" && has_attr(n, "href");
+        bool focusable = is_natively_focusable(n) || anchor_with_href || has_attr(n, "tabindex");
+        if ((interactive_role || tap_on_plain_box) && !focusable)
+            out.push_back({path, "keyboard-unreachable",
+                "an interactive node (a tap target on a plain box, or an ARIA interactive role) "
+                "isn't keyboard-reachable — add tab_index(0) so keyboard and assistive-tech users "
+                "can focus and activate it (or use button()/link_to() which are focusable by default)",
+                Violation::Severity::Warning});
+    }
+
     // sibling keys must be unique: waya reconciles keyed lists by key, and two
     // children sharing a key silently corrupts the move-diff (one node wins, the
     // other's state/DOM is lost). This is the subtle bug the design forbids.
@@ -173,10 +248,17 @@ inline std::vector<Violation> check(const Node& root) {
 }
 inline std::vector<Violation> check(const NodeRef& root) { return root ? check(*root) : std::vector<Violation>{}; }
 
-/// `verify(root)` — true when the tree is structurally sound. In a debug build
-/// the live runtime calls this on every render and logs violations, so a broken
-/// tree is caught the first time it's shown.
-inline bool verify(const Node& root) { return check(root).empty(); }
+/// True if the tree has any **Error**-severity violation (warnings ignored).
+inline bool has_errors(const std::vector<Violation>& vs) {
+    for (auto& v : vs) if (v.is_error()) return true;
+    return false;
+}
+
+/// `verify(root)` — true when the tree is structurally sound (no ERRORS; a11y
+/// warnings don't count). In a debug build the live runtime calls this on every
+/// render and logs violations, so a broken tree is caught the first time it's
+/// shown.
+inline bool verify(const Node& root) { return !has_errors(check(root)); }
 inline bool verify(const NodeRef& root) { return !root || verify(*root); }
 
 /// `explain(root)` — a human-readable report of all violations (or "" if sound).
@@ -195,9 +277,15 @@ inline std::string explain(const NodeRef& root) { return root ? explain(*root) :
 ///   auto ui = assert_valid(view(model));
 inline const NodeRef& assert_valid(const NodeRef& root) {
     auto vs = check(root);
-    if (!vs.empty()) {
-        std::fprintf(stderr, "waya: surface is structurally invalid — refusing to render:\n");
-        for (auto& v : vs) std::fprintf(stderr, "waya:   %s\n", v.message().c_str());
+    // Warnings are advisory — print them but don't block. Only ERROR-severity
+    // violations (genuinely broken UI) refuse to render.
+    bool fatal = false;
+    for (auto& v : vs) {
+        if (v.is_error()) fatal = true;
+        std::fprintf(stderr, "waya:   %s\n", v.message().c_str());
+    }
+    if (fatal) {
+        std::fprintf(stderr, "waya: surface is structurally invalid — refusing to render.\n");
         std::abort();
     }
     return root;

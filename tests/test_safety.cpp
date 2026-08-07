@@ -68,6 +68,37 @@ int main() {
     { auto n = text("opt"); n->tag = "option";
       check(has_rule(n, "orphan-option"), "orphan option flagged"); }
 
+    // ── hardening: dead / mis-wired handlers ─────────────────────────────────
+    // on_input on a non-control is silently dead
+    { auto bad = box(text("x")); bad->on_input = 3;
+      check(has_rule(bad, "input-on-non-control"), "on_input on a box flagged"); }
+    { auto ok = input(""); ok->on_input = 3;
+      check(!has_rule(ok, "input-on-non-control"), "on_input on a real input ok"); }
+    // href on a non-anchor does nothing
+    { auto bad = box(text("x")); bad->attrs.emplace_back("href", "/a");
+      check(has_rule(bad, "href-on-non-anchor"), "href on a non-anchor box flagged"); }
+    { check(!has_rule(link_to("go", "/a"), "href-on-non-anchor"), "href on a real anchor ok"); }
+
+    // ── hardening: a11y warnings (advisory, not fatal) ───────────────────────
+    // an icon-only button with no accessible name is a screen-reader dead-end
+    { auto b = button("");   // empty label, no aria
+      check(has_rule(b, "unlabeled-interactive"), "unlabeled button flagged (warn)"); }
+    { check(!has_rule(button("Save"), "unlabeled-interactive"), "labeled button ok"); }
+    { check(!has_rule(button("") | aria("label", "close"), "unlabeled-interactive"),
+            "aria-label satisfies the accessible-name rule"); }
+    // a tap on a plain box that isn't keyboard reachable is a warning
+    { auto bad = box(text("click me")); bad->on_tap = 5;
+      check(has_rule(bad, "keyboard-unreachable"), "tap on plain box flagged (warn)"); }
+    { auto ok = box(text("click me")); ok->on_tap = 5; ok->attrs.emplace_back("tabindex", "0");
+      check(!has_rule(ok, "keyboard-unreachable"), "tap on box with tab_index ok"); }
+    { auto b = button("Go"); b->on_tap = 7;
+      check(!has_rule(b, "keyboard-unreachable"), "button is keyboard-reachable by default"); }
+
+    // warnings are advisory: a tree with ONLY warnings still verifies + renders
+    { auto warn_only = [&]{ auto b = box(text("x")); b->on_tap = 1; return b; }();
+      check(verify(warn_only), "a warning-only tree still verifies (no errors)");
+      check(assert_valid(warn_only) == warn_only, "assert_valid passes a warning-only tree"); }
+
     // assert_valid returns a sound tree unchanged (for chaining)
     { auto ok = col(text("fine"));
       check(assert_valid(ok) == ok, "assert_valid passes a sound tree through"); }

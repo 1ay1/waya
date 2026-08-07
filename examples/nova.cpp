@@ -117,8 +117,12 @@ struct Nova {
 
     static NodeRef seg(int cur, int i, std::string label, Msg msg) {
         bool on = cur == i;
+        // keyboard-accessible: a real tab role + focus + Enter/Space activation,
+        // so the segmented control works for keyboard and screen-reader users.
         auto b = text(std::move(label)) | font(13) | semibold
-               | pad_x(16) | pad_y(8) | round(10) | pointer | tap(msg) | press();
+               | pad_x(16) | pad_y(8) | round(10) | pointer
+               | role("tab") | aria("selected", on ? "true" : "false")
+               | focusable() | tap(msg) | on_enter(msg) | press();
         return on ? (b | fg(white) | gradient_bg(0x8b5cf6, 0x22d3ee) | glow(0x8b5cf6, 18))
                   : (b | fg(muted) | tint(0xffffff, 0.04f) | hover_lift(1));
     }
@@ -130,7 +134,11 @@ struct Nova {
             text(m.live ? "live \u00b7 streaming deltas" : "paused")
                 | fg(0x9fb3c8) | caption | semibold | tracking(0.5f)
         ) | gap(9) | center | pad_x(15) | pad_y(8) | round(999)
-          | frost(10) | pointer | tap(ToggleLive{}) | interactive() | fade_in(400);
+          | frost(10) | pointer
+          | role("switch") | aria("checked", m.live ? "true" : "false")
+          | aria("label", "toggle live streaming")
+          | focusable() | tap(ToggleLive{}) | on_enter(ToggleLive{})
+          | interactive() | fade_in(400);
 
         auto hero = col(
             pill,
