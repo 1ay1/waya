@@ -101,49 +101,51 @@ struct Dragster {
                 ? overlay("RED-LIGHT FOUL", "shifted before the green — press enter", warn)
           : (nothing());
 
-        // ── HUD in the style of the original: big blocky digits on the black
-        // bands (TIME + GEAR), the tach in the middle band, ACTIVISION at the
-        // bottom. Positioned over the two-lane screen.
+        // ── HUD in the style of the original: big glowing readouts on the black
+        // centre band (TIME + GEAR), the tach beside them, ACTIVISION footer.
         std::uint32_t etc = m.phase==Phase::Finished ? good
                           : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
 
-        // big seven-segment-ish digits: TIME  .  GEAR
-        auto digits = [&](std::string time, std::string gear, std::uint32_t tc){
-            return row(
-                text(std::move(time)) | fg(tc) | font(40) | term | weight(Weight::black)
-                    | tabular_nums | tracking_em(0.06f),
-                spacer(),
-                text(std::move(gear)) | fg(0xffffff) | font(40) | term | weight(Weight::black) | tabular_nums
-            ) | items_center | w_full;
+        // a labelled readout: tiny caption above a big glowing value.
+        auto readout = [&](std::string label, std::string value, std::uint32_t c, int size){
+            return col(
+                text(std::move(label)) | fg(waya::rgba(0xffffff, 0.45f)) | font(9) | term
+                    | weight(Weight::black) | uppercase | tracking_em(0.28f),
+                text(std::move(value)) | fg(c) | font(size) | term | weight(Weight::black)
+                    | tabular_nums | tracking_em(0.02f) | leading(0.9f) | glow_text(c, 12)
+            ) | gap(1);
         };
 
-        // the tach lives in the middle black band (between the two lanes).
-        auto midband = box(tachometer(m))
-            | absolute() | left(pct(0)) | right(pct(0)) | top(pct(49)) | h(pct(6))
-            | pad_x(rem(1)) | center;
-
-        // TIME + GEAR digits sit on the lower edge of the top lane's band.
-        auto topDigits = box(digits(et, m.gear ? std::to_string(m.gear) : "N", etc))
-            | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(46)) | pad_x(rem(1.4f));
+        // centre band: TIME | tach | GEAR, laid out across the black divider.
+        auto midband = row(
+            readout("time", et, etc, 38),
+            box(tachometer(m)) | grow() | pad_x(rem(1.4f)),
+            readout("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff, 38)
+        ) | items_center | gap(rem(1)) | w_full
+          | absolute() | left(pct(0)) | right(pct(0)) | top(pct(47.5f)) | h(pct(5))
+          | pad_x(rem(1.6f));
 
         // brand + best-time strip along the very bottom (the ACTIVISION line).
         auto footer = row(
-            text("ACTIVISION") | fg(0xffffff) | font(15) | term | weight(Weight::black) | tracking_em(0.22f),
+            text("ACTIVISION") | fg(0xffffff) | font(14) | term | weight(Weight::black) | tracking_em(0.28f)
+                | glow_text(0xffffff, 4),
             spacer(),
-            text(std::string("BEST ") + best) | fg(waya::rgba(0xffffff, 0.7f)) | font(12) | term | weight(Weight::black) | tabular_nums
+            readout("best", best, good, 15)
         ) | items_center | w_full
-          | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(0)) | h(pct(6))
-          | pad_x(rem(1.4f)) | bg(band);
+          | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(0)) | h(pct(7))
+          | pad_x(rem(1.6f)) | bg(band)
+          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)");
 
-        // control pills (bottom-right, above the footer) — for touch/click.
+        // control buttons (bottom-right, above the footer) — for touch/click.
+        bool running = m.phase==Phase::Race || m.phase==Phase::Count;
         auto controls = row(
-            hud_pill(m.gas ? "GAS ◉" : "GAS", GasTog{}, warn, m.gas),
-            hud_pill("SHIFT ▲", Shift{}, amber, false),
-            hud_pill(m.phase==Phase::Race||m.phase==Phase::Count ? "RUN" : "START", Start{}, good, false)
-        ) | gap(8)
-          | absolute() | right(pct(2)) | bottom(pct(8)) | z(6);
+            hud_pill("␣", m.gas ? "THROTTLE" : "THROTTLE", GasTog{}, warn, m.gas),
+            hud_pill("▲", "SHIFT", Shift{}, amber, false),
+            hud_pill(running ? "⏎" : "⏎", running ? "RUNNING" : "START", Start{}, good, running)
+        ) | gap(10)
+          | absolute() | right(pct(2)) | bottom(pct(9)) | z(6);
 
-        auto hud = box(midband, topDigits, controls, footer)
+        auto hud = box(midband, controls, footer)
             | absolute() | pin() | z(5) | safe_area() | no_pointer;
 
         // the whole window: full-bleed screen, HUD over it, overlay on top. dvh/
