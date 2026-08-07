@@ -1,7 +1,7 @@
-/// dragster/console.hpp — the HUD control button. A chunky, tactile "key cap"
-/// with a keyboard-glyph badge and a bold label; it glows and depresses when
-/// active/pressed and dispatches its Msg on tap, matching the keyboard.
-/// Header-only (templated).
+/// dragster/console.hpp — a control as a KEY HINT: a keyboard-key badge showing
+/// the key to press, with the action label beside it. Lights up in its accent
+/// colour when active (throttle on / running), presses on tap, dispatches its
+/// Msg — matching the keyboard. Header-only (templated).
 #pragma once
 
 #include "store.hpp"
@@ -14,55 +14,40 @@
 namespace dr {
 using namespace waya::surface;
 
-// readable label colour on a dark cap: a brightened version of the accent.
-inline std::uint32_t ink_on(std::uint32_t c){ return waya::rgb(c).lighten(0.35f).opaque(); }
-
-// A little keyboard-key badge (e.g. "␣", "▲", "⏎") shown on the button.
-inline NodeRef keycap(std::string glyph, std::uint32_t c, bool active) {
+// A keyboard-key badge: a raised cap with the key text (e.g. "space", "↑", "R").
+inline NodeRef keycap(std::string keytext, std::uint32_t c, bool active) {
     waya::Color k = waya::rgb(c);
-    return box(text(std::move(glyph)) | fg(active ? 0x0a0a0f : c) | font(12) | weight(Weight::black) | term)
-        | size(px(22)) | round(px(6)) | center | select_none
-        | bg(active ? k.alpha(0.9f) : k.alpha(0.16f))
-        | border(1, active ? c : c)
+    return box(text(std::move(keytext)) | fg(active ? 0x0b0c11 : 0xe8ecf4)
+                | font(11) | weight(Weight::black) | term | tracking_em(0.02f))
+        | pad_x(8) | pad_y(5) | round(px(6)) | center | select_none
+        | bg(active ? k.opaque() : 0x272b36u)
+        | border(1, active ? k.lighten(0.25f).opaque() : 0x3a3f4eu)
         | detail::raw_css("box-shadow",
-            active ? "inset 0 -2px 0 " + k.darken(0.35f).css()
-                   : "inset 0 -2px 0 rgba(0,0,0,.35)");
+            active ? "inset 0 1px 0 rgba(255,255,255,.3), 0 2px 0 " + k.darken(0.4f).css()
+                   : "inset 0 1px 0 rgba(255,255,255,.08), 0 2px 0 rgba(0,0,0,.5)")
+        | detail::raw_css("min-width", "20px");
 }
 
-// The control button: [keycap] LABEL, as a raised key cap that presses in.
+// The control chip: [key] LABEL, in a grouped tray. Whole chip is tappable.
 template <class Msg>
-inline NodeRef hud_pill(std::string glyph, std::string label, Msg msg, std::uint32_t c, bool active) {
+inline NodeRef hud_pill(std::string keytext, std::string label, Msg msg, std::uint32_t c, bool active) {
     waya::Color base = waya::rgb(c);
+    auto chip = row(
+        keycap(std::move(keytext), c, active),
+        text(std::move(label)) | fg(active ? base.lighten(0.4f).opaque() : 0xc3c9d6u)
+            | font(12) | weight(Weight::black) | tracking_em(0.1f) | term
+    ) | items_center | gap(8);
 
-    auto face = row(
-        keycap(std::move(glyph), c, active),
-        text(std::move(label)) | fg(active ? 0x0a0a0f : ink_on(c))
-            | font(13) | weight(Weight::black) | tracking_em(0.08f) | term
-    ) | items_center | gap(9);
-
-    auto b = box(face)
-        | pad_x(14) | pad_y(10) | round(px(12))
+    auto b = box(chip)
+        | pad_x(11) | pad_y(9) | round(px(10))
         | pointer | select_none
-        // the HUD frame is no_pointer; opt this control back in.
         | detail::raw_css("pointer-events", "auto")
-        | (active ? gradient(base.lighten(0.12f).opaque(), base.darken(0.14f).opaque(), 180)
-                  : gradient(0x14161c, 0x0c0d12, 180))
-        | border(1.5f, active ? base.lighten(0.2f).opaque() : base.darken(0.3f).opaque())
-        // the raised "cap" look: bright top edge + a chunky bottom lip + a soft
-        // drop shadow; when active it also glows in the button colour.
-        | detail::raw_css("box-shadow",
-            (active
-              ? "0 0 22px " + base.alpha(0.55f).css() + ", "
-              : "") +
-            std::string("inset 0 1px 0 rgba(255,255,255,.18), "
-            "0 4px 0 ") + (active ? base.darken(0.4f).css() : std::string("rgba(0,0,0,.55)")) +
-            ", 0 7px 14px -5px rgba(0,0,0,.7)")
-        | transition("transform .07s ease, box-shadow .07s ease, background .12s ease")
-        // press: sink into the lip.
-        | on(Active, detail::raw_css("transform", "translateY(3px)"),
-                     detail::raw_css("box-shadow",
-                        "inset 0 1px 0 rgba(255,255,255,.12), 0 1px 0 rgba(0,0,0,.55)"))
-        | on(Hover, detail::raw_css("filter", "brightness(1.12)"));
+        | bg(active ? base.alpha(0.16f) : waya::rgba(0xffffff, 0.03f))
+        | border(1, active ? base.opaque() : 0x2c313cu)
+        | (active ? glow(c, 14) : Mod{})
+        | transition("transform .07s ease, background .12s ease, box-shadow .12s ease")
+        | on(Hover, bg(active ? base.alpha(0.22f) : waya::rgba(0xffffff, 0.08f)))
+        | on(Active, detail::raw_css("transform", "translateY(2px)"));
     return b | tap(std::move(msg));
 }
 

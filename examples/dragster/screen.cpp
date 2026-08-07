@@ -141,38 +141,38 @@ NodeRef strip_screen(const Model& m) {
 }
 
 NodeRef tachometer(const Model& m) {
-    // the signature Dragster tach: a chunky green bar filling with rpm, the last
-    // 20% a red redline zone, and a bright white needle at the current rpm. Bold
-    // and readable — it's the instrument you play on.
-    const double frac = std::min(1.0, (double)m.rpm / REDLINE);
+    // A segmented "shift-light" tach like a real race car: 16 chunky blocks that
+    // fill with rpm — green → amber → red as you climb, the top blocks are the
+    // redline. Lit blocks glow; unlit are faint. Dramatic and readable at a
+    // glance, and it screams "shift NOW" as the reds light.
+    const int N = 16;
+    const int lit = std::min(N, (int)((double)m.rpm / REDLINE * N + 0.5));
     const bool over = m.rpm > REDLINE;
 
-    // the whole track (dark), a red redline zone on the right, the green fill.
-    auto redZone = box()
-        | absolute() | top(pct(0)) | bottom(pct(0)) | right(pct(0)) | w(pct(20))
-        | bg(rgb(warn).alpha(0.30f));
-    auto fill = box()
-        | absolute() | top(pct(0)) | bottom(pct(0)) | left(pct(0)) | w(pct((float)(frac*100)))
-        | (over ? gradient(warn, 0xff6a4d, 90) : gradient(0x2f9e2f, tachOk, 90))
-        | transition("width .08s linear");
-    auto needle = box()
-        | absolute() | top(pct(-20)) | bottom(pct(-20)) | left(pct((float)(frac*100)))
-        | w(px(3)) | bg(0xffffff) | round(px(2))
-        | detail::raw_css("box-shadow", "0 0 6px rgba(255,255,255,.9)")
-        | transition("left .08s linear");
+    std::vector<NodeRef> blocks;
+    blocks.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        std::uint32_t c = i >= N - 4 ? warn : (i >= N - 8 ? amber : tachOk);
+        bool on = i < lit;
+        auto blk = box() | grow() | h_full | round(px(2))
+                 | bg(on ? rgb(c) : rgb(c).alpha(0.12f));
+        if (on) blk = blk | glow(c, i >= N - 4 ? 9 : 5);
+        blocks.push_back(std::move(blk));
+    }
+    auto bar = row_(std::move(blocks)) | gap(3) | h_full | align(Align::stretch) | w_full;
 
-    auto bar = box(redZone, fill, needle)
-        | detail::raw_css("position", "relative")
-        | w_full | h(px(20)) | round(px(4)) | overflow("hidden")
-        | bg(0x0c0c10)
-        | detail::raw_css("box-shadow",
-            "inset 0 2px 4px rgba(0,0,0,.6), 0 0 0 2px " + rgb(0x000000).css());
-
-    return row(
-        text("RPM") | fg(rgb(0xffffff).alpha(0.7f)) | font(10) | term | weight(Weight::black) | tracking_em(0.14f),
-        box(bar) | grow(),
-        text(over ? "REDLINE" : "") | fg(warn) | font(10) | term | weight(Weight::black)
-    ) | items_center | gap(10) | w_full;
+    return col(
+        row(
+            text("TACH") | fg(rgb(0xffffff).alpha(0.4f)) | font(9) | term | weight(Weight::black) | uppercase | tracking_em(0.28f),
+            spacer(),
+            text(over ? "REDLINE!" : (lit >= N - 4 ? "SHIFT!" : ""))
+                | fg(over ? warn : amber) | font(10) | term | weight(Weight::black) | tracking_em(0.1f)
+                | glow_text(over ? warn : amber, 8)
+        ) | items_center | w_full,
+        box(bar) | h(px(22)) | w_full | pad(px(4)) | round(px(6))
+            | bg(0x0a0b10)
+            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)")
+    ) | gap(5) | w_full;
 }
 
 } // namespace dr

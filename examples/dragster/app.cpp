@@ -104,45 +104,53 @@ struct Dragster {
         // ── a solid dashboard bar docked under the screen ──────────────────
         std::uint32_t etc = m.phase==Phase::Finished ? good
                           : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
-
-        // a labelled readout: tiny caption above a big glowing value.
-        auto readout = [&](std::string label, std::string value, std::uint32_t c, int size){
-            return col(
-                text(std::move(label)) | fg(waya::rgba(0xffffff, 0.4f)) | font(9) | term
-                    | weight(Weight::black) | uppercase | tracking_em(0.3f),
-                text(std::move(value)) | fg(c) | font(size) | term | weight(Weight::black)
-                    | tabular_nums | leading(0.9f) | glow_text(c, 14)
-            ) | gap(2) | items_center;
-        };
-
         bool running = m.phase==Phase::Race || m.phase==Phase::Count;
 
-        // the dashboard: readouts on the left, the big tach in the middle, the
-        // control key-caps on the right — one cohesive panel with breathing room.
+        // a compact stat: caption + value on one line.
+        auto stat = [&](std::string label, std::string value, std::uint32_t c){
+            return row(
+                text(std::move(label)) | fg(waya::rgba(0xffffff,0.35f)) | font(9) | term | weight(Weight::black) | uppercase | tracking_em(0.2f),
+                text(std::move(value)) | fg(c) | font(16) | term | weight(Weight::black) | tabular_nums | glow_text(c, 6)
+            ) | items_center | gap(6);
+        };
+
+        // The HERO race timer — this is a best-time game, so the clock is the
+        // biggest thing on the panel. Monospaced, glowing, with a small caption.
+        auto timer = row(
+            col(
+                text("elapsed") | fg(waya::rgba(0xffffff,0.4f)) | font(9) | term | weight(Weight::black) | uppercase | tracking_em(0.3f),
+                text(std::string(et) + "s") | fg(etc) | font(46) | term | weight(Weight::black) | tabular_nums | leading(0.85f) | glow_text(etc, 16)
+            ) | gap(1),
+            col(
+                stat("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff),
+                stat("best", best, good)
+            ) | gap(6)
+        ) | items_center | gap(rem(1.4f));
+
+        // control key-hints: a stacked glyph + label per action, in a subtle
+        // grouped tray so they read as "the controls", not stray buttons.
+        auto controls = row(
+            hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
+            hud_pill("↑",     "SHIFT", Shift{},  amber, false),
+            hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
+        ) | gap(8);
+
         auto dash = col(
             row(
-                readout("time", et, etc, 34),
-                readout("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff, 34),
-                readout("best", best, good, 22),
+                timer,
                 box(tachometer(m)) | grow(),
-                row(
-                    hud_pill("␣", "THROTTLE", GasTog{}, warn, m.gas),
-                    hud_pill("▲", "SHIFT", Shift{}, amber, false),
-                    hud_pill("⏎", running ? "RUNNING" : "START", Start{}, good, running)
-                ) | gap(10)
-            ) | items_center | gap(rem(1.6f)) | w_full,
+                controls
+            ) | items_center | gap(rem(1.8f)) | w_full,
             row(
-                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.85f)) | font(12) | term
-                    | weight(Weight::black) | tracking_em(0.34f),
+                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.8f)) | font(11) | term | weight(Weight::black) | tracking_em(0.38f),
                 spacer(),
-                text("DRAGSTER · 1980") | fg(waya::rgba(0xffffff,0.3f)) | font(10) | term
-                    | weight(Weight::black) | tracking_em(0.2f)
+                text("DRAGSTER") | fg(waya::rgba(0xffffff,0.25f)) | font(10) | term | weight(Weight::black) | tracking_em(0.3f)
             ) | items_center | w_full
-        ) | gap(rem(0.9f))
-          | pad_x(rem(2)) | pad_y(rem(1.2f))
-          | gradient(0x14161d, 0x0a0b10, 180)
-          | detail::raw_css("box-shadow", "inset 0 2px 0 rgba(255,255,255,.06), inset 0 8px 24px rgba(0,0,0,.5)")
-          | detail::raw_css("border-top", "2px solid rgba(0,0,0,.6)")
+        ) | gap(rem(0.7f))
+          | pad_x(rem(2)) | pad_y(rem(1.1f))
+          | gradient(0x171922, 0x0b0c11, 180)
+          | detail::raw_css("box-shadow", "inset 0 2px 0 rgba(255,255,255,.07), inset 0 10px 30px rgba(0,0,0,.5)")
+          | detail::raw_css("border-top", "2px solid rgba(0,0,0,.7)")
           | safe_area();
 
         // the screen area: the two-lane race, with the phase overlay on top.
