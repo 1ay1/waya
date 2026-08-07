@@ -126,7 +126,8 @@ public:
 private:
     Assets() = default;
     static bool has(const std::vector<std::pair<std::string,std::string>>& v, const std::string& k) {
-        for (auto& e : v) if (e.first == k) return true; return false;
+        for (auto& e : v) { if (e.first == k) return true; }
+        return false;
     }
     Assets& raw_css(const std::string& key, std::string body) {
         std::lock_guard<std::mutex> l(m_);

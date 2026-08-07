@@ -14,7 +14,8 @@ static void check(bool c, const char* msg) { if (c) ++pass; else { ++fail; std::
 static bool has(const std::string& h, const std::string& n) { return h.find(n) != std::string::npos; }
 static std::string html_of(NodeRef n) { return DomBackend{}.render(*n).html; }
 static bool has_rule(NodeRef n, const std::string& rule) {
-    for (auto& v : check(n)) if (v.rule == rule) return true; return false;
+    for (auto& v : check(n)) { if (v.rule == rule) return true; }
+    return false;
 }
 
 int main() {

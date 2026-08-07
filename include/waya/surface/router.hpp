@@ -107,7 +107,7 @@ private:
     static std::string url_decode(const std::string& s) {
         std::string o; o.reserve(s.size());
         auto hex = [](char c)->int{ if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10;
-                                    if(c>='A'&&c<='F')return c-'A'+10; return 0; };
+                                    if(c>='A'&&c<='F'){return c-'A'+10;} return 0; };
         for (std::size_t i = 0; i < s.size(); ++i) {
             char c = s[i];
             if (c == '+') o += ' ';

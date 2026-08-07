@@ -1154,7 +1154,7 @@ struct FormData {
     static std::string url_decode(std::string_view s){
         std::string o; o.reserve(s.size());
         auto hex = [](char c)->int{ if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10;
-                                    if(c>='A'&&c<='F')return c-'A'+10; return 0; };
+                                    if(c>='A'&&c<='F'){return c-'A'+10;} return 0; };
         for(std::size_t i=0;i<s.size();++i){
             char c=s[i];
             if(c=='+') o+=' ';
@@ -1178,7 +1178,8 @@ struct FormData {
     }
     /// Value for `key` (first match), or `fallback` if absent.
     std::string get(std::string_view key, std::string fallback={}) const {
-        for(auto&[k,v]:fields) if(k==key) return v; return fallback;
+        for(auto&[k,v]:fields) { if(k==key) return v; }
+        return fallback;
     }
     bool has(std::string_view key) const { for(auto&[k,v]:fields){(void)v; if(k==key) return true;} return false; }
     /// A checkbox reads as present/"on"/"true" → true.
@@ -1295,7 +1296,8 @@ inline std::string safe_url(std::string u){
 /// built from data you don't fully control; it's the safe default over
 /// `attr("href", …)`. Renders the node as an <a> if it isn't already.
 inline Mod href(std::string url){ return {[u=safe_url(std::move(url))](Node& n){
-    if(n.tag.empty() || n.tag=="span") n.tag="a"; n.attrs.emplace_back("href", u); }}; }
+    if(n.tag.empty() || n.tag=="span") { n.tag="a"; }
+    n.attrs.emplace_back("href", u); }}; }
 /// `link_to(label, url)` — a real, safe anchor in one call.
 inline NodeRef link_to(std::string label, std::string url){
     auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(label);
