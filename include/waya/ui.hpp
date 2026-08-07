@@ -13,6 +13,7 @@
 /// a well-made default set so the common 90% is one call.
 
 #include "ui/theme.hpp"
+#include "ui/space.hpp"
 #include "ui/components.hpp"
 #include "ui/icons.hpp"
 #include "ui/widgets.hpp"

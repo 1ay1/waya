@@ -212,6 +212,82 @@ inline NodeRef feature_card(std::string ico, std::string title, std::string body
       | bg_surface | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.08))");
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// Forms — a labelled control in ONE call. Each maps its live value to your Msg
+// (a mapper fn `std::string -> Msg`, or a bare Msg for a tap/toggle) so you
+// never wire on_input by hand. All wear the shared input_skin so a form matches.
+// ───────────────────────────────────────────────────────────────────────
+
+/// `text_field("Email", value, to_msg, "placeholder", "hint")` — a labelled text
+/// input. `to_msg` maps the typed text to a Msg: `[](std::string v){ return SetEmail{v}; }`.
+template <typename ToMsg>
+NodeRef text_field(std::string label, std::string value, ToMsg to_msg,
+                   std::string placeholder_ = "", std::string hint = "", std::string kind = "text"){
+    auto ctrl = input(std::move(value)) | type(std::move(kind)) | input_skin() | on_input(to_msg);
+    if (!placeholder_.empty()) ctrl = ctrl | placeholder(std::move(placeholder_));
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+
+/// `email_field` / `password_field` — text_field with the right input type
+/// (correct mobile keyboard, masking, autofill).
+template <typename ToMsg>
+NodeRef email_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = ""){
+    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "email");
+}
+template <typename ToMsg>
+NodeRef password_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = ""){
+    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "password");
+}
+
+/// `textarea_field("Bio", value, to_msg)` — a labelled multi-line field.
+template <typename ToMsg>
+NodeRef textarea_field(std::string label, std::string value, ToMsg to_msg,
+                       std::string placeholder_ = "", std::string hint = ""){
+    auto ctrl = textarea(std::move(value)) | input_skin()
+              | detail::raw_css("min-height","96px") | detail::raw_css("resize","vertical") | on_input(to_msg);
+    if (!placeholder_.empty()) ctrl = ctrl | placeholder(std::move(placeholder_));
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+
+/// `select_field("Plan", options, chosen, to_msg)` — a labelled dropdown.
+template <typename ToMsg>
+NodeRef select_field(std::string label, std::vector<Opt> options, std::string chosen,
+                     ToMsg to_msg, std::string hint = ""){
+    auto ctrl = select(std::move(options), std::move(chosen)) | input_skin() | on_change(to_msg);
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+
+/// `switch_field("Notifications", "email + push", on, Msg{})` — a settings row:
+/// title + description on the left, a toggle on the right. Tapping the row (or
+/// the toggle) fires the message.
+template <typename Msg>
+NodeRef switch_field(std::string title, std::string desc, bool on, Msg msg){
+    auto titles = col(
+        text(std::move(title)) | fg_text | detail::raw_css("font-size","14px") | semibold,
+        when(!desc.empty(), [&]{ return text(desc) | fg_muted | detail::raw_css("font-size","13px"); })
+    ) | gap(2);
+    return row(std::move(titles), box() | grow(), toggle(on, msg))
+        | items_center | gap(16) | pad_y(12);
+}
+
+/// `checkbox_field("I agree", on, Msg{})` — a checkbox + inline label; clicking
+/// either toggles it.
+template <typename Msg>
+NodeRef checkbox_field(std::string label, bool on, Msg msg){
+    return row(checkbox(on) | tap(msg),
+               text(std::move(label)) | fg_text | detail::raw_css("font-size","14px"))
+        | gap(10) | items_center | as("label") | detail::raw_css("cursor","pointer")
+        | tap(msg);
+}
+
+/// `form_actions(buttons…)` — a right-aligned button bar for a form footer.
+template <typename... Buttons>
+NodeRef form_actions(Buttons... buttons){
+    std::vector<NodeRef> b{ std::move(buttons)... };
+    return row(box() | grow(), row_(std::move(b)) | gap(10) | items_center)
+        | items_center | w_full | detail::raw_css("padding-top", "16px");
+}
+
 /// `hero_section("Big headline", "Supporting copy", actions…)` — a centred hero block:
 /// a fluid headline, a max-width subhead, and a row of CTA nodes. The top of a
 /// landing page in one call.
