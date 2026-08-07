@@ -101,11 +101,11 @@ int main() {
         CHECK(has(html, "non-scaling-stroke"));         // line stays crisp
     }
 
-    // ── ZStack: stack() overlays children in one centred grid cell ─────────
+    // ── ZStack: stack() overlays children in one grid cell, each FILLING it ─
     {
         auto c = css_of(stack(text("bg"), text("top")));
         CHECK(has(c, "display:grid"));
-        CHECK(has(c, "place-items:center"));            // children centred
+        CHECK(has(c, "place-items:stretch"));           // children FILL the cell (layering)
         CHECK(has(c, ">*{grid-area:1/1}"));             // every child shares the cell (overlay)
     }
 
