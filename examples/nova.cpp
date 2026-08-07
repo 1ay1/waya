@@ -281,14 +281,30 @@ struct Nova {
         }
         auto stack = box(); stack->kids = std::move(cards); stack->style.flow = Flow::col;
         stack->style.gap = 10_px; finalize(*stack);
+        bool cards_empty = stack->kids.empty();
+        // The card list fills the lane and scrolls internally (vscroll), so a tall
+        // board shows full-height columns and long lists never push the composer
+        // away — the framework's vscroll() layout helper does exactly this.
+        stack = stack | vscroll() | detail::raw_css("padding-right","2px");
+        // Empty column: a soft hint so the lane never looks broken.
+        if(cards_empty){
+            stack = box(
+                col(text("\u2014") | fg(faint) | detail::raw_css("font-size","20px"),
+                    text("Drop or add a card") | fg(faint) | detail::raw_css("font-size","12px"))
+                | gap(6) | center | detail::raw_css("align-items","center"))
+                | detail::raw_css("flex","1 1 auto") | detail::raw_css("min-height","0")
+                | detail::raw_css("display","grid") | detail::raw_css("place-items","center")
+                | detail::raw_css("border","1px dashed rgba(255,255,255,.05)") | round(12);
+        }
 
         auto header = row(
             text(col_name(ci)) | fg(ink) | detail::raw_css("font-size","13px") | weight(Weight::bold)
-                | detail::raw_css("letter-spacing",".02em"),
-            box(text(std::to_string(total)) | fg(body_c) | detail::raw_css("font-size","11px"))
+                | detail::raw_css("letter-spacing",".03em") | detail::raw_css("text-transform","uppercase"),
+            box(text(std::to_string(total)) | fg(body_c) | detail::raw_css("font-size","11px") | weight(Weight::semibold))
                 | pad_x(7) | pad_y(1) | round(999) | detail::raw_css("background", detail::hexstr(line)),
             box() | grow()
-        ) | gap(8) | center | pad_x(4) | pad_y(2);
+        ) | gap(8) | center | pad_x(4) | pad_y(2)
+          | detail::raw_css("flex","0 0 auto");
 
         // composer: type a title, Enter adds a card to THIS column
         auto composer = input(m.drafts[ci])
@@ -297,15 +313,16 @@ struct Nova {
             | on_enter(Add{ ci })
             | detail::raw_css("font-size","13px") | fg(ink)
             | pad_x(12) | pad_y(9) | round(9) | w(pct_(100))
+            | detail::raw_css("flex","0 0 auto")
             | detail::raw_css("background","rgba(255,255,255,.03)")
             | detail::raw_css("border","1px dashed " + detail::hexstr(line))
             | detail::raw_css("outline","none");
 
-        // the whole column is a drop target tagged with its own id
-        return col(header, stack, composer) | gap(12) | pad(12) | round(16)
+        // the whole column is a full-height lane + a drop target tagged with its id
+        return col(header, stack, composer) | gap(12) | pad(12) | round(16) | flex_col
              | detail::raw_css("background", detail::hexstr(panel))
              | detail::raw_css("border","1px solid " + detail::hexstr(line))
-             | detail::raw_css("min-height","220px")
+             | detail::raw_css("height","100%")
              | drop_target(std::to_string(ci), [](std::string s){ return Drop{ s }; });
     }
 
@@ -453,14 +470,36 @@ struct Nova {
           | as_header;
     }
 
+    // ── view: the board toolbar (context row under the top bar) ────────────
+    static NodeRef board_bar(const Model& m){
+        int total = (int)m.cards.size();
+        int done = 0; for(auto& c : m.cards) if(c.col==Done) ++done;
+        return row(
+            text("Sprint board") | fg(ink) | detail::raw_css("font-size","15px") | weight(Weight::bold),
+            box(text(std::to_string(total) + " issues") | fg(body_c) | detail::raw_css("font-size","12px"))
+                | pad_x(9) | pad_y(3) | round(999) | detail::raw_css("background","rgba(255,255,255,.04)"),
+            box(text(std::to_string(done) + " done") | fg(0x34d399) | detail::raw_css("font-size","12px") | weight(Weight::semibold))
+                | pad_x(9) | pad_y(3) | round(999) | detail::raw_css("background","rgba(52,211,153,.10)"),
+            box() | grow(),
+            text("+ New issue") | fg(0x0a0c14) | detail::raw_css("font-size","13px") | weight(Weight::semibold)
+                | pad_x(14) | pad_y(8) | round(9) | pointer
+                | detail::raw_css("background","linear-gradient(135deg,#7c8cff,#22d3ee)")
+                | tap(Add{ Backlog })
+        ) | gap(10) | center | wrap | pad_x(24) | pad_y(14) | detail::raw_css("flex","0 0 auto");
+    }
+
     // ── view ─────────────────────────────────────────────────────────────────
     static NodeRef view(const Model& m){
-        // A responsive board: columns scroll horizontally INSIDE the board and
-        // never widen the page; each shrinks on small screens and snaps. This is
-        // the framework's board_() primitive doing the right thing by default.
+        // A responsive board that FILLS the remaining viewport height: the root
+        // is a full-height flex column, the board grows into the leftover space,
+        // and each column is a full-height lane whose card list scrolls inside.
+        // Columns scroll horizontally inside the board on narrow screens.
         std::vector<NodeRef> cols;
         for(int c=0;c<NCOL;++c) cols.push_back(column_view(m, c));
-        auto board = board_(px(290), std::move(cols)) | pad_x(22) | pad_y(20);
+        auto board = board_(px(300), std::move(cols))
+            | pad_x(24) | detail::raw_css("padding-bottom","24px")
+            | grows | detail::raw_css("min-height","0")
+            | detail::raw_css("align-items","stretch");   // stretch lanes to full height
 
         // global keyboard: ⌘K opens palette, ⌘Z undoes, from anywhere
         auto keys = box()
@@ -476,15 +515,15 @@ struct Nova {
                  | detail::raw_css("box-shadow","0 10px 30px rgba(0,0,0,.5)")
                  | live_region(false) | slide_in(200));
 
-        return col(
+        return viewport(
             topbar(m),
+            board_bar(m),
             board,
             keys,
             drawer(m),
             palette(m),
             flashbar
-        ) | detail::raw_css("min-height","100vh") | detail::raw_css("max-width","100%")
-          | detail::raw_css("overflow-x","hidden")
+        ) | detail::raw_css("max-width","100%")
           | detail::raw_css("background",
                 "radial-gradient(1200px 560px at 12% -8%, rgba(124,140,255,.10), transparent 60%),"
                 "radial-gradient(900px 500px at 92% 4%, rgba(34,211,238,.06), transparent 55%), " + std::string(detail::hexstr(bg)))

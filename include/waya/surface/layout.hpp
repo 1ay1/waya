@@ -36,17 +36,141 @@ inline Mod fluid_font(float min_px, float max_px){
     return detail::raw_css("font-size", "clamp(" + detail::numstr(min_px) + "px,"
         + detail::numstr(min_px/16.f) + "rem + 2vw," + detail::numstr(max_px) + "px)");
 }
-/// `fluid(minLen, idealVw, maxLen)` \u2014 a general clamp() length for any prop.
+/// `fluid(minLen, idealVw, maxLen)` — a general clamp() length for any prop.
 inline std::string fluid(std::string min_, std::string ideal, std::string max_){
     return "clamp(" + min_ + "," + ideal + "," + max_ + ")";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Every Layout primitives \u2014 responsive by construction, no breakpoints.
-// ═══════════════════════════════════════════════════════════════════════════
-
 namespace detail { inline void collect(std::vector<NodeRef>&){}
 template<typename...R> void collect(std::vector<NodeRef>& v, NodeRef n, R...r){ v.push_back(std::move(n)); collect(v,std::move(r)...); } }
+
+// ── Filling the space ─ the mods every app needs to build a full-height shell ─
+// The #1 layout confusion: how to make a region GROW to fill leftover space and
+// SCROLL internally instead of pushing the page taller. These name it directly.
+
+/// `grows` / `grows(n)` — take the leftover space on the parent's MAIN axis
+/// (SwiftUI's fill). In a `col` it fills height, in a `row` it fills width.
+/// Clearer than `flex_1`; the everyday "this pane should expand".
+inline const Mod grows = grow(1);
+
+/// `stretches` — stretch to fill the parent's CROSS axis (align-self: stretch).
+inline const Mod stretches = detail::raw_css("align-self", "stretch");
+
+/// `flex_col` / `flex_row` — turn a node into a flex container that DISTRIBUTES
+/// space to its children AND lets a scrolling child be bounded (min-height/
+/// min-width:0). This is the missing setup that makes a full-height app layout
+/// 'just work': `flex_col` on the root, `grows` on the region that expands.
+inline const Mod flex_col = sty([](Style& s){
+    s.flow = Flow::col;
+    s.extra.emplace_back("display", "flex");
+    s.extra.emplace_back("flex-direction", "column");
+    s.extra.emplace_back("min-height", "0");
+});
+inline const Mod flex_row = sty([](Style& s){
+    s.flow = Flow::row;
+    s.extra.emplace_back("display", "flex");
+    s.extra.emplace_back("flex-direction", "row");
+    s.extra.emplace_back("min-width", "0");
+});
+
+/// `vscroll()` — grow to fill and scroll VERTICALLY inside (a list, a chat log).
+/// (Alias-with-intent of the existing scroll_fill(); pairs with flex_col parent.)
+inline Mod vscroll(){ return sty([](Style& s){
+    s.has_grow = true; s.grow = 1;
+    s.extra.emplace_back("min-height", "0");
+    s.extra.emplace_back("overflow-y", "auto");
+    s.extra.emplace_back("-webkit-overflow-scrolling", "touch"); }); }
+
+/// `hscroll()` — grow to fill and scroll HORIZONTALLY inside (a board, a shelf).
+inline Mod hscroll(){ return sty([](Style& s){
+    s.has_grow = true; s.grow = 1;
+    s.extra.emplace_back("min-width", "0");
+    s.extra.emplace_back("overflow-x", "auto");
+    s.extra.emplace_back("-webkit-overflow-scrolling", "touch"); }); }
+
+/// `viewport(children…)` — a root that fills EXACTLY the viewport height and is a
+/// height-distributing flex column: header/toolbar stay put, a `grows`/`vscroll`
+/// region fills the rest, nothing scrolls the page. The one-call app frame.
+template <typename... Cs> NodeRef viewport(Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    auto n = box(); n->kids = std::move(k); n->style.flow = Flow::col;
+    n->style.extra.emplace_back("height", "100dvh");
+    n->style.extra.emplace_back("display", "flex");
+    n->style.extra.emplace_back("flex-direction", "column");
+    n->style.extra.emplace_back("overflow", "hidden");
+    finalize(*n); return n;
+}
+
+// ── Centering ─────────────────────────────────────────────────────────────
+/// `center_y` — centre children on the VERTICAL axis only (justify a col / align
+/// a row). `dead_center` — perfectly centre on BOTH axes (a spinner, a splash).
+inline const Mod center_y = sty([](Style& s){
+    if(s.flow==Flow::none) s.flow=Flow::col;
+    if(s.flow==Flow::col) s.justify=Justify::center; else s.align=Align::center; });
+inline const Mod dead_center = sty([](Style& s){
+    s.extra.emplace_back("display","grid"); s.extra.emplace_back("place-items","center"); });
+
+// ── Split panes ──────────────────────────────────────────────────────────
+/// `split(a, b)` — two panes side by side, each taking half (or `ratio` of the
+/// width to `a`). Stacks to a column below `stack_below` total width. Great for
+/// an editor+preview, a list+detail, a form+summary.
+inline NodeRef split(NodeRef a, NodeRef b, float ratio = 0.5f, Len stack_below = rem(48)){
+    int pa = (int)(ratio*100.f + 0.5f); if(pa<5) pa=5; if(pa>95) pa=95;
+    std::string th = std::to_string((int)stack_below.value) + (stack_below.unit==Unit::rem?"rem":"px");
+    // Each pane grows/shrinks around its share, but its flex-basis flips to the
+    // Every-Layout switcher value so both wrap to a column below the threshold.
+    // (grow, shrink, then the switcher basis — one `flex` shorthand, no conflict.)
+    a->style.extra.emplace_back("min-width", "0");
+    b->style.extra.emplace_back("min-width", "0");
+    a->style.extra.emplace_back("flex", std::to_string(pa) + " 1 calc((" + th + " - 100%) * 999)");
+    b->style.extra.emplace_back("flex", std::to_string(100-pa) + " 1 calc((" + th + " - 100%) * 999)");
+    finalize(*a); finalize(*b);
+    auto n = box(std::move(a), std::move(b));
+    n->style.flow = Flow::row; n->style.wrap = Wrap::wrap; n->style.gap = px(16);
+    finalize(*n); return n;
+}
+
+// ── Aspect-ratio media boxes ──────────────────────────────────────────────
+/// `ratio_box(w, h, child)` — a container locked to a `w:h` aspect ratio that
+/// clips its child to fit (a video embed, a cover image, a map). The child fills
+/// it. `video_box(child)` is the 16:9 shorthand.
+inline NodeRef ratio_box(float w, float h, NodeRef child){
+    auto n = box(std::move(child));
+    n->style.extra.emplace_back("aspect-ratio", detail::numstr(w) + " / " + detail::numstr(h));
+    n->style.extra.emplace_back("width", "100%");
+    n->style.extra.emplace_back("overflow", "hidden");
+    n->style.extra.emplace_back("position", "relative");
+    finalize(*n); return n;
+}
+inline NodeRef video_box(NodeRef child){ return ratio_box(16, 9, std::move(child)); }
+inline NodeRef square_box(NodeRef child){ return ratio_box(1, 1, std::move(child)); }
+
+// ── Masonry ───────────────────────────────────────────────────────────────
+/// `masonry_(min_col, items, gap_px)` — a Pinterest-style column-packed layout:
+/// items flow into as many columns as fit at >= `min_col` wide, each column
+/// packed independently (no row alignment) so variable-height cards tile with no
+/// gaps. Uses CSS multicol — widely supported, no JS. Order is column-major.
+inline NodeRef masonry_(Len min_col, std::vector<NodeRef> items, float gap_px = 16){
+    std::string mc = std::to_string((int)min_col.value) + (min_col.unit==Unit::rem?"rem":"px");
+    for(auto& it : items){
+        it->style.extra.emplace_back("break-inside", "avoid");
+        it->style.extra.emplace_back("margin-bottom", detail::numstr(gap_px) + "px");
+        it->style.extra.emplace_back("width", "100%");
+        finalize(*it);
+    }
+    auto n = box(); n->kids = std::move(items);
+    n->style.extra.emplace_back("column-width", mc);
+    n->style.extra.emplace_back("column-gap", detail::numstr(gap_px) + "px");
+    finalize(*n); return n;
+}
+template <typename... Cs> NodeRef masonry(Len min_col, Cs... cs){
+    std::vector<NodeRef> k; detail::collect(k, std::move(cs)...);
+    return masonry_(min_col, std::move(k));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Every Layout primitives — responsive by construction, no breakpoints.
+// ═══════════════════════════════════════════════════════════════════════════
 
 // STACK is `col` (already defined) — vertical flow with consistent spacing.
 

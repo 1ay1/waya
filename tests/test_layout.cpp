@@ -325,6 +325,33 @@ int main() {
         CHECK(has(css_of(board_(px(240), std::move(items))), "overflow-x:auto"));
     }
 
+    // ── filling-the-space + structure helpers (the full-height-shell gaps) ────
+    {
+        // viewport() = a 100dvh height-distributing flex column
+        auto vp = css_of(viewport(box(), box()));
+        CHECK(has(vp, "100dvh") && has(vp, "flex-direction:column") && has(vp, "overflow:hidden"));
+        // grows / stretches / flex_col / flex_row
+        CHECK(has(css_of(box() | grows), "flex:1 1 auto"));
+        CHECK(has(css_of(box() | stretches), "align-self:stretch"));
+        CHECK(has(css_of(box() | flex_col), "flex-direction:column") && has(css_of(box() | flex_col), "min-height:0"));
+        CHECK(has(css_of(box() | flex_row), "flex-direction:row") && has(css_of(box() | flex_row), "min-width:0"));
+        // vscroll / hscroll = grow + bounded + internal scroll
+        CHECK(has(css_of(box() | vscroll()), "overflow-y:auto") && has(css_of(box() | vscroll()), "min-height:0"));
+        CHECK(has(css_of(box() | hscroll()), "overflow-x:auto") && has(css_of(box() | hscroll()), "min-width:0"));
+        // centering
+        CHECK(has(css_of(box() | dead_center), "place-items:center"));
+        CHECK(has(css_of(col(box()) | center_y), "justify-content:center"));
+        // split panes: two flex children that wrap below the threshold
+        auto sp = css_of(split(box(), box(), 0.6f));
+        CHECK(has(sp, "flex:60 1") && has(sp, "flex:40 1"));
+        // aspect-ratio boxes
+        CHECK(has(css_of(video_box(box())), "aspect-ratio:16 / 9"));
+        CHECK(has(css_of(square_box(box())), "aspect-ratio:1 / 1"));
+        CHECK(has(css_of(ratio_box(4, 3, box())), "aspect-ratio:4 / 3"));
+        // masonry: a multicol pack
+        CHECK(has(css_of(masonry(rem(16), box(), box())), "column-width:16rem"));
+    }
+
     std::cout << "test_layout: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

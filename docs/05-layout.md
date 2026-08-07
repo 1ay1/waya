@@ -45,17 +45,56 @@ space. Say which:
 ```cpp
 text("A") | w(hug)         // content-sized (default)
 box(...)  | w(fill)        // 100% of the parent's width
-child     | grow(1)        // take all leftover space on the main axis
+child     | grows          // take all leftover space on the MAIN axis
 ```
 
 - `hug` (the default) — the node is as small as its content.
 - `fill` — the node's width/height is 100% of its parent.
-- `grow(n)` — in a `row`/`col`, this child absorbs leftover main-axis space,
-  proportional to `n`.
+- `grows` (or `grow(n)`) — in a `row`/`col`, this child absorbs leftover
+  main-axis space. In a `col` it fills height; in a `row` it fills width.
+- `stretches` — stretch to fill the parent's **cross** axis.
 
 ```cpp
-row(sidebar, content | grow(1))    // content takes the remaining width
+row(sidebar, content | grows)    // content takes the remaining width
 ```
+
+## Full-height app shells (the #1 layout question)
+
+The most common layout confusion is "how do I make one region fill the leftover
+height and scroll inside itself instead of pushing the page taller?" waya names
+it directly — no `flex`/`min-height:0` incantations:
+
+```cpp
+template <typename... Cs> NodeRef viewport(Cs... children);  // a 100dvh flex-column shell
+Mod flex_col;   Mod flex_row;   // a height/width-distributing flex container
+Mod vscroll();  Mod hscroll();  // grow to fill AND scroll internally (y / x)
+```
+
+- **`viewport(...)`** — a root that fills exactly the viewport height and is a
+  height-distributing flex column. Header/toolbar stay put; a `grows`/`vscroll`
+  region fills the rest; the page never scrolls. The one-call app frame.
+- **`flex_col` / `flex_row`** — turn any node into a flex container that
+  distributes space to children *and* lets a scrolling child be bounded
+  (`min-height:0` / `min-width:0`).
+- **`vscroll()` / `hscroll()`** — mark the region that should grow and scroll
+  internally (a list, a chat log; a board, a shelf).
+
+```cpp
+// a classic header + scrolling body + pinned footer, filling the screen:
+viewport(
+    top_bar,                        // stays put
+    message_list | vscroll(),       // fills the middle, scrolls inside
+    composer                        // pinned to the bottom
+)
+```
+
+This is exactly how the `nova` example builds its board (a full-height shell with
+scrolling lanes) — no raw CSS.
+
+## Sizing intent details (legacy names)
+
+`flexible` and `flex_1` are older aliases of `grows`; `scroll_fill()` is the
+older alias of `vscroll()`. Prefer the new names — they read as intent.
 
 ## Spacers
 
@@ -221,6 +260,63 @@ board_(px(290), std::move(cols))
     more rows as space allows) — a card gallery. Use **`board`** when items are
     columns that stay in one row and *scroll* — a kanban, a media carousel, a
     horizontally-paged shelf.
+
+### `split` — two responsive panes
+
+```cpp
+NodeRef split(NodeRef a, NodeRef b, float ratio = 0.5f, Len stack_below = rem(48));
+```
+
+Two panes side by side, `a` taking `ratio` of the width (default half). They
+**stack to a column** below `stack_below` total width — no media query. For an
+editor + preview, a list + detail, a form + summary.
+
+```cpp
+split(editor_pane, preview_pane, 0.6f)   // 60/40, stacks on narrow screens
+```
+
+### `ratio_box` / `video_box` / `square_box` — aspect-ratio media
+
+```cpp
+NodeRef ratio_box(float w, float h, NodeRef child);   // locked to w:h
+NodeRef video_box(NodeRef child);                     // 16:9 shorthand
+NodeRef square_box(NodeRef child);                    // 1:1 shorthand
+```
+
+A container locked to an aspect ratio that clips its child to fit — a video
+embed, a cover image, a map tile. The child fills it.
+
+```cpp
+video_box(image("/thumb.jpg") | cover)   // always 16:9, never distorts
+square_box(avatar_img)
+```
+
+### `masonry` — a Pinterest-style packed grid
+
+```cpp
+template <typename... Cs> NodeRef masonry(Len min_col, Cs... items);
+NodeRef masonry_(Len min_col, std::vector<NodeRef> items, float gap_px = 16);
+```
+
+Items flow into as many columns as fit at ≥ `min_col` wide, each column packed
+independently so variable-height cards tile with no gaps. Pure CSS multicol — no
+JS. (Column-major order.)
+
+```cpp
+masonry(rem(16), photo_card, photo_card, photo_card, /* … */)
+```
+
+### Centering
+
+```cpp
+Mod dead_center;   // perfectly centre children on BOTH axes (a spinner, splash)
+Mod center_y;      // centre on the VERTICAL axis only
+Mod center;        // (from styling) centre on both axes for a flex box
+```
+
+```cpp
+box(spinner()) | dead_center | h(vh(100))   // a full-screen loading state
+```
 
 ## Real grids (tables, dashboards, any 2-D layout)
 
