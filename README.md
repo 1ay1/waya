@@ -134,9 +134,11 @@ Symlink it onto your PATH (`ln -s "$PWD/waya" ~/.local/bin/waya`) and drop the
 
 ```sh
 cmake -S . -B build && cmake --build build -j
+./build/nova      # ★ flagship: an animated aurora landing + live analytics
 ./build/splash    # an animated landing page          → http://localhost:8080
 ./build/studio    # live theme switching
 ./build/orbit     # live generative art (a subscription ticks it)
+./build/swarm     # a real-time multiplayer game (shared leaderboard — two tabs)
 ./build/pulse     # a real-time collaborative dashboard (open two tabs)
 ./build/blog      # "hypertext" — a full content site: router, search, SEO, TOC
 ./build/showcase  # the grand tour: routed screens, ?query filters, a validated

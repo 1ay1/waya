@@ -96,7 +96,7 @@ endif()
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    foreach(ex counter splash orbit studio pulse blog dash typed palette living showcase swarm)
+    foreach(ex counter splash orbit studio pulse blog dash typed palette living showcase swarm nova)
         add_executable(${ex} examples/${ex}.cpp)
         target_link_libraries(${ex} PRIVATE waya::waya waya_dev_flags)
     endforeach()
