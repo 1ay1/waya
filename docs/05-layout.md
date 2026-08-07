@@ -19,7 +19,7 @@ You've met these in [The Vocabulary](03-vocabulary.md):
 ```cpp
 row(...)     // horizontal, cross-axis centered
 col(...)     // vertical
-stack(...)   // overlay — all children share one cell, centered
+stack(...)   // overlay — all children share one cell, each FILLING it
 ```
 
 Control them with `gap`, `justify`, `align`, `wrap`, and the named shortcuts
@@ -28,8 +28,14 @@ Control them with `gap`, `justify`, `align`, `wrap`, and the named shortcuts
 ```cpp
 row(icon, text("Label")) | gap(8)
 col(header, body, footer) | gap(20)
-stack(image, caption | align(Align::end))
+stack(backdrop, content)                    // layers: each fills the cell
+stack(image, caption | align(Align::end))   // a child places itself in the cell
 ```
+
+> `stack` is a ZStack — its children are overlaid in one grid cell and each
+> **stretches to fill** it by default (the layering use-case: a backdrop behind
+> content, an overlay over an image/canvas). A child that wants to be small and
+> centred says so itself (a size, `center`, or absolute positioning).
 
 ## Sizing intent: fill, hug, grow
 
@@ -64,6 +70,43 @@ const Mod flexible;   // == grow(1), to make any node a spacer
 ```cpp
 row(logo, push(), nav)                 // logo left, nav pushed right
 row(a, push(), b, push(), c)           // three items, evenly gapped
+```
+
+## Conditional rendering
+
+Show a node only when a condition holds. The hidden branch collapses to
+`nothing()` — a `display:none` node that takes **zero layout space**, so it never
+leaves a phantom gap between its siblings:
+
+```cpp
+col(
+    header,
+    when(m.loading, [&]{ return spinner(); }),   // built only when shown
+    when(m.error.empty(), [&]{ return body; }),
+    body_footer
+) | gap(16)
+```
+
+- `when(cond, node)` — the node when true, nothing when false.
+- `when(cond, [&]{ return node; })` — **lazy**: the builder runs only if shown
+  (skip the work of building a hidden subtree).
+- `when(cond, a, b)` — a or b.
+- `show(cond, node)` — reads well for a visibility toggle; same as `when`.
+- `nothing()` — the empty, zero-space node directly, when you need it.
+
+> Because the hidden branch is `nothing()` (not an empty `box`), a `col`/`row`
+> `gap` never adds space around a hidden conditional. `modal(open, …)`,
+> `dialog(open, …)` and `screens(id, …)` (no match) collapse the same way.
+
+For a screen SWITCH (routing), prefer the flat `screens` table over a `when`
+ladder:
+
+```cpp
+screens(m.route, {
+    { Home,   [&]{ return home_view(m); } },
+    { Detail, [&]{ return detail_view(m); } },
+    { NotFound, [&]{ return not_found(); } },   // catch-all
+})
 ```
 
 ## Responsive containers

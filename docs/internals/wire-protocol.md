@@ -47,21 +47,36 @@ op    := opcode, node-path, payload
 
 ### Opcodes
 
-The diff emits one of these operations per changed node
-(`enum class Op` in `diff.hpp`):
+The diff emits one of these operations per changed node (`enum class Op` in
+`diff.hpp`). The set is **orthogonal**: a node's mutable content is partitioned
+into channels — the *shell* (attributes/class), the *text body*, the *inner*
+HTML, a reflected *property*, and *children* — and each op transports exactly one
+channel. A node that changed two channels (e.g. a button's style AND its label)
+emits two ops that can't overlap. (See
+[wire-protocol-design.md](wire-protocol-design.md) for the design rationale.)
 
-| Opcode | Meaning |
-|---|---|
-| `set_text` | Replace a text node's text. |
-| `set_paint` | Re-apply a node's class/attributes (style/handler changed). Ships only the element **shell** — open tag + attributes, empty body — because the client morphs attributes in place and keeps the existing children. |
-| `set_path` | Update an SVG `path`'s geometry. |
-| `set_src` | Update an image/media `src`. |
-| `replace` | Replace a subtree (kind changed). |
-| `insert` | Insert a new child subtree at an index. |
-| `remove` | Remove a child. |
-| `move` | Move a keyed child to a new index. |
+| Wire | Op | Channel | Client action |
+|---|---|---|---|
+| 0 | `replace` | struct/identity | swap the whole element for a fresh subtree |
+| 1 | `set_shell` | shell (attrs+class) | morph attributes in place; children untouched |
+| 2 | `set_text` | text body | set `textContent` (a `<span>`/`<button>` label) |
+| 3 | `set_inner` | inner HTML | set `innerHTML` (a `markup()` / SVG body) |
+| 4 | `set_prop` | one reflected property | set `value` / `checked` / `src` by name |
+| 5 | `remove` | struct | remove a child |
+| 6 | `insert` | struct | append a child subtree |
+| 7 | `move` | struct | move a keyed child `[from, to]` |
+| 8 | `insert_at` | struct | insert a child subtree before index `[to]` |
+| 9 | `paint` | full | repaint the whole surface (first frame / resync) |
 
-A counter increment produces exactly one `set_text` op — a few bytes total.
+`set_shell` ships only the element **shell** (open tag + attributes, empty body):
+the client morphs attributes in place and keeps the live children, so focus,
+caret and scroll survive. A counter increment produces exactly one `set_text`
+op — a few bytes total. An animated `markup()` (a live SVG scene) produces one
+`set_inner` per frame.
+
+There is deliberately **no** `set_paint` (its old double duty — "attributes, and
+maybe the body, depending on kind" — silently dropped `markup()`/button bodies).
+Body changes ride `set_text`/`set_inner`/`set_prop`; the shell rides `set_shell`.
 
 ### Keyed reconciliation
 
@@ -75,8 +90,10 @@ in-progress CSS transitions).
 The client:
 
 1. reads the binary frame,
-2. appends any new CSS to a single `<style>` (chunks are deduplicated in O(1), so
-   a frame that touches many nodes doesn't rescan the accumulated stylesheet),
+2. appends any **not-yet-installed** CSS rules to a single `<style>` — the
+   incoming CSS is split into top-level rules and each is added at most once, so
+   a long-running/animated app can't grow the stylesheet without bound (the
+   server re-emits a class rule whenever it re-renders a node carrying it),
 3. applies each op to the DOM by node-path,
 4. coalesces every op of a frame into **one `requestAnimationFrame`**, so the
    DOM is touched once per frame regardless of how many nodes changed.

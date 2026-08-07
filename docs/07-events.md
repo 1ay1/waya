@@ -124,6 +124,31 @@ form(
 
 Parse `body` in your `update` however you like (split on `&` and `=`).
 
+### Form fields the easy way
+
+Wiring a labelled input + skin + `on_input` by hand for every field gets
+repetitive. The component library's **form patterns** (`waya/ui.hpp`) do it in
+one call each — a real `<label>`, the shared input chrome, and the value mapper,
+all wired for you:
+
+```cpp
+using namespace waya::ui;
+
+card(
+  section("Account",
+    email_field("Email", m.email, [](auto v){ return SetEmail{v}; }, "you@x.com"),
+    password_field("Password", m.pw, [](auto v){ return SetPw{v}; }),
+    select_field("Plan", { option("Free","free"), option("Pro","pro") }, m.plan,
+                          [](auto v){ return SetPlan{v}; }),
+    switch_field("Notifications", "email + push", m.notify, ToggleNotify{}),
+    checkbox_field("I agree", m.agree, ToggleAgree{})),
+  form_actions(button("Cancel", Cancel{}, Variant::secondary),
+               button("Save", Save{})))
+```
+
+See [Components → Forms](14-components.md#forms) for the full list
+(`text_field`, `textarea_field`, and the typed aliases).
+
 ## Focus & pointer events
 
 ```cpp

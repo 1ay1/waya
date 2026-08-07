@@ -171,6 +171,132 @@ form(
 });
 ```
 
+## Patterns — the page-shaped building blocks
+
+The components above are the *parts*. **Patterns** (`waya/ui/patterns.hpp`, included
+by `waya/ui.hpp`) are the page-shaped assemblies you'd otherwise hand-build from
+them every time — a nav bar, a hero, a dashboard sidebar, a stat card, a form
+field. Each is one call, reads the theme, and is a plain node so `| anymod` still
+composes. A full product page is a dozen readable lines instead of hundreds.
+
+### Page structure
+
+- `page_header("Title", "subtitle", actions…)` — a big title + muted subtitle on
+  the left, action nodes pushed right.
+- `section("Heading", children…)` — a titled block: a small uppercase heading with
+  a hairline, then the content.
+- `nav_bar(brand, items…)` — a sticky, blurred top nav: brand left, links/actions
+  right. Pair with `nav_link("Docs")` (muted, brightens on hover).
+- `hero_section("Headline", "subhead", actions…)` — a centred hero: a fluid
+  headline, a max-width subhead, and a row of CTAs. The top of a landing page.
+
+### App shells
+
+- `sidebar_shell(brand, {nav_items…}, content)` — a full dashboard layout: a
+  fixed, **sticky** sidebar that **collapses on phones** (so the app goes
+  full-width) beside a scrolling content column that's capped at a comfortable
+  width. The pulse-style layout every dashboard rebuilds, in one call.
+- `sidebar_item(icon, "Label", active, msg)` — a keyboard-reachable nav row,
+  highlighted when `active`.
+
+```cpp
+sidebar_shell(
+    row(logo, text("Acme") | semibold) | gap(10) | items_center,
+    { sidebar_item("home",     "Overview", m.tab == 0, Nav{0}),
+      sidebar_item("user",     "Team",     m.tab == 1, Nav{1}),
+      sidebar_item("settings", "Settings", m.tab == 2, Nav{2}) },
+    col(page_header("Overview", "Your dashboard"), /* … */))
+) | theme(midnight()) | bg_page | fg_text
+```
+
+### Data display
+
+- `stat("Label", "Value", "+12%", tone)` — a KPI cell: muted label over a big
+  number, with an optional coloured delta chip.
+- `metric_card(label, value, delta, tone, chart?)` — `stat` in a card, optionally
+  with a chart/sparkline under it. `flex: 1 1 200px`, so a `row(…) | wrap` of them
+  tiles responsively.
+- `list_row(leading, "Title", "subtitle", trailing?)` — a list row: optional
+  leading (avatar/icon), a title + subtitle, optional trailing (a time, badge,
+  chevron). Absent leading/trailing add **no** node (no phantom gap).
+- `key_value("Label", "Value")` — a label:value row (a definition list).
+
+### Small chrome
+
+- `tag("design")` — a subtle outlined chip (categories, filters); lighter than a
+  `badge`. Add `tap` to make it a filter.
+- `kbd("⌘")` — a keyboard-key cap for shortcut hints: `row(kbd("⌘"), kbd("K"))`.
+- `banner("message", tone)` — a full-width inline alert bar with an icon and a
+  tinted background (success/warning/danger/info).
+- `empty_state("No results", "hint", action?, icon?)` — the friendly placeholder
+  for an empty list/search: a centred icon, title, hint, and optional CTA.
+- `code_block("code", "lang")` — a monospace code panel with a language tag.
+- `feature_card(icon, "Title", "body", tone)` — a marketing feature cell: an
+  accented icon tile over a title + paragraph.
+
+### Forms
+
+A labelled control in **one** call — each wraps `input + input_skin + a real
+<label> + on_input`, and maps its live value to your `Msg` via a
+`std::string -> Msg` mapper (or a bare `Msg` for toggles/checkboxes), so you
+never wire `on_input` by hand:
+
+```cpp
+card(
+  section("Account",
+    email_field   ("Email",    m.email, [](auto v){ return SetEmail{v}; }, "you@x.com", "Never shared."),
+    password_field("Password", m.pw,    [](auto v){ return SetPw{v};    }),
+    textarea_field("Bio",      m.bio,   [](auto v){ return SetBio{v};   }),
+    select_field  ("Plan", {option("Free","free"), option("Pro","pro")}, m.plan,
+                            [](auto v){ return SetPlan{v}; }),
+    switch_field  ("Notifications", "email + push", m.notify, ToggleNotify{}),
+    checkbox_field("I agree to the terms", m.agree, ToggleAgree{})),
+  form_actions(button("Cancel", Cancel{}, Variant::secondary),
+               button("Save",   Save{})))
+```
+
+- `text_field(label, value, to_msg, placeholder?, hint?, kind?)` and the typed
+  aliases `email_field` / `password_field` (right input type, mobile keyboard,
+  masking).
+- `textarea_field(…)` — a resizable multiline field.
+- `select_field(label, {options}, chosen, to_msg, hint?)` — a labelled dropdown.
+- `switch_field(title, desc, on, msg)` — a settings row: title + description on
+  the left, a toggle on the right.
+- `checkbox_field(label, on, msg)` — a checkbox + clickable inline label.
+- `form_actions(buttons…)` — a right-aligned button bar for a form footer.
+
+### Dialogs
+
+- `confirm_dialog(open, "Title", "message", "Confirm", on_confirm, on_cancel,
+  variant?)` — a ready-made yes/no modal (title, body, Cancel + primary/danger
+  action bar). Renders **nothing** when closed. Built on the core `dialog()`.
+
+## Spacing scale
+
+`waya/ui/space.hpp` adds a 4px design-token scale so an app reads on a consistent
+rhythm without ad-hoc pixel numbers. `sp(step)` is the scale (`sp(4)` == 16px);
+these mods apply it by *step*:
+
+| Mod | Meaning | `p(4)` = |
+|-----|---------|----------|
+| `p(n)` | padding, all sides | `pad(16)` |
+| `px_(n)` | padding inline (l+r) | — |
+| `py(n)` | padding block (t+b) | — |
+| `gx(n)` | gap between children | `gap(16)` |
+| `ma(n)` | margin, all sides | — |
+| `mt(n)` / `mb(n)` | margin top / bottom | — |
+
+```cpp
+card(…) | p(6) | gx(5)          // padding 24px, gap 20px
+row(…)  | gx(3) | py(4)         // gap 12px, vertical padding 16px
+```
+
+The scale is the convenient default, never a cage — reach for the raw pixel mods
+(`pad(14)`) any time you need an off-scale value. (The shorthands are named to
+avoid clashes: `px_` because the core `px` is a `Len` constructor, and `ma` for
+margin because a bare `m` would shadow a `Model` named `m` — the universal
+variable.)
+
 ## Themes
 
 The core ships the token *mechanism* (`theme()`, `fg_*`/`bg_*` token mods, the

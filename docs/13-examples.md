@@ -1,230 +1,140 @@
 # Examples Walkthrough
 
-waya ships several complete, single-file apps in `examples/`. Each is a real
-`SurfaceProgram` you can build and run. Build any of them:
+waya ships ten complete, single-file apps in `examples/`. Each is a real
+`SurfaceProgram` you can build, run, and learn from. The easiest way to run one
+is the CLI (it builds Release automatically and opens your browser):
+
+```bash
+waya run                 # arrow-key picker of every example
+waya run aurora          # or name one directly
+waya list                # see them all with a one-line blurb
+```
+
+Or with plain CMake:
 
 ```bash
 cmake -S . -B build && cmake --build build -j
-./build/blog      # then open http://localhost:8080
+./build/aurora           # then open the printed URL
 ```
 
-`counter`, `splash`, and `orbit` use only the **core** (`waya/surface/*`).
-`studio`, `pulse`, `blog`, `dash`, `nova`, and `swarm` also pull in the
-**component library** (`#include <waya/ui.hpp>`) for cards, buttons, dialogs,
-charts, and theme presets — a good side-by-side of "pure core" vs "batteries."
+Every example is auto-discovered — dropping a new file in `examples/` makes a new
+target and a new `waya run` entry with no edits anywhere.
 
-## `nova` — the flagship: an animated aurora landing + live analytics
+There are three flavours, so you can compare "pure core" vs "batteries":
 
-The example to open first. A marketing-grade hero — an animated **aurora**
-headline over a drifting **mesh** backdrop — flows into a live analytics
-dashboard: **glass** metric cards with **gradient-border** rings and colored
-**glow**, live-ticking sparklines, an interactive area chart with a segmented
-time-range switch, and **staggered `fade_up` reveals**. Every effect is a
-one-line mod; the whole page server-renders and streams only deltas as the
-numbers tick.
+| Flavour | Examples | Uses |
+|---|---|---|
+| **Product UI** | aurora, pulse, prism, flow, lumen, showcase | `waya/ui.hpp` (components + patterns) |
+| **Live generative** | orbit | core `markup()` + a tick `Sub` |
+| **Nerdy compute** | life, mandel, sort | pure C++ in `update`, streamed as deltas |
 
-**Learn from it:** how the full design vocabulary composes — `aurora_text`,
-`mesh`, `frost`/`glass`, `gradient_border`, `glow`/`hover_glow`, `hover_lift`,
-`drop_shadow`, `breathe`, `fade_up` + `delay`, `font_fluid` — and how a rich,
-animated screen still costs only tiny deltas per frame (`memo` on the chart).
+---
 
-```bash
-./build/nova
-```
+## `aurora` — a premium landing page
 
-## `swarm` — a real-time multiplayer game
+A modern SaaS landing page: a **living aurora backdrop** (three soft radial blobs
+that drift on a slow server tick), a syntax-coloured code-window hero mockup, a
+gradient-clip headline, staggered `fade_up` entrances, a gradient-bordered CTA,
+a logo cloud, and a feature grid.
 
-Stars drift across a glowing field on a physics tick; tap one before it escapes
-and it bursts into a keyed, FLIP-animated shard cloud. Every pop **broadcasts**
-your score to a shared, live leaderboard — open two tabs and both boards update
-the instant either of you scores. It's also the reference for the performance
-mods: memoised static regions, `at_pct` sprites, and `tap_pop` for instant tap
-feedback.
+**Learn from it:** how far the style/motion vocabulary goes (`aurora`,
+`gradient`, `glow`, `fade_up`, `delay`), and how a `Sub::every` drives an ambient
+animation that streams as one tiny delta every 2 s.
 
-**Learn from it:** `Cmd::broadcast` + `Sub::on_topic` (multiplayer), `Sub::batch`
-(several timers), `at_pct` (per-frame motion without a class explosion),
-`tap_pop` (instant feedback), and `memo` (only the moving stars rebuild). See
-[Performance](24-performance.md#animating-without-layout-thrash).
+## `pulse` — a real-time analytics dashboard
 
-```bash
-./build/swarm    # open two browser tabs
-```
+A product-grade dashboard: a sticky, mobile-collapsing **sidebar**, four KPI
+cards with live `sparkline`s and trend deltas, an `area_chart` with a segmented
+range switch, a `bars` chart, and a rolling activity feed. One server clock
+drives it; a pause control shows a `Sub` is just a function of the Model.
 
-## `dash` — the component library, end to end
+**Learn from it:** dashboard layout (`sidebar_shell`-style), the chart helpers,
+and adaptive subscriptions (`m.live ? Sub::every(…) : Sub::none()`).
 
-A live dashboard: tabs, an animated line chart, a toggle, a progress bar + slider,
-and a typed `data_table` with avatars, badges, and bar charts per row — ticking
-itself via a `Sub::every` subscription. The showcase for `waya/ui.hpp`.
+## `prism` — a live theme playground
 
-**Learn from it:** how icons, widgets, and charts compose like any other node,
-and how a rich screen still streams tiny deltas on each interaction.
+A settings panel that re-tints entirely when you flip a palette: buttons, badges,
+inputs, a toggle, a slider, a progress bar and cards all read theme tokens
+(`var(--wa-*)`), so `theme(t)` on the root recolours everything in **one paint**.
 
-```bash
-./build/dash
-```
+**Learn from it:** the token system and live theming (`theme()`, `bg_surface`,
+`fg_text`), and real control state that round-trips over the socket.
 
-## `palette` — a Cmd+K command palette
+## `flow` — a keyed kanban board
 
-The "wait, C++ did that?" demo. A **global keyboard shortcut** (`mod+k`, from
-anywhere) opens a centered, **autofocused**, live-**filtered** command list with
-**arrow-key navigation** and Enter-to-run — all from three pure functions and
-the mod vocabulary, with zero client state.
+Move a card between Todo / Doing / Done and it **glides** to its new column
+instead of blinking — because the rows are `key(...)`-ed, so the diff emits a
+`move`, not a re-render, and the client FLIPs it into place. Live per-column
+counts and a progress header.
 
-**Learn from it:** `on_shortcut` (global), `autofocus`/`on_key`/`on_enter`/
-`on_escape` (keyboard), a filtered+highlighted list driven purely by the Model.
+**Learn from it:** keyed lists and move-diffing — the single most important
+performance-and-polish idea in the framework.
 
-```bash
-./build/palette
-```
+## `lumen` — a command palette (⌘K)
 
-## `living` — reusable components that glide
+Press Cmd/Ctrl-K anywhere to summon a Raycast-style launcher: type to fuzzy-filter
+a keyed list (results reorder with a glide), arrow to move, Enter to run, Esc to
+close. The chosen command updates a live workspace beneath it.
 
-A todo list where rows are **memoised components** (rebuilt only when their own
-data changes), items are **keyed** by id (so the diff reconciles by identity),
-and `animated()` makes every add / remove / reorder / filter **glide** (FLIP) —
-with zero animation state in the Model. The reusable-component story end to end.
+**Learn from it:** a global shortcut (`on_shortcut("mod+k", …)`), live input
+(`on_input`), keyboard events (`on_key`/`on_enter`/`on_escape`), a `modal` layer,
+and keyed animated results.
 
-**Learn from it:** `memo`, `key()` + `animated()`, and how a pure sort/filter in
-`view()` becomes a smooth on-screen animation for free.
+## `showcase` — the pattern library, end to end
 
-```bash
-./build/living
-```
+A full product page assembled almost entirely from `waya/ui` **patterns**:
+`nav_bar`, `hero_section`, `page_header`, `stat`/`metric_card`, `section`,
+`list_row`, `feature_card`, `banner`, `empty_state`, `kbd`. It shows how little
+code a real, polished screen takes when the building blocks are one call each —
+about 110 readable lines.
 
-## `counter` — the smallest complete app (pure core)
-
-State, messages, a pure `update`, and a `view` built from `col`/`row`/`text`
-and `|` mods — nothing else. A button is a local function. This is the floor
-everything else is built on.
-
-**Learn from it:** the Elm loop end to end, and that a component is just a
-function returning a node.
-
-```bash
-./build/counter
-```
-
-## `splash` — an animated landing page
-
-A striking marketing page: a living aurora headline, a breathing status pill,
-gradient-bordered glass cards that lift on hover, a glow CTA, and a live
-counter. Everything is one-line mods — no HTML, CSS, or JS.
-
-**Learn from it:** the animation and effect mods (`aurora`, `pulse`, `frost`,
-`hover_lift`, `elevation`), fluid type (`font_fluid`), and how a static-looking
-page still runs the full Elm loop.
-
-```bash
-./build/splash
-```
-
-## `studio` — live theming
-
-A design studio showing every polish mod on one screen. Tap a palette and the
-**whole app re-tints in a single paint**, smoothly. Built from `theme` tokens,
-`themed()`, and `theme_transition()`.
-
-**Learn from it:** semantic theming — how `theme(...)` + token mods
-(`bg_surface`, `fg_text`, `bg_primary`) let one state change restyle everything;
-and how theme switching stays a pure `update`.
-
-```bash
-./build/studio
-```
+**Learn from it:** the patterns layer (see
+[Components → Patterns](14-components.md#patterns--the-page-shaped-building-blocks)),
+and conditional rendering with `when` (the hidden tabs collapse to nothing).
 
 ## `orbit` — live generative art
 
-A field of orbiting nodes drawn as SVG `path`s, ticked ~30×/second by a
-`Sub::every` subscription. Pure math produces a `NodeRef`; waya streams only
-what moved.
+A constellation of nodes swings around drifting attractors; every node is linked
+to its nearest neighbours, so the whole web re-weaves ~30×/s. Pure math becomes an
+SVG string handed to waya as one `markup()` node, and only the delta ships each
+frame. Speed and node-count controls.
 
-**Learn from it:** the `path` primitive for vector graphics, high-frequency
-subscriptions, and the proof that "anything renders" — a physics animation is
-just a surface that changes every frame, diffed like any other.
+**Learn from it:** the `markup()` escape hatch for "anything renders", and a fast
+tick `Sub` driving smooth real-time motion (each frame is a single `set_inner`).
 
-```bash
-./build/orbit
-```
+## `life` — Conway's Game of Life
 
-## `pulse` — a real-time collaborative dashboard
+Click cells to draw, then Play and the cellular automaton evolves on a server tick,
+streaming only the changed cells. Presets (glider, Gosper gun, pulsar), a speed
+dial, generation + population counters. The board is a `std::vector<char>`; the
+grid is a keyed tap overlay over one SVG so only toggled cells diff.
 
-A live ops dashboard: animated metric bars, a keyed live activity feed, and
-**broadcast presence** — open two tabs, ping in one, and it lights up in the
-other instantly.
+**Learn from it:** heavy state in the Model, an interactive grid, and
+`role="gridcell"` accessibility for a canvas-like surface.
 
-**Learn from it:** `Cmd::broadcast` + `Sub::on_topic` for multiplayer, keyed
-lists (`key(...)`) for smooth feed updates, and combining several subscriptions
-with `Sub::batch`.
+## `mandel` — a Mandelbrot explorer
 
-```bash
-./build/pulse    # open two browser tabs
-```
+Each pixel's escape count is computed in C++, coloured by one of four palettes,
+packed into a 24-bit BMP, and shipped as a base64 data URI (BMP so there's no
+PNG/zlib dependency). A 3×3 tap grid zooms toward the tapped third.
 
-## `blog` — "hypertext", a full content site
+**Learn from it:** raw compute in `update`, and shipping a generated image as one
+node — "your algorithm is the app."
 
-The most complete example: a whole blog engine in one file. It has a real
-router (`/`, `/post/:slug`, `/tag/:tag`, `/archive`, `/about`), a seed corpus
-with full metadata, **live search** with a result count, a **featured hero
-post**, tag filtering and a tag cloud, monogram author avatars, per-post SEO
-(Open Graph + Article JSON-LD), reading time, a **scroll-driven reading-progress
-bar**, an **auto-generated table of contents**, **related posts**, and
-**prev/next navigation**. Every route server-renders crawlable HTML.
+## `sort` — a sorting-algorithm visualiser
 
-**Learn from it:** routing wired into the Elm loop
-([Routing & SEO](09-routing-seo.md)), the `screens` route switch, per-route
-`meta`, `sitemap()`/`site_url()` for SEO, and how a large-ish app is organised
-with component functions.
+Bubble / insertion / selection / quicksort run as a **resumable step machine** on
+a 24 ms tick, colouring the bars being compared (amber) and swapped (rose), with
+comparison + swap counters. All four are correct sorts (verified permutations,
+realistic op counts).
 
-```bash
-./build/blog
-```
+**Learn from it:** modelling an algorithm as a state machine you advance one step
+per tick — the general pattern for animating any process.
 
-Key structure to study in `examples/blog.cpp`:
+---
 
-- `corpus()` — the seed data.
-- `routes()` — the `Router` table.
-- `update(Model, Msg, std::string)` — handling `Route`/`Nav`/`SetQuery`.
-- `subscribe` — `Sub::on_route` to track navigation.
-- `view` — the `screens(...)` switch.
-- `meta` — per-route SEO.
-- Component functions: `post_card`, `featured_card`, `post_view`, `post_footer`.
+## Reading tip
 
-## `showcase` — the grand tour
-
-The one example that touches everything a real app needs, in ~200 lines of three
-pure functions. A small "Signups" admin with:
-
-- **Routing with query params** — `router()` plus `m.q("role")` / `m.q("q")`, so
-  the role facets and the text filter are just deep-linkable URLs
-  (`/?role=Admin`, `/?q=ada`).
-- **A real form** — `form(...) | on_submit(...)` gathers named controls into
-  `FormData`, with validation that surfaces as an assertive `alert(...)`.
-- **Effects with HTTP status** — `Cmd::fetch_full` delivers a full `Response`,
-  so the save handles `status == 0` (never completed) and non-2xx distinctly
-  from success, and rolls back the optimistic add on failure.
-- **Accessibility for live updates** — a `live_region()` wrapping `status(...)`
-  announces "Added Ada." to a screen reader with no extra work.
-
-```sh
-./build/showcase   # http://localhost:8080
-```
-
-Because it's pure, the whole app is drivable in a test with
-`test::harness<Showcase>()` and scrubbable with `debug::timeline<Showcase>()` —
-no browser required. Study `examples/showcase.cpp` for how routing, forms,
-effects, and a11y compose in one place.
-
-## Building your own
-
-Start from the [counter in Getting Started](01-getting-started.md), then reach
-for the example closest to your goal:
-
-- **Marketing / landing / "wow":** `nova`, then `splash`.
-- **Dashboard / data:** `nova`, `dash`, or `pulse`.
-- **Real-time / multiplayer / games:** `swarm`, `pulse`.
-- **Content / docs / blog:** `blog`.
-- **Graphics / visualisation:** `orbit`.
-- **Theming / design system:** `studio`.
-- **Everything at once (routing + forms + effects + a11y):** `showcase`.
-
-Each is small enough to read in one sitting and copy from.
+Every example is one file, top to bottom: a `Model`, a `Msg` variant, `init` /
+`update` / `view`, and a `main` that calls `live<T>({...})`. Open the one closest
+to what you're building and copy the shape — that's the whole learning curve.

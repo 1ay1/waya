@@ -14,7 +14,7 @@ state in your code.
     ```sh
     ./waya new my-app && cd my-app && waya run   # builds + serves on :8080
     ```
-    Or just run a bundled example: `./waya run counter` (see `./waya list`).
+    Or just run a bundled example: `./waya run aurora` (see `./waya list`).
     New to the whole idea? Read **[The Mental Model](02-mental-model.md)** first,
     then follow **[Getting Started](01-getting-started.md)**.
 

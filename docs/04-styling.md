@@ -291,7 +291,7 @@ col(
     (`midnight()`, `ocean()`, `rose()`, `light()`) are tuned to look good
     together. Pick a theme, use `frost`/`gradient_border`/`glow` for hierarchy,
     `fade_up` + `delay` for a staggered reveal, and one accent colour throughout
-    — that's the whole recipe behind `nova`.
+    — that's the whole recipe behind `aurora`.
 
 ## States (`:hover`, `:focus`, `:active`, `:disabled`)
 

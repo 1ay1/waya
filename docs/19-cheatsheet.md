@@ -136,3 +136,40 @@ If it's here, you don't need `css()`. (Everything takes a bare `px` number
 
 If you find yourself reaching for `css()` for something common, it's probably
 already a named mod — check this page first.
+
+## Components & patterns (`#include <waya/ui.hpp>`)
+
+| Call | What |
+|------|------|
+| `card(…)` `badge(l, tone)` `avatar("AB")` `divider()` `spinner()` | base parts |
+| `button(l, Msg{}, Variant::…)` `toggle(on, Msg{})` `slider(v,min,max,fn)` | controls |
+| `tabs(i, {{0,"A"}}, to_msg)` `progress(pct)` `tooltip(node, "tip")` | widgets |
+| `sparkline(data)` `area_chart(data)` `bars(data)` | charts |
+| `icon("search")` | inline SVG icon (tint with `fg`, size with `size`) |
+| **`page_header(t, sub, actions…)`** `section(h, …)` `nav_bar(brand, …)` | structure |
+| **`hero_section(head, sub, …)`** `feature_card(ico, t, body)` | marketing |
+| **`sidebar_shell(brand, {items}, content)`** `sidebar_item(ico, l, active, Msg)` | app shell |
+| **`stat(l, v, delta)`** `metric_card(…)` `list_row(lead, t, sub, trail)` `key_value(k, v)` | data |
+| `tag("x")` `kbd("⌘")` `banner(msg, tone)` `empty_state(t, hint)` `code_block(c, lang)` | chrome |
+| **`text_field(l, v, fn)`** `email_field` `password_field` `textarea_field` `select_field` | form fields |
+| `switch_field(t, desc, on, Msg)` `checkbox_field(l, on, Msg)` `form_actions(…)` | form fields |
+| `confirm_dialog(open, t, msg, "OK", Yes{}, No{})` `dialog(open, Close{}, …)` | dialogs |
+
+## Spacing scale (`waya/ui/space.hpp`)
+
+4px design-token scale so an app reads on a consistent rhythm. `sp(4)` == 16px.
+
+| Mod | Effect | `p(4)` = |
+|-----|--------|----------|
+| `p(n)` `px_(n)` `py(n)` | padding: all / inline / block | `pad(16)` |
+| `gx(n)` | gap between children | `gap(16)` |
+| `ma(n)` `mt(n)` `mb(n)` | margin: all / top / bottom | `margin(16)` |
+
+## Conditional rendering
+
+| Call | What |
+|------|------|
+| `when(cond, [&]{ return node; })` | node when true, **nothing** (no gap) when false; lazy |
+| `when(cond, node)` / `show(cond, node)` | eager form |
+| `nothing()` | the empty, zero-space node directly |
+| `screens(id, { {A, [&]{…}}, … })` | render the screen for the current route id |

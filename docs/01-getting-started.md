@@ -36,7 +36,7 @@ Every command takes an optional target and flags like `--port` / `--no-open`:
 
 ```sh
 waya dev palette
-waya run counter --port 9000 --no-open
+waya run aurora --port 9000 --no-open
 ```
 
 ## Install

@@ -97,3 +97,25 @@
 : A semantic colour/role in a `Theme` (page, surface, text, primary…). Token
   mods (`bg_surface`, `fg_text`) resolve against the active theme, so one state
   change re-tints a whole subtree.
+
+**Pattern**
+: A page-shaped component in `waya/ui/patterns.hpp` — a nav bar, hero, dashboard
+  sidebar, stat card, form field, dialog. One call assembles what you'd otherwise
+  build from the base components each time. Still just a function returning a
+  `NodeRef`.
+
+**Spacing scale**
+: The 4px design-token grid in `waya/ui/space.hpp`. `sp(step)` is a length
+  (`sp(4)` == 16px); the mods `p/px_/py/gx/ma/mt/mb` apply it by step so an app
+  reads on a consistent rhythm.
+
+**`nothing()`**
+: The empty node that renders as `display:none` and takes zero layout space. A
+  hidden `when`/`modal`/`dialog`/`screens` branch collapses to it, so a
+  conditional never leaves a phantom gap between siblings.
+
+**Channel (wire)**
+: One partition of a node's mutable content — shell (attributes/class), text
+  body, inner HTML, a reflected property, or children. The diff emits exactly one
+  op per changed channel, so updates are orthogonal and minimal. See
+  [internals/wire-protocol](internals/wire-protocol.md).
