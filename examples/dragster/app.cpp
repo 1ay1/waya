@@ -120,9 +120,9 @@ struct Dragster {
         auto timer = col(
             text("elapsed") | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
                 | weight(Weight::bold) | uppercase | tracking_em(0.22f),
-            text(std::string(et) + "s") | fg(etc) | font(48) | mono_font | weight(Weight::black)
-                | tabular_nums | leading(0.9f) | glow_text(etc, 14)
-        ) | gap(2);
+            text(std::string(et) + "s") | fg(etc) | font(44) | mono_font | weight(Weight::black)
+                | tabular_nums | leading(1.0f) | glow_text(etc, 14)
+        ) | gap(3);
 
         // control key-hints: a key badge + label per action, grouped as one tray.
         auto controls = row(
@@ -131,23 +131,31 @@ struct Dragster {
             hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
         ) | gap(10);
 
+        // the readouts as one tidy cluster (timer big, gear/best beside it).
+        auto readouts = row(
+            timer,
+            box() | w(px(1)) | h(px(40)) | bg(waya::rgba(0xffffff,0.1f)),   // divider
+            stat("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff),
+            stat("best", best, good)
+        ) | items_center | gap(rem(1.3f));
+
         auto dash = col(
+            // instrument row: readout cluster | tach (grows) | controls.
             row(
-                timer,
-                stat("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff),
-                stat("best", best, good),
+                readouts,
                 box(tachometer(m)) | grow(),
                 controls
-            ) | items_center | gap(rem(1.8f)) | w_full,
+            ) | items_center | gap(rem(2.4f)) | w_full,
+            // brand strip, clearly separated below the instruments.
             row(
-                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.85f)) | font(11) | term
+                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.7f)) | font(11) | term
                     | weight(Weight::black) | tracking_em(0.34f),
                 spacer(),
-                text("DRAGSTER · 1980") | fg(waya::rgba(0xffffff,0.4f)) | font(10) | term
+                text("DRAGSTER · 1980") | fg(waya::rgba(0xffffff,0.35f)) | font(10) | term
                     | weight(Weight::bold) | tracking_em(0.24f)
             ) | items_center | w_full
-        ) | gap(rem(0.8f))
-          | pad_x(rem(2.2f)) | pad_y(rem(1.2f))
+        ) | gap(rem(1.1f))
+          | pad_x(rem(2.4f)) | pad_y(rem(1.4f))
           | gradient(0x1a1d27, 0x0c0d13, 180)
           | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.09), 0 -10px 30px rgba(0,0,0,.4)")
           | detail::raw_css("border-top", "1px solid rgba(255,255,255,.08)")
