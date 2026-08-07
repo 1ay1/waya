@@ -26,11 +26,15 @@ inline std::vector<Pt> to_points(const std::vector<float>& ys, float W, float H)
     if (ys.empty()) return pts;
     float lo = *std::min_element(ys.begin(), ys.end());
     float hi = *std::max_element(ys.begin(), ys.end());
-    float span = (hi - lo) == 0 ? 1.f : (hi - lo);
+    bool flat = (hi - lo) == 0;          // all values equal
+    float span = flat ? 1.f : (hi - lo);
     float n = ys.size() > 1 ? (float)(ys.size() - 1) : 1.f;
     for (std::size_t i = 0; i < ys.size(); ++i) {
         float x = W * (float)i / n;
-        float y = H - H * (ys[i] - lo) / span;   // flip so bigger = higher
+        // A flat series has no range, so map it to the MIDDLE of the chart
+        // rather than pinning the line to the bottom (ys[i]-lo == 0 -> y == H,
+        // which read as "all zero" even for a flat non-zero metric).
+        float y = flat ? H * 0.5f : H - H * (ys[i] - lo) / span;   // flip: bigger = higher
         pts.push_back({x, y});
     }
     return pts;
