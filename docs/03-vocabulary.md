@@ -207,14 +207,91 @@ form(
 
 See [Events & Inputs](07-events.md) for the full event story.
 
-## Media
+## Media & capability elements
+
+These are the elements with real browser *behaviour* you can't build from a box:
+playback, embeds, vector art, drawing. All first-class and one-line simple
+(from `<waya/surface/media.hpp>`, included by the umbrella).
+
+### Video & audio
 
 ```cpp
 NodeRef video(std::string src);   // a <video> with controls
 NodeRef audio(std::string src);   // an <audio> player
 ```
 
-Toggle `controls`/`autoplay`/`loop` via `attr(...)`; size with `w`/`h`/`aspect`.
+Option mods make them usable without touching `attr`:
+
+```cpp
+video("/hero.mp4") | autoplay() | loop_media() | silent() | plays_inline() | no_controls()
+video("/clip.mp4") | poster("/still.jpg") | preload("metadata")
+```
+
+`autoplay()` · `loop_media()` · `silent()` (muted — named so it doesn't clash with
+the `muted` colour) · `no_controls()` · `poster(url)` · `preload(how)` ·
+`plays_inline()`.
+
+### Embeds — any iframe, made safe
+
+```cpp
+NodeRef embed(std::string url, std::string title = "Embedded content");
+NodeRef youtube(std::string video_id, bool autoplay = false);
+NodeRef vimeo(std::string video_id);
+NodeRef google_map(std::string query);
+```
+
+`embed` renders a **sandboxed** `<iframe>` (it can't script your page) and
+scheme-sanitises the URL. The common providers are one call — just the id or a
+query. Wrap in `video_box(...)` for a responsive 16:9 frame.
+
+```cpp
+video_box(youtube("dQw4w9WgXcQ"))          // responsive YouTube player
+google_map("Golden Gate Bridge")            // a live map from a query
+embed("https://example.com/widget")         // any embeddable page
+```
+
+!!! note "Embeds are for trusted providers"
+    `embed` is sandboxed but grants `allow-scripts allow-same-origin` (needed by
+    YouTube/Maps). Use it for known providers, not arbitrary user-supplied URLs.
+
+### Inline SVG
+
+```cpp
+NodeRef svg(std::string inner, std::string view_box = "0 0 24 24");
+NodeRef svg_raw(std::string full_svg);   // a complete exported <svg>
+```
+
+Vector art beyond a single `path`. Pass the shapes; the `<svg>` + viewBox is
+provided. Shapes using `fill="currentColor"` pick up `fg(...)`; size with `size(...)`.
+
+```cpp
+svg("<circle cx='12' cy='12' r='10'/>") | fg(0xff5c8a) | size(px(64))
+```
+
+### Canvas
+
+```cpp
+NodeRef canvas(int w = 300, int h = 150);
+```
+
+A real `<canvas>` drawing surface. Give it an `id(...)` and drive it from a
+client script, or use it as a paint target; `w`/`h` are the buffer resolution
+(it scales to its CSS box).
+
+### Responsive images
+
+```cpp
+NodeRef picture(std::string fallback_src,
+                std::vector<std::pair<std::string,std::string>> sources = {},
+                std::string alt_text = "");
+```
+
+An `<img>` with per-media-query sources (art direction / resolution) and a
+graceful fallback everywhere.
+
+```cpp
+picture("/photo.jpg", { {"(max-width:600px)", "/photo-small.jpg"} }, "A photo")
+```
 
 ## `markup` — the raw-HTML escape hatch
 

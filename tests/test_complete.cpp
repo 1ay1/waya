@@ -150,6 +150,31 @@ int main(){
     check(has(html(input("") | on_copy(1)), "data-ev-copy=\""), "on_copy");
     check(has(html(search_input() | on_search([](std::string v){ return v; })), "data-ev-search=\""), "on_search");
 
+    // ── capability elements: video/audio options ───────────────────────────
+    check(has(html(video("/c.mp4") | autoplay() | loop_media() | silent()), "autoplay") &&
+          has(html(video("/c.mp4") | loop_media()), " loop") &&
+          has(html(video("/c.mp4") | silent()), " muted"), "video autoplay/loop/muted");
+    check(has(html(video("/c.mp4") | poster("/p.jpg")), "poster=\"/p.jpg\""), "video poster");
+    check(has(html(video("/c.mp4") | plays_inline()), "playsinline"), "plays_inline");
+
+    // ── capability elements: embeds (safe iframes) ────────────────────────
+    check(has(html(embed("https://x.com/e")), "<iframe") &&
+          has(html(embed("https://x.com/e")), "sandbox="), "embed is a sandboxed iframe");
+    check(has(html(youtube("abc123")), "youtube-nocookie.com/embed/abc123"), "youtube by id");
+    check(has(html(vimeo("9999")), "player.vimeo.com/video/9999"), "vimeo by id");
+    check(has(html(google_map("Eiffel Tower")), "maps.google.com") &&
+          has(html(google_map("Eiffel Tower")), "Eiffel+Tower"), "google_map query");
+    // a javascript: embed url is neutralised
+    check(!has(html(embed("javascript:evil()")), "javascript:"), "embed sanitises the src scheme");
+
+    // ── capability elements: svg / canvas / picture ───────────────────────
+    check(has(html(svg("<circle r='10'/>")), "<svg") &&
+          has(html(svg("<circle r='10'/>")), "viewBox=\"0 0 24 24\"") &&
+          has(html(svg("<circle r='10'/>")), "<circle r='10'/>"), "svg inline");
+    check(has(html(canvas(320, 200)), "<canvas width=\"320\" height=\"200\""), "canvas element");
+    check(has(html(picture("/a.jpg", {{"(max-width:600px)","/small.jpg"}}, "photo")), "<picture>") &&
+          has(html(picture("/a.jpg", {{"(max-width:600px)","/small.jpg"}}, "photo")), "<source media="), "picture responsive sources");
+
     std::cout << "test_complete: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
