@@ -92,6 +92,9 @@ never touch.** You describe *what* to show; waya owns *how* to show it.
 
 <div class="grid cards" markdown>
 
+- :material-school-outline: **[Foundations](foundations/00-how-the-web-works.md)**
+  New to web dev? Learn how the web works, HTML/CSS/JS, and the DOM — from zero.
+
 - :material-rocket-launch: **[Getting Started](01-getting-started.md)**
   Install, build, and run your first app in a few minutes.
 

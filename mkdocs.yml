@@ -63,6 +63,12 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Foundations (New to Web Dev?):
+      - How the Web Works: foundations/00-how-the-web-works.md
+      - HTML, CSS & JavaScript: foundations/01-html-css-js.md
+      - The DOM & Rendering: foundations/02-dom-and-rendering.md
+      - State, SSR & Single-Page Apps: foundations/03-state-ssr-spa.md
+      - Web Terms Glossary: foundations/04-web-glossary.md
   - Guide:
       - Introduction: 00-introduction.md
       - Getting Started: 01-getting-started.md

@@ -10,9 +10,12 @@
     describes what the screen should look like, and waya generates the HTML, the
     CSS, and the tiny bit of browser plumbing for you, and runs the server. You
     never touch HTML, CSS, or JavaScript. If you know how to write a C++ struct
-    and a function, you know enough to start. Jump to the
-    [hands-on tutorial](tutorial-todo.md) to build a real app step by step, or
-    keep reading for the big picture.
+    and a function, you know enough to start.
+
+    If any of those web terms are fuzzy, read the **[Foundations](foundations/00-how-the-web-works.md)**
+    track first — it teaches how the web works, the three browser languages, the
+    DOM, and why waya's design is simpler, all from zero. Otherwise jump to the
+    [hands-on tutorial](tutorial-todo.md).
 
 ## What waya is
 
