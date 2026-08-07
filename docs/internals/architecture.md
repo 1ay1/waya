@@ -3,6 +3,12 @@
 This page explains what happens inside waya between your `view` and the pixels.
 You don't need any of it to build apps — but it makes the design choices legible.
 
+!!! tip "New to the web terms below?"
+    This page uses **DOM**, **WebSocket**, **SSR**, **diffing**, and **HTTP**
+    freely. If any are unfamiliar, the [Foundations](../foundations/00-how-the-web-works.md)
+    track explains each from scratch — especially
+    [The DOM & Rendering](../foundations/02-dom-and-rendering.md).
+
 ## The lifecycle of a frame
 
 ```
