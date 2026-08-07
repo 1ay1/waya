@@ -117,7 +117,9 @@ struct Board {
                  | tap(Add{ lane }) | transition("background-color .15s ease");
 
         return col(head, col_(std::move(cards)) | gap(10), add)
-             | gap(14) | pad(14) | round(14) | w(300)
+             | gap(14) | pad(14) | round(14)
+             | detail::raw_css("flex", "1 1 300px") | min_w(280)
+             | detail::raw_css("max-width", "420px")
              | detail::raw_css("background", "linear-gradient(180deg,#0e131f,#0a0e17)")
              | border(0x1a2130)
              | detail::raw_css("align-self", "flex-start")
@@ -150,10 +152,10 @@ struct Board {
         ) | items_center | w_full | wrap | gap(20);
 
         auto board = row(column(m, Todo), column(m, Doing), column(m, Done))
-                   | gap(16) | items_start | wrap;
+                   | gap(20) | items_start | wrap | w_full;
 
         return col(header | fade_up(450), board)
-             | gap(28) | pad_fluid(16, 40) | w_full | max_w(1300) | center_x | min_h(100_vh)
+             | gap(28) | pad_fluid(20, 48) | w_full | max_w(1400) | center_x | min_h(100_vh)
              | detail::raw_css("background",
                  "radial-gradient(1100px 520px at 15% -10%, rgba(109,124,255,.14), transparent 60%),"
                  "radial-gradient(800px 480px at 90% 10%, rgba(0,212,255,.08), transparent 55%), #080b13")
