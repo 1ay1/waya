@@ -151,18 +151,29 @@ inline Mod theme_transition(){ return sty([](Style& s){
 // `memo(props..., build)` and `component(fn)` live in surface/component.hpp —
 // include that for reusable, auto-memoised components.
 
-// ── Combinators ────────────────────────────────────────────────────────
+// ── Combinators ───────────────────────────────────────────────────
 
-/// `when(cond, node)` — the node, or an empty (zero-size) box when false. So
-/// `col(header, when(loading, spinner()), body)` just works.
+/// An empty node that renders NOTHING and takes NO space — `display:none`, no
+/// children. This is what a hidden conditional should collapse to: unlike an
+/// empty `box()`, it never adds a phantom flex gap between its siblings.
+inline NodeRef nothing(){
+    auto n = std::make_shared<Node>(); n->kind = Kind::box;
+    n->style.extra.emplace_back("display", "none");
+    finalize(*n);
+    return n;
+}
+/// `when(cond, node)` — the node when true, nothing (zero-size) when false. So
+/// `col(header, when(loading, spinner()), body)` just works with no phantom gap.
 inline NodeRef when(bool cond, NodeRef node){
-    return cond ? node : box();   // empty box renders as an empty <div>
+    return cond ? node : nothing();
 }
 /// `when(cond, a, b)` — a or b.
 inline NodeRef when(bool cond, NodeRef a, NodeRef b){ return cond ? a : b; }
-/// `when(cond, […]{ return node; })` — lazy: builds the node only if shown.
+/// `when(cond, …]{ return node; })` — lazy: builds the node only if shown, and
+/// collapses to `nothing()` (renders nothing, no gap) when hidden — so a
+/// conditional child never leaves a phantom space behind it.
 template <typename Fn> requires std::is_invocable_r_v<NodeRef, Fn>
-NodeRef when(bool cond, Fn build){ return cond ? build() : box(); }
+NodeRef when(bool cond, Fn build){ return cond ? build() : nothing(); }
 
 /// `show(cond, node)` — alias for when; reads well for visibility toggles.
 inline NodeRef show(bool cond, NodeRef node){ return when(cond, std::move(node)); }
@@ -174,7 +185,7 @@ inline NodeRef show(bool cond, NodeRef node){ return when(cond, std::move(node))
 /// ids render an empty box (add a catch-all id for a 404 screen).
 inline NodeRef screens(int id, std::vector<std::pair<int, std::function<NodeRef()>>> table){
     for (auto& [k, build] : table) if (k == id) return build();
-    return box();
+    return nothing();
 }
 
 /// `each(range, fn)` — map a range to a list of nodes, spliced into a parent.
@@ -249,9 +260,10 @@ inline NodeRef overlay(NodeRef content){
     finalize(*n);
     return n;
 }
-/// `modal(cond, content)` — the overlay only when `cond`; empty otherwise.
+/// `modal(cond, content)` — the overlay only when `cond`; renders nothing
+/// otherwise (no phantom box in the layout).
 inline NodeRef modal(bool open, NodeRef content){
-    return open ? overlay(std::move(content)) : box();
+    return open ? overlay(std::move(content)) : nothing();
 }
 
 // ── Responsive app shells ────────────────────────────────────────
