@@ -101,63 +101,61 @@ struct Dragster {
                 ? overlay("RED-LIGHT FOUL", "shifted before the green — press enter", warn)
           : (nothing());
 
-        // ── HUD in the style of the original: big glowing readouts on the black
-        // centre band (TIME + GEAR), the tach beside them, ACTIVISION footer.
+        // ── a solid dashboard bar docked under the screen ──────────────────
         std::uint32_t etc = m.phase==Phase::Finished ? good
                           : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
 
         // a labelled readout: tiny caption above a big glowing value.
         auto readout = [&](std::string label, std::string value, std::uint32_t c, int size){
             return col(
-                text(std::move(label)) | fg(waya::rgba(0xffffff, 0.45f)) | font(9) | term
-                    | weight(Weight::black) | uppercase | tracking_em(0.28f),
+                text(std::move(label)) | fg(waya::rgba(0xffffff, 0.4f)) | font(9) | term
+                    | weight(Weight::black) | uppercase | tracking_em(0.3f),
                 text(std::move(value)) | fg(c) | font(size) | term | weight(Weight::black)
-                    | tabular_nums | tracking_em(0.02f) | leading(0.9f) | glow_text(c, 12)
-            ) | gap(1);
+                    | tabular_nums | leading(0.9f) | glow_text(c, 14)
+            ) | gap(2) | items_center;
         };
 
-        // centre band: TIME | tach | GEAR, laid out across the black divider.
-        auto midband = row(
-            readout("time", et, etc, 38),
-            box(tachometer(m)) | grow() | pad_x(rem(1.4f)),
-            readout("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff, 38)
-        ) | items_center | gap(rem(1)) | w_full
-          | absolute() | left(pct(0)) | right(pct(0)) | top(pct(47.5f)) | h(pct(5))
-          | pad_x(rem(1.6f));
-
-        // brand + best-time strip along the very bottom (the ACTIVISION line).
-        auto footer = row(
-            text("ACTIVISION") | fg(0xffffff) | font(14) | term | weight(Weight::black) | tracking_em(0.28f)
-                | glow_text(0xffffff, 4),
-            spacer(),
-            readout("best", best, good, 15)
-        ) | items_center | w_full
-          | absolute() | left(pct(0)) | right(pct(0)) | bottom(pct(0)) | h(pct(7))
-          | pad_x(rem(1.6f)) | bg(band)
-          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)");
-
-        // control buttons (bottom-right, above the footer) — for touch/click.
         bool running = m.phase==Phase::Race || m.phase==Phase::Count;
-        auto controls = row(
-            hud_pill("␣", m.gas ? "THROTTLE" : "THROTTLE", GasTog{}, warn, m.gas),
-            hud_pill("▲", "SHIFT", Shift{}, amber, false),
-            hud_pill(running ? "⏎" : "⏎", running ? "RUNNING" : "START", Start{}, good, running)
-        ) | gap(10)
-          | absolute() | right(pct(2)) | bottom(pct(9)) | z(6);
 
-        auto hud = box(midband, controls, footer)
-            | absolute() | pin() | z(5) | safe_area() | no_pointer;
+        // the dashboard: readouts on the left, the big tach in the middle, the
+        // control key-caps on the right — one cohesive panel with breathing room.
+        auto dash = col(
+            row(
+                readout("time", et, etc, 34),
+                readout("gear", m.gear ? std::to_string(m.gear) : "N", 0xffffff, 34),
+                readout("best", best, good, 22),
+                box(tachometer(m)) | grow(),
+                row(
+                    hud_pill("␣", "THROTTLE", GasTog{}, warn, m.gas),
+                    hud_pill("▲", "SHIFT", Shift{}, amber, false),
+                    hud_pill("⏎", running ? "RUNNING" : "START", Start{}, good, running)
+                ) | gap(10)
+            ) | items_center | gap(rem(1.6f)) | w_full,
+            row(
+                text("ACTIVISION") | fg(waya::rgba(0xffffff,0.85f)) | font(12) | term
+                    | weight(Weight::black) | tracking_em(0.34f),
+                spacer(),
+                text("DRAGSTER · 1980") | fg(waya::rgba(0xffffff,0.3f)) | font(10) | term
+                    | weight(Weight::black) | tracking_em(0.2f)
+            ) | items_center | w_full
+        ) | gap(rem(0.9f))
+          | pad_x(rem(2)) | pad_y(rem(1.2f))
+          | gradient(0x14161d, 0x0a0b10, 180)
+          | detail::raw_css("box-shadow", "inset 0 2px 0 rgba(255,255,255,.06), inset 0 8px 24px rgba(0,0,0,.5)")
+          | detail::raw_css("border-top", "2px solid rgba(0,0,0,.6)")
+          | safe_area();
 
-        // the whole window: full-bleed screen, HUD over it, overlay on top. dvh/
-        // dvw (dynamic viewport) has no Len unit — the one place raw_css is right.
-        return box(fx(), strip_screen(m), hud, ov)
-            | absolute() | overflow("hidden") | bg(dr::page)
+        // the screen area: the two-lane race, with the phase overlay on top.
+        auto screen = box(strip_screen(m), ov)
             | detail::raw_css("position", "relative")
+            | grow() | w_full | overflow("hidden");
+
+        // whole window = a flex column: screen grows, dashboard docks below.
+        return col(fx(), screen, dash)
+            | overflow("hidden") | bg(dr::page)
             | detail::raw_css("height", "100dvh")
             | detail::raw_css("width", "100dvw")
             // global keyboard — Space = throttle, Up/W = shift, Enter/R = start.
-            // (Shift itself isn't used as a game key: it's a modifier and holding
-            // it interferes with other keydowns.)
             | hotkey(" ",          GasTog{})
             | hotkey("ArrowUp",    Shift{})
             | hotkey("w",          Shift{})
