@@ -21,8 +21,8 @@ using namespace waya::surface::literals;
 using namespace waya::ui;
 
 struct Mandel {
-    static constexpr int   RW = 200, RH = 140;   // render resolution (upscaled by CSS)
-    static constexpr int   MAXIT = 200;
+    static constexpr int   RW = 320, RH = 200;   // render resolution (upscaled by CSS)
+    static constexpr int   MAXIT = 220;
 
     static constexpr std::uint32_t ink   = 0xeef2f8;
     static constexpr std::uint32_t body_c= 0x8b98af;
@@ -207,10 +207,10 @@ struct Mandel {
             | detail::raw_css("position", "relative");
 
         return col(row(title, box() | grow()) | w_full, controls, interactive, readout, hint)
-            | gap(16) | pad(28) | max_w(920) | center_x | min_h(100_vh)
+            | gap(16) | pad_fluid(16, 40) | w_full | max_w(1500) | center_x | min_h(100_vh)
             | detail::raw_css("background",
-                "radial-gradient(1100px 560px at 50% -5%, rgba(109,124,255,.12), transparent 55%),"
-                "radial-gradient(800px 500px at 85% 20%, rgba(0,212,255,.08), transparent 55%), #070a12")
+                "radial-gradient(1400px 700px at 50% -5%, rgba(109,124,255,.12), transparent 55%),"
+                "radial-gradient(1000px 600px at 85% 20%, rgba(0,212,255,.08), transparent 55%), #070a12")
             | as_main;
     }
 

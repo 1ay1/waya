@@ -127,13 +127,15 @@ struct Life {
     }
 
     // the grid, drawn as one SVG for speed: a rect per LIVE cell only (dead
-    // cells are the background), so an empty board ships almost nothing.
+    // cells are the background), so an empty board ships almost nothing. The
+    // SVG scales to fill its box (viewBox + width:100%), and the tap overlay is
+    // a matching WxH CSS grid so cells stay aligned at any screen size.
     static NodeRef grid(const Model& m) {
         const int CELL = 15;
         std::string svg;
         svg.reserve(m.pop * 40 + 128);
         svg += "<svg viewBox='0 0 " + std::to_string(W*CELL) + " " + std::to_string(H*CELL) +
-               "' style='width:100%;height:auto;display:block'>";
+               "' preserveAspectRatio='none' style='width:100%;height:100%;display:block'>";
         // faint grid dots
         svg += "<rect width='100%' height='100%' fill='#0a0e18'/>";
         for (int y = 0; y < H; ++y)
@@ -147,23 +149,25 @@ struct Life {
         svg += "</svg>";
 
         // an overlay of transparent tap targets, keyed so only toggled cells diff.
+        // No fixed size — the grid's WxH 1fr tracks make each cell scale with the
+        // container, so taps stay aligned with the SVG on any screen.
         std::vector<NodeRef> cells;
         cells.reserve(W * H);
         for (int y = 0; y < H; ++y)
             for (int x = 0; x < W; ++x) {
                 int i = idx(x, y);
-                cells.push_back(
-                    box() | detail::raw_css("width", std::to_string(CELL) + "px")
-                          | detail::raw_css("height", std::to_string(CELL) + "px")
-                          | pointer | tap(Toggle{ i }) | key(std::to_string(i)));
+                cells.push_back(box() | pointer | tap(Toggle{ i }) | key(std::to_string(i)));
             }
         auto overlay = box_(std::move(cells))
             | detail::raw_css("position", "absolute") | detail::raw_css("inset", "0")
             | detail::raw_css("display", "grid")
-            | detail::raw_css("grid-template-columns", "repeat(" + std::to_string(W) + ",1fr)");
+            | detail::raw_css("grid-template-columns", "repeat(" + std::to_string(W) + ",1fr)")
+            | detail::raw_css("grid-template-rows", "repeat(" + std::to_string(H) + ",1fr)");
 
         return stack(markup(std::move(svg)) | detail::raw_css("line-height", "0"), overlay)
-            | detail::raw_css("position", "relative")
+            | detail::raw_css("position", "relative") | w_full
+            | detail::raw_css("aspect-ratio", std::to_string(W) + "/" + std::to_string(H))
+            | detail::raw_css("max-height", "68vh")
             | round(12) | detail::raw_css("overflow", "hidden") | bord(0x243049)
             | detail::raw_css("box-shadow", "0 30px 80px -30px rgba(0,0,0,.8)");
     }
@@ -235,10 +239,10 @@ struct Life {
             grid(m),
             stats,
             hint
-        ) | gap(16) | pad(28) | max_w(1000) | center_x | min_h(100_vh)
+        ) | gap(16) | pad_fluid(16, 40) | w_full | max_w(1600) | center_x | min_h(100_vh)
           | detail::raw_css("background",
-              "radial-gradient(1100px 560px at 50% -5%, rgba(52,224,161,.10), transparent 55%),"
-              "radial-gradient(800px 500px at 85% 20%, rgba(109,124,255,.10), transparent 55%), #070a12")
+              "radial-gradient(1400px 700px at 50% -5%, rgba(52,224,161,.10), transparent 55%),"
+              "radial-gradient(1000px 600px at 85% 20%, rgba(109,124,255,.10), transparent 55%), #070a12")
           | as_main;
     }
 

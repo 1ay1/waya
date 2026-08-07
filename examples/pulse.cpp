@@ -146,7 +146,8 @@ struct Pulse {
         ) | gap(6) | pad(18) | w(232)
           | detail::raw_css("height", "100vh") | sticky_top(0)
           | detail::raw_css("background", "#0c1019")
-          | detail::raw_css("border-right", "1px solid #161d2b");
+          | detail::raw_css("border-right", "1px solid #161d2b")
+          | only_desktop();   // collapses on phones — dashboard goes full-width
     }
 
     static NodeRef kpi(const Metric& k) {
@@ -211,7 +212,7 @@ struct Pulse {
             text("Traffic by hour") | fg(ink) | font(16) | weight(Weight::semibold),
             box(bars(m.traffic, 300, 210) | fg(0x00d4ff) | w_full | h_full)
                 | w_full | h(210)
-        ) | gap(18)) | w(300);
+        ) | gap(18)) | detail::raw_css("flex", "1 1 280px") | min_w(280);
 
         // feed
         std::vector<NodeRef> feed_items;
@@ -240,7 +241,7 @@ struct Pulse {
         ) | gap(6)) | w_full;
 
         auto content = col(topbar, kpis, row(chart_panel, traffic) | gap(16) | wrap, feed)
-                     | gap(20) | pad(28) | grow() | min_w(0);
+                     | gap(20) | pad_fluid(16, 28) | grow() | min_w(0) | max_w(1500) | center_x;
 
         return row(sidebar(), content)
              | items_stretch | min_h(100_vh) | detail::raw_css("background", "#0a0d16")

@@ -500,9 +500,9 @@ inline Mod font(float px_){ return font(px(px_)); }
 inline Mod font_fluid(float min_px, float max_px){
     // preferred = min + (max-min) scaled across ~[360px, 1200px] viewport.
     float span = max_px - min_px;
-    std::string pref = std::to_string(min_px) + "px + " + std::to_string(span * 100.0f / 840.0f) + "vw";
+    std::string pref = detail::numstr(min_px) + "px + " + detail::numstr(span * 100.0f / 840.0f) + "vw";
     return sty([=](Style& s){ s.extra.emplace_back("font-size",
-        "clamp(" + std::to_string(min_px) + "px, calc(" + pref + "), " + std::to_string(max_px) + "px)"); });
+        "clamp(" + detail::numstr(min_px) + "px, calc(" + pref + "), " + detail::numstr(max_px) + "px)"); });
 }
 inline Mod weight(Weight w){ return sty([=](Style& s){ s.weight=w; }); }
 inline const Mod bold      = sty([](Style& s){ s.weight=Weight::bold; });
@@ -548,8 +548,8 @@ inline Mod pad(float p){ return pad(px(p)); }
 inline Mod pad_fluid(float min_px, float max_px){
     float span = max_px - min_px;
     return sty([=](Style& s){ s.extra.emplace_back("padding",
-        "clamp(" + std::to_string(min_px) + "px, calc(" + std::to_string(min_px) + "px + "
-        + std::to_string(span * 100.0f / 840.0f) + "vw), " + std::to_string(max_px) + "px)"); });
+        "clamp(" + detail::numstr(min_px) + "px, calc(" + detail::numstr(min_px) + "px + "
+        + detail::numstr(span * 100.0f / 840.0f) + "vw), " + detail::numstr(max_px) + "px)"); });
 }
 inline Mod pad_x(Len l){ return sty([=](Style& s){ s.pad_x=l; }); }
 inline Mod pad_x(float p){ return pad_x(px(p)); }

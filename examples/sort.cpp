@@ -156,7 +156,7 @@ struct Sort {
         float bw = (float)W / N;
         svg.reserve(N * 90 + 64);
         svg += "<svg viewBox='0 0 " + std::to_string(W) + " " + std::to_string(H) +
-               "' preserveAspectRatio='none' style='width:100%;height:320px;display:block'>";
+               "' preserveAspectRatio='none' style='width:100%;height:min(46vh,420px);display:block'>";
         for (int i = 0; i < N; ++i) {
             float h = (float)m.a[i] / N * (H - 6);
             float x = i * bw, y = H - h;
@@ -250,10 +250,10 @@ struct Sort {
         return col(
             row(title, box() | grow(), algos) | items_center | gap(16) | wrap | w_full,
             controls, bars(m), stats, legend
-        ) | gap(16) | pad(28) | max_w(1040) | center_x | min_h(100_vh)
+        ) | gap(16) | pad_fluid(16, 40) | w_full | max_w(1500) | center_x | min_h(100_vh)
           | detail::raw_css("background",
-              "radial-gradient(1100px 560px at 50% -5%, rgba(109,124,255,.12), transparent 55%),"
-              "radial-gradient(800px 500px at 85% 20%, rgba(52,224,161,.08), transparent 55%), #070a12")
+              "radial-gradient(1400px 700px at 50% -5%, rgba(109,124,255,.12), transparent 55%),"
+              "radial-gradient(1000px 600px at 85% 20%, rgba(52,224,161,.08), transparent 55%), #070a12")
           | as_main;
     }
 
