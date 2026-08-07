@@ -1,8 +1,7 @@
-/// examples/aurora.cpp — AURORA: a living hero landing page. A drifting aurora
-/// backdrop, a gradient headline whose hue rotates, floating glass feature
-/// cards, a live "stars" counter that ticks up on its own, and a call-to-action
-/// that glows on hover. Every effect is a single named mod; the whole page is
-/// server-rendered and only the counter's delta streams over the wire.
+/// examples/aurora.cpp — AURORA: a modern SaaS landing page. Clean type scale,
+/// crisp inline-SVG icons, restrained accents, a subtle gradient field, a real
+/// nav bar, a hero with a working "star" pill, a feature grid, and a stats
+/// strip. Designed to look like a shipped product, not a demo.
 ///
 ///   waya run aurora           # then open the printed URL
 
@@ -14,142 +13,214 @@
 #include <variant>
 
 using namespace waya::surface;
-using namespace waya::surface::color;
 using namespace waya::surface::literals;
 using namespace waya::ui;
 
 struct Aurora {
-    struct Model {
-        long  tick    = 0;
-        long  stars   = 24713;   // the live "GitHub stars" vanity metric
-        bool  starred = false;
-    };
+    // ── a tight, deliberate palette ─────────────────────────────────────────
+    static constexpr std::uint32_t bg      = 0x080b14;   // near-black page
+    static constexpr std::uint32_t panel   = 0x0e1320;   // raised surface
+    static constexpr std::uint32_t line    = 0x1e2636;   // hairline border
+    static constexpr std::uint32_t ink      = 0xf2f5fa;   // headings
+    static constexpr std::uint32_t body_c   = 0x9aa7bd;   // body text
+    static constexpr std::uint32_t faint    = 0x5b667d;
+    static constexpr std::uint32_t brand    = 0x6d7cff;   // single accent (indigo)
+    static constexpr std::uint32_t brand_2  = 0x00d4ff;
 
-    struct Tick {}; struct Star {};
-    using Msg = std::variant<Tick, Star>;
+    struct Model { long stars = 2417; bool starred = false; };
+    struct Star {};
+    using Msg = std::variant<Star>;
 
     static Model init() { return {}; }
-
-    static std::pair<Model, Cmd<Msg>> update(Model m, Msg msg) {
-        return std::visit(overload{
-            [&](Tick) -> std::pair<Model, Cmd<Msg>> {
-                m.tick++;
-                // a gentle organic drift upward, ~ every 1.2s
-                if (m.tick % 2 == 0) m.stars += 1 + (m.tick * 7) % 3;
-                return { m, Cmd<Msg>::none() };
-            },
-            [&](Star) -> std::pair<Model, Cmd<Msg>> {
-                m.starred = !m.starred;
-                m.stars  += m.starred ? 1 : -1;
-                return { m, Cmd<Msg>::none() };
-            },
-        }, msg);
+    static Model update(Model m, Msg) {
+        m.starred = !m.starred;
+        m.stars  += m.starred ? 1 : -1;
+        return m;
     }
 
-    static Sub<Msg> subscribe(const Model&) {
-        return Sub<Msg>::every(std::chrono::milliseconds(600), Tick{});
+    // hairline border helper
+    static Mod stroke_border(std::uint32_t c = line) {
+        return detail::raw_css("border", "1px solid " + detail::hexstr(c));
+    }
+    static Mod card_bg() {
+        return detail::raw_css("background",
+            "linear-gradient(180deg,#0f1524,#0b101c)");
     }
 
-    // A small "pill" chip used above the headline.
-    static NodeRef eyebrow() {
-        return row(
-            box() | circle(7) | bg(0x34d399) | breathe(),
-            text("now shipping v1.0") | fg(ink) | font(13) | semibold | tracking_em(0.02f)
-        ) | gap(9) | items_center | pad_x(14) | pad_y(8) | pill
-          | frost(10) | hairline(0xffffff, 0.14f);
+    // a soft label above sections
+    static NodeRef kicker(std::string t) {
+        return text(std::move(t)) | fg(brand_2) | font(12) | weight(Weight::bold)
+             | tracking_em(0.16f) | uppercase;
     }
 
-    // A frosted feature card that lifts and glows on hover.
-    static NodeRef feature(std::string glyph, std::string title_, std::string body_,
-                           std::uint32_t hue) {
+    static NodeRef nav() {
+        auto link = [](std::string t) {
+            return text(std::move(t)) | fg(body_c) | font(14) | weight(Weight::medium)
+                 | pointer | on(Hover, fg(ink)) | transition("color .15s ease");
+        };
+        auto logo = row(
+            box(icon("home", 18) | fg(0xffffff))
+                | square(30) | center | round(8)
+                | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#00d4ff)"),
+            text("waya") | fg(ink) | font(17) | weight(Weight::bold) | tracking_em(-0.01f)
+        ) | gap(10) | items_center;
+
+        auto right = row(
+            link("Features"), link("Docs"), link("Pricing"),
+            row(text("Sign in") | fg(ink) | font(14) | weight(Weight::semibold))
+                | pad_x(16) | pad_y(9) | round(9)
+                | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#5b6cff)")
+                | pointer | on(Hover, brightness(110))
+                | transition("filter .15s ease")
+        ) | gap(28) | items_center;
+
+        return row(logo, box() | grow(), right)
+             | items_center | w_full | max_w(1120) | center_x
+             | pad_x(28) | pad_y(20);
+    }
+
+    static NodeRef feature(std::string ico, std::string title_, std::string body_) {
         return col(
-            box(text(glyph) | font(26))
-                | square(52) | round(15) | center
-                | gradient(hue, 0x0b1020, 145) | ring(hue, 1) | glow(hue, 18),
-            text(title_) | fg(ink) | font(18) | semibold,
-            text(body_)  | fg(muted) | body
-        ) | gap(14) | pad(24) | round(20) | w(300)
-          | frost(16) | hairline(0xffffff, 0.10f)
-          | hover_lift(4) | hover_glow(hue, 40)
-          | transition("transform .2s cubic-bezier(.2,.7,.2,1), box-shadow .2s ease")
-          | fade_up();
+            box(icon(ico, 20) | fg(brand_2))
+                | square(44) | center | round(11)
+                | detail::raw_css("background", "rgba(109,124,255,.10)")
+                | stroke_border(0x263050),
+            text(title_) | fg(ink) | font(17) | weight(Weight::semibold),
+            text(body_)  | fg(body_c) | font(14) | leading(1.65f)
+        ) | gap(14) | pad(26) | round(16) | grow()
+          | card_bg() | stroke_border()
+          | on(Hover, detail::raw_css("border-color", "#2f3b57"))
+          | transition("border-color .18s ease");
+    }
+
+    static NodeRef stat(std::string big, std::string label) {
+        return col(
+            text(std::move(big)) | fg(ink) | font(30) | weight(Weight::black)
+                | tracking_em(-0.02f),
+            text(std::move(label)) | fg(faint) | font(13) | weight(Weight::medium)
+        ) | gap(4) | items_center;
     }
 
     static NodeRef view(const Model& m) {
-        auto headline = col(
-            text("Build living interfaces") | font_fluid(34, 76) | weight(Weight::black)
-                | aurora_text(0xa78bfa, 0x22d3ee, 0xf472b6) | leading(1.02f)
-                | text_center,
-            text("in pure C++") | font_fluid(34, 76) | weight(Weight::black)
-                | fg(ink) | leading(1.02f) | text_center
-        ) | gap(2) | items_center;
+        // ── hero ────────────────────────────────────────────────────────────
+        auto badge_row = row(
+            box() | circle(6) | detail::raw_css("background", "#00d4ff"),
+            text("v1.0 is live") | fg(body_c) | font(13) | weight(Weight::medium),
+            box() | w(1) | h(12) | detail::raw_css("background", "#2a3348"),
+            row(text("changelog") | fg(brand_2) | font(13) | weight(Weight::semibold),
+                icon("arrow-right", 13) | fg(brand_2)) | gap(5) | items_center
+        ) | gap(12) | items_center | pad_x(14) | pad_y(8) | pill
+          | detail::raw_css("background", "rgba(255,255,255,.03)")
+          | stroke_border(0x232c40);
 
-        auto subhead =
-            text("waya renders your UI on the server and streams only what "
-                 "changed — no JavaScript to write, no build step, no client "
-                 "state to sync. Just a Model, a Msg, and a view.")
-            | fg(muted) | font_fluid(15, 19) | leading(1.7f)
-            | max_w(560) | text_center;
+        auto title_ = col(
+            text("The web framework") | fg(ink),
+            row(text("that speaks ")  | fg(ink),
+                text("C++")
+                    | detail::raw_css("background", "linear-gradient(120deg,#8b96ff,#00d4ff)")
+                    | detail::raw_css("-webkit-background-clip", "text")
+                    | detail::raw_css("background-clip", "text")
+                    | detail::raw_css("color", "transparent")) | items_baseline
+        ) | gap(4) | items_center
+          | font_fluid(40, 72) | weight(Weight::black)
+          | detail::raw_css("letter-spacing", "-0.03em")
+          | detail::raw_css("line-height", "1.05")
+          | text_center;
 
-        auto star_btn =
-            row(
-                text(m.starred ? "\u2605" : "\u2606") | font(18)
-                    | fg(m.starred ? 0xfbbf24 : ink),
-                text("Star") | semibold,
-                box(text(std::to_string(m.stars)) | tabular_nums | semibold)
-                    | pad_x(10) | pad_y(3) | pill | tint(0xffffff, 0.10f) | fg(ink)
-            ) | gap(10) | items_center
-              | pad_x(20) | pad_y(13) | round(12)
-              | frost(14) | hairline(0xffffff, 0.16f) | fg(ink)
-              | interactive() | tap(Star{});
+        auto sub = text("Render UI on the server, stream only the diff. No JavaScript "
+                        "to write, no build step, no client state to sync \u2014 just a "
+                        "Model, a Msg, and a view function.")
+                 | fg(body_c) | font_fluid(16, 19) | leading(1.7f)
+                 | max_w(600) | text_center;
 
-        auto cta =
-            row(
-                text("Get started") | semibold,
-                text("\u2192") | font(17)
-            ) | gap(9) | items_center
-              | pad_x(24) | pad_y(13) | round(12)
-              | gradient(0x8b5cf6, 0x6366f1, 135) | fg(0xffffff)
-              | glow(0x8b5cf6, 30) | interactive() | hover_glow(0x8b5cf6, 46)
-              | tap(Star{});   // demo: any tap works
+        auto primary_cta = row(
+            text("Start building") | fg(0xffffff) | font(15) | weight(Weight::semibold),
+            icon("arrow-right", 16) | fg(0xffffff)
+        ) | gap(9) | items_center | pad_x(22) | pad_y(13) | round(11)
+          | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#5b6cff)")
+          | detail::raw_css("box-shadow", "0 8px 24px -8px rgba(109,124,255,.7)")
+          | pointer | on(Hover, detail::raw_css("transform", "translateY(-1px)"))
+          | transition("transform .15s ease, box-shadow .15s ease");
 
-        auto actions = row(cta, star_btn) | gap(14) | items_center | wrap
-                     | justify_center | fade_up(600);
-
-        auto features = row(
-            feature("\u26A1", "Instant",   "Deltas over a socket. A keystroke round-trips in a frame.", 0x22d3ee),
-            feature("\u25C8", "Typed",     "Model, Msg, view — the whole app is one std::variant.",     0xa78bfa),
-            feature("\u2726", "Beautiful", "Gradients, glass, motion — every effect is one word.",       0xf472b6)
-        ) | gap(20) | wrap | justify_center | max_w(960);
+        auto star_cta = row(
+            icon("star", 16) | fg(m.starred ? 0xffd24a : body_c),
+            text("Star") | fg(ink) | font(15) | weight(Weight::semibold),
+            box() | w(1) | h(16) | detail::raw_css("background", "#2a3348"),
+            text(std::to_string(m.stars)) | fg(body_c) | font(14) | weight(Weight::semibold)
+                | tabular_nums
+        ) | gap(11) | items_center | pad_x(18) | pad_y(13) | round(11)
+          | detail::raw_css("background", "rgba(255,255,255,.03)")
+          | stroke_border(0x2a3348)
+          | pointer | on(Hover, detail::raw_css("border-color", "#3a4560"))
+          | tap(Star{}) | transition("border-color .15s ease");
 
         auto hero = col(
-            eyebrow(),
-            headline,
-            subhead,
-            actions,
-            features
-        ) | gap(30) | items_center | pad_x(24) | pad_y(80) | max_w(1040) | center_x;
+            badge_row, title_, sub,
+            row(primary_cta, star_cta) | gap(14) | items_center | wrap | justify_center
+        ) | gap(28) | items_center | pad_x(28)
+          | detail::raw_css("padding-top", "40px")
+          | detail::raw_css("padding-bottom", "64px")
+          | max_w(820) | center_x;
+
+        // ── feature grid ────────────────────────────────────────────────────
+        auto features = col(
+            col(kicker("Why waya"),
+                text("Everything you need, nothing you don't")
+                    | fg(ink) | font_fluid(26, 36) | weight(Weight::bold)
+                    | detail::raw_css("letter-spacing", "-0.02em") | text_center)
+                | gap(12) | items_center,
+            row(
+                feature("bell",     "Real-time by default",
+                        "State lives on the server. Every change streams to the client as a minimal patch over one socket."),
+                feature("settings", "Typed end to end",
+                        "Your whole app is a Model, a Msg variant, and pure functions. If it compiles, the wiring is correct."),
+                feature("heart",    "Beautiful, composably",
+                        "A vocabulary of layout and style mods. Gradients, glass and motion are each a single word.")
+            ) | gap(18) | wrap
+        ) | gap(40) | items_center | pad_x(28) | pad_y(56) | max_w(1120) | center_x;
+
+        // ── stats strip ─────────────────────────────────────────────────────
+        auto stats = row(
+            stat("0kb", "JS shipped"),
+            box() | w(1) | h(40) | detail::raw_css("background", "#1c2436"),
+            stat("<1ms", "diff time"),
+            box() | w(1) | h(40) | detail::raw_css("background", "#1c2436"),
+            stat("100%", "server-rendered"),
+            box() | w(1) | h(40) | detail::raw_css("background", "#1c2436"),
+            stat("C++26", "one language")
+        ) | gap(36) | items_center | justify_center | wrap
+          | pad(32) | round(18) | max_w(880) | center_x
+          | card_bg() | stroke_border();
 
         auto footer = row(
-            text("waya") | fg(ink) | semibold | tracking_em(0.06f),
+            text("\u00a9 2025 waya") | fg(faint) | font(13),
             box() | grow(),
             text("server-rendered \u00b7 no JS \u00b7 C++26") | fg(faint) | font(13)
-        ) | items_center | w_full | max_w(1040) | center_x | pad_x(24) | pad_y(24);
+        ) | items_center | w_full | max_w(1120) | center_x | pad_x(28) | pad_y(28);
 
-        return col(hero, box() | grow(), footer)
-             | min_h(100_vh)
-             | aurora(0x1e1b4b, 0x0b1020, 0x0e2a3a, 26)
-             | as_main;
+        return col(
+            nav(),
+            hero,
+            features,
+            box(stats) | pad_x(28) | w_full,
+            box() | h(48),
+            box() | h(1) | w_full | detail::raw_css("background", "#141b29"),
+            footer
+        ) | min_h(100_vh)
+          | detail::raw_css("background",
+              "radial-gradient(1200px 600px at 50% -10%, rgba(109,124,255,.18), transparent 60%),"
+              "radial-gradient(900px 500px at 85% 20%, rgba(0,212,255,.08), transparent 55%), #080b14")
+          | as_main;
     }
 
     static Meta meta(const Model&) {
         Meta mt;
-        mt.title = "waya \u00b7 Aurora";
-        mt.description = "A living hero landing page, server-rendered in pure C++ with waya.";
+        mt.title = "waya \u00b7 the C++ web framework";
+        mt.description = "Render UI on the server, stream only the diff. No JavaScript, no build step.";
         return mt;
     }
 };
 
 int main() {
-    return live<Aurora>({ .port = 8080, .title = "waya \u00b7 aurora" });
+    return live<Aurora>({ .port = 8080, .page_bg = 0x080b14, .title = "waya" });
 }

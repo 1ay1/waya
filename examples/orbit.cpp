@@ -133,16 +133,18 @@ struct Orbit {
         return svg;
     }
 
-    static NodeRef ctrl(std::string label, Msg msg) {
-        return text(std::move(label)) | font(15) | semibold | fg(ink)
-             | square(38) | center | round(10)
-             | frost(12) | hairline(0xffffff, 0.14f)
-             | interactive() | hover_bg(0xffffff, 0.08f) | tap(msg);
+    static NodeRef ctrl(std::string ico, Msg msg) {
+        return box(icon(ico, 16) | fg(0xd6def0))
+             | square(36) | center | round(9)
+             | detail::raw_css("background", "rgba(255,255,255,.05)")
+             | detail::raw_css("border", "1px solid rgba(255,255,255,.10)")
+             | pointer | on(Hover, detail::raw_css("background", "rgba(255,255,255,.10)"))
+             | tap(msg) | transition("background-color .15s ease");
     }
 
     static NodeRef stat_(std::string k, std::string v) {
-        return col(text(k) | fg(faint) | font(11) | uppercase | tracking_em(0.10f),
-                   text(v) | fg(ink) | font(15) | semibold | tabular_nums) | gap(1);
+        return col(text(k) | fg(0x6b7689) | font(11) | uppercase | tracking_em(0.10f) | weight(Weight::semibold),
+                   text(v) | fg(0xeef2f8) | font(15) | weight(Weight::bold) | tabular_nums) | gap(2);
     }
 
     static NodeRef view(const Model& m) {
@@ -151,36 +153,45 @@ struct Orbit {
             | detail::raw_css("line-height", "0");
 
         auto stage = box(canvas)
-            | w_full | round(22) | clip_content
+            | w_full | round(18) | clip_content
             | detail::raw_css("aspect-ratio", "900/560")
-            | radial(0x101a33, 60, 40, 0x070a16)
-            | hairline(0xffffff, 0.08f) | elevation(4);
+            | radial(0x0e1730, 60, 40, 0x060912)
+            | detail::raw_css("border", "1px solid rgba(255,255,255,.08)")
+            | detail::raw_css("box-shadow", "0 24px 60px -20px rgba(0,0,0,.8)");
+
+        auto divider = box() | w(1) | h(22) | detail::raw_css("background", "rgba(255,255,255,.12)");
 
         auto bar = row(
-            row(box() | circle(9) | bg(m.running ? 0x34d399 : 0x64748b)
+            row(box() | circle(9) | detail::raw_css("background", m.running ? "#2ee6a6" : "#566579")
                     | (m.running ? breathe() : noop),
-                text("Orbit") | fg(ink) | font(18) | weight(Weight::black),
-                text("generative \u00b7 ~30fps") | fg(faint) | font(12)) | gap(10) | items_center,
+                text("Orbit") | fg(0xeef2f8) | font(18) | weight(Weight::black)
+                    | detail::raw_css("letter-spacing", "-0.02em"),
+                text("generative · ~30fps") | fg(0x6b7689) | font(12)) | gap(10) | items_center,
             box() | grow(),
             row(stat_("nodes", std::to_string(m.n)),
                 stat_("speed", std::to_string(m.speed) + "x"),
-                stat_("frame", std::to_string(m.t))) | gap(22),
+                stat_("frame", std::to_string(m.t))) | gap(24),
             box() | grow(),
-            row(ctrl("\u2212", Fewer{}), ctrl("+", More{}),
-                box() | w(1) | h(24) | tint(0xffffff, 0.12f),
-                ctrl("\u25C2", Slower{}), ctrl("\u25B8", Faster{}),
-                box() | w(1) | h(24) | tint(0xffffff, 0.12f),
-                text(m.running ? "\u2758\u2758" : "\u25B6") | font(13) | fg(ink)
-                    | square(38) | center | round(10)
-                    | gradient(0x8b5cf6, 0x6366f1, 135) | glow(0x8b5cf6, 16)
-                    | interactive() | tap(Toggle{}))
+            row(ctrl("minus", Fewer{}), ctrl("plus", More{}),
+                divider,
+                ctrl("chevron-left", Slower{}), ctrl("chevron-right", Faster{}),
+                divider,
+                box(icon(m.running ? "x" : "chevron-right", 16) | fg(0xffffff))
+                    | square(36) | center | round(9)
+                    | detail::raw_css("background", "linear-gradient(135deg,#6d7cff,#00d4ff)")
+                    | pointer | on(Hover, brightness(110)) | tap(Toggle{}))
                 | gap(8) | items_center
-        ) | items_center | gap(18) | wrap | w_full
-          | pad(16) | round(16) | frost(14) | hairline(0xffffff, 0.08f);
+        ) | items_center | gap(20) | wrap | w_full
+          | pad(14) | round(14)
+          | detail::raw_css("background", "rgba(15,19,30,.7)")
+          | detail::raw_css("backdrop-filter", "blur(12px)")
+          | detail::raw_css("border", "1px solid rgba(255,255,255,.08)");
 
         return col(bar, stage)
-             | gap(18) | pad(24) | max_w(1000) | center_x | min_h(100_vh) | justify_center
-             | aurora(0x11072a, 0x070a16, 0x0a1f2e, 30)
+             | gap(16) | pad(24) | max_w(1000) | center_x | min_h(100_vh) | justify_center
+             | detail::raw_css("background",
+                 "radial-gradient(1000px 600px at 30% 10%, rgba(109,124,255,.14), transparent 55%),"
+                 "radial-gradient(800px 500px at 80% 90%, rgba(0,212,255,.10), transparent 55%), #060912")
              | as_main;
     }
 
