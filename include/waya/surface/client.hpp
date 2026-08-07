@@ -242,6 +242,21 @@ inline std::string client(int port) {
     "document.addEventListener('dragstart',function(ev){var t=ev.target.closest('[draggable=true]');if(t){ev.dataTransfer.setData('text/plain',t.getAttribute('name')||'');ev.dataTransfer.effectAllowed='move';}});"
     "document.addEventListener('dragover',function(ev){if(ev.target.closest&&ev.target.closest('[data-ev-drop]'))ev.preventDefault();});"
     "document.addEventListener('drop',function(ev){var t=ev.target.closest('[data-ev-drop]');if(t){ev.preventDefault();var src=ev.dataTransfer.getData('text/plain');var arg=t.getAttribute('data-drop-arg');sendev(t.dataset.evDrop,arg!=null?src+':'+arg:src);}});"
+    // GENERIC delegation: any other data-ev-<type> (wheel/scroll/contextmenu/
+    // paste/copy/cut/select/invalid/search/keyup/beforeinput/mouseenter/…) is
+    // wired automatically. On the first paint (and whenever new event types
+    // appear) we scan the tree for data-ev-* attributes and add ONE capture-
+    // phase listener per never-seen type. Handled types above are skipped so we
+    // don't double-fire. Value-bearing controls send their value as payload.
+    "var wired={click:1,keydown:1,input:1,change:1,submit:1,focus:1,blur:1,drop:1,dragstart:1,dragover:1,pointerdown:1,pointerenter:1,pointerleave:1,dblclick:1,shortcut:1};"
+    "function camel(s){return s.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});}"
+    "function bindGeneric(){var els=document.querySelectorAll('*'),seen={};"
+    "for(var i=0;i<els.length;i++){var ds=els[i].dataset;if(!ds)continue;for(var k in ds){if(k.indexOf('ev')!==0||k.length<3)continue;"
+    "var type=k.slice(2);type=type.charAt(0).toLowerCase()+type.slice(1);if(wired[type]||seen[type])continue;seen[type]=1;}}"
+    "for(var type in seen){(function(t){var prop='ev'+t.charAt(0).toUpperCase()+t.slice(1);"
+    "document.addEventListener(t,function(ev){var el=ev.target;while(el&&el!==document){if(el.dataset&&el.dataset[prop]!=null){"
+    "sendev(el.dataset[prop],payload(el)||'');return;}el=el.parentElement;}},true);wired[t]=1;})(type);}}"
+    "bindGeneric();var _paint=paint;paint=function(f){_paint(f);bindGeneric();};"
     "})();</script>";
 }
 

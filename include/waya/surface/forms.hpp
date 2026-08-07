@@ -142,4 +142,98 @@ inline NodeRef label_for(std::string text, std::string for_id){
     n->tag = "label"; n->attrs.emplace_back("for", std::move(for_id)); finalize(*n); return n;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  INPUT ATTRIBUTES — the full native constraint/behaviour surface, as mods.
+//  These are the difference between "you can hack it with attr()" and real,
+//  discoverable input support. Every one is a named mod over the attr channel.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── validation & constraints (drive native browser validation + :invalid) ───
+/// `required()` — the field must be filled for the form to submit.
+inline Mod required(bool on = true){ return {[=](Node& n){ if(on) n.attrs.emplace_back("required", ""); }}; }
+/// `readonly()` — shown but not editable (still submitted).
+inline Mod readonly(bool on = true){ return {[=](Node& n){ if(on) n.attrs.emplace_back("readonly", ""); }}; }
+/// `min_val(x)` / `max_val(x)` — numeric/date bounds (number, range, date…).
+inline Mod min_val(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("min", v); }}; }
+inline Mod max_val(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("max", v); }}; }
+inline Mod min_val(double v){ return min_val(detail::numstr((float)v)); }
+inline Mod max_val(double v){ return max_val(detail::numstr((float)v)); }
+/// `step_by(x)` / `step_any()` — numeric/range granularity.
+inline Mod step_by(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("step", v); }}; }
+inline Mod step_by(double v){ return step_by(detail::numstr((float)v)); }
+inline Mod step_any(){ return step_by(std::string("any")); }
+/// `pattern("[0-9]{3}")` — a regex the value must match (native validation).
+inline Mod pattern(std::string re){ return {[=](Node& n){ n.attrs.emplace_back("pattern", re); }}; }
+/// `maxlength(n)` / `minlength(n)` — text length bounds.
+inline Mod maxlength(int n){ return {[=](Node& nd){ nd.attrs.emplace_back("maxlength", std::to_string(n)); }}; }
+inline Mod minlength(int n){ return {[=](Node& nd){ nd.attrs.emplace_back("minlength", std::to_string(n)); }}; }
+/// `title_hint("Enter 3 digits")` — the message shown when validation fails.
+inline Mod title_hint(std::string t){ return {[=](Node& n){ n.attrs.emplace_back("title", t); }}; }
+
+// ── mobile & assistive behaviour ────────────────────────────────────────────
+/// `inputmode("numeric"|"decimal"|"tel"|"email"|"url"|"search"|"none")` — the
+/// on-screen KEYBOARD a phone shows, independent of the input type. Big UX win.
+inline Mod inputmode(std::string mode){ return {[=](Node& n){ n.attrs.emplace_back("inputmode", mode); }}; }
+/// `enterkey("send"|"go"|"search"|"next"|"done")` — the mobile Enter-key label.
+inline Mod enterkey(std::string hint){ return {[=](Node& n){ n.attrs.emplace_back("enterkeyhint", hint); }}; }
+/// `autocomplete("email"|"current-password"|"one-time-code"|"off"…)` — autofill.
+inline Mod autocomplete(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("autocomplete", v); }}; }
+/// `spellcheck(false)` — toggle spell-checking (off for codes/usernames).
+inline Mod spellcheck(bool on){ return {[=](Node& n){ n.attrs.emplace_back("spellcheck", on?"true":"false"); }}; }
+/// `autocapitalize("none"|"sentences"|"words"|"characters")` — mobile capitalisation.
+inline Mod autocapitalize(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("autocapitalize", v); }}; }
+/// `autocorrect(false)` — iOS autocorrect toggle.
+inline Mod autocorrect(bool on){ return {[=](Node& n){ n.attrs.emplace_back("autocorrect", on?"on":"off"); }}; }
+
+// ── multi-value / sizing / misc ─────────────────────────────────────────────
+/// `allow_multiple()` — a select or file input accepts multiple values.
+inline Mod allow_multiple(bool on = true){ return {[=](Node& n){ if(on) n.attrs.emplace_back("multiple", ""); }}; }
+/// `accepts("image/*")` — file-picker accept filter.
+inline Mod accepts(std::string types){ return {[=](Node& n){ n.attrs.emplace_back("accept", types); }}; }
+/// `rows(n)` / `cols(n)` — textarea dimensions.
+inline Mod rows(int n){ return {[=](Node& nd){ nd.attrs.emplace_back("rows", std::to_string(n)); }}; }
+inline Mod cols(int n){ return {[=](Node& nd){ nd.attrs.emplace_back("cols", std::to_string(n)); }}; }
+/// `size_attr(n)` — the visible character width of a text input.
+inline Mod size_attr(int n){ return {[=](Node& nd){ nd.attrs.emplace_back("size", std::to_string(n)); }}; }
+/// `wrap_hard()` / `wrap_soft()` — textarea line-wrap submission behaviour.
+inline Mod wrap_hard(){ return {[=](Node& n){ n.attrs.emplace_back("wrap", "hard"); }}; }
+inline Mod wrap_soft(){ return {[=](Node& n){ n.attrs.emplace_back("wrap", "soft"); }}; }
+/// `capture("user"|"environment")` — which camera a file input opens (mobile).
+inline Mod capture(std::string src){ return {[=](Node& n){ n.attrs.emplace_back("capture", src); }}; }
+/// `form_id("login")` — associate a control with a <form> by id (outside it).
+inline Mod form_id(std::string id){ return {[=](Node& n){ n.attrs.emplace_back("form", id); }}; }
+/// `id("email")` — set the element id (for label_for pairing / anchors).
+inline Mod id(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("id", v); }}; }
+/// `default_value(v)` — the value attribute (uncontrolled initial value).
+inline Mod default_value(std::string v){ return {[=](Node& n){ n.attrs.emplace_back("value", v); }}; }
+/// `list_id("cities")` — point a text input at a <datalist> by id (see with_list).
+inline Mod list_id(std::string id){ return {[=](Node& n){ n.attrs.emplace_back("list", id); }}; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INPUT EVENTS — beyond on_input/on_change/on_enter (in node.hpp): the rest of
+//  the browser's input event surface, value-carrying where it matters.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// `on_invalid(Msg)` — fires when native validation rejects the field on submit.
+template <typename Msg> Mod on_invalid(Msg m){ return on("invalid", std::move(m)); }
+/// `on_search(fn)` — a search input's clear/enter (fires with the value).
+template <typename Fn> Mod on_search(Fn fn){ return on_ev("search", std::move(fn)); }
+/// `on_paste(Msg)` — the user pasted into the field.
+template <typename Msg> Mod on_paste(Msg m){ return on("paste", std::move(m)); }
+/// `on_select_text(Msg)` — the user selected text within the field.
+template <typename Msg> Mod on_select_text(Msg m){ return on("select", std::move(m)); }
+/// `on_wheel(Msg)` — mouse-wheel over the element (custom scrubbers, zoom).
+template <typename Msg> Mod on_wheel(Msg m){ return on("wheel", std::move(m)); }
+/// `on_scroll(Msg)` — a scroll container scrolled (infinite lists, scroll-spy).
+template <typename Msg> Mod on_scroll(Msg m){ return on("scroll", std::move(m)); }
+/// `on_context(Msg)` — right-click / long-press context menu.
+template <typename Msg> Mod on_context(Msg m){ return on("contextmenu", std::move(m)); }
+/// `on_copy(Msg)` / `on_cut(Msg)` — clipboard copy/cut from the field.
+template <typename Msg> Mod on_copy(Msg m){ return on("copy", std::move(m)); }
+template <typename Msg> Mod on_cut(Msg m){ return on("cut", std::move(m)); }
+/// `on_keyup(fn)` — keyup with the key string (debounce-on-release patterns).
+template <typename Fn> Mod on_keyup(Fn fn){ return on_ev("keyup", std::move(fn)); }
+/// `on_beforeinput(Msg)` — fires before the value changes (intercept/filter).
+template <typename Msg> Mod on_beforeinput(Msg m){ return on("beforeinput", std::move(m)); }
+
 } // namespace waya::surface

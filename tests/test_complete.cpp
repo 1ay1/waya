@@ -112,6 +112,44 @@ int main(){
     check(has(html(option_group("EU", { option("fr","France") })), "<optgroup label=\"EU\"") &&
           has(html(option_group("EU", { option("fr","France") })), "value=\"fr\""), "option_group");
 
+    // ── input attributes: validation & constraints ──────────────────────────
+    check(has(html(input("") | required()), " required"), "required");
+    check(has(html(input("") | readonly()), " readonly"), "readonly");
+    check(has(html(number_input("1") | min_val(0.0) | max_val(9.0)), "min=\"0\"") &&
+          has(html(number_input("1") | min_val(0.0) | max_val(9.0)), "max=\"9\""), "min_val/max_val");
+    check(has(html(number_input("1") | step_any()), "step=\"any\""), "step_any");
+    check(has(html(number_input("1") | step_by(0.5)), "step=\"0.5\""), "step_by");
+    check(has(html(input("") | pattern("[0-9]{3}")), "pattern=\"[0-9]{3}\""), "pattern");
+    check(has(html(input("") | maxlength(20) | minlength(3)), "maxlength=\"20\"") &&
+          has(html(input("") | maxlength(20) | minlength(3)), "minlength=\"3\""), "maxlength/minlength");
+    check(has(html(input("") | title_hint("3 digits")), "title=\"3 digits\""), "title_hint");
+
+    // ── input attributes: mobile & assistive ─────────────────────────────────
+    check(has(html(input("") | inputmode("numeric")), "inputmode=\"numeric\""), "inputmode");
+    check(has(html(input("") | enterkey("send")), "enterkeyhint=\"send\""), "enterkey");
+    check(has(html(input("") | autocomplete("email")), "autocomplete=\"email\""), "autocomplete");
+    check(has(html(input("") | spellcheck(false)), "spellcheck=\"false\""), "spellcheck");
+    check(has(html(input("") | autocapitalize("none")), "autocapitalize=\"none\""), "autocapitalize");
+
+    // ── input attributes: multi/sizing/misc ────────────────────────────────
+    check(has(html(select({}, "") | allow_multiple()), " multiple"), "allow_multiple");
+    check(has(html(file_input() | accepts(".pdf")), "accept=\".pdf\""), "accepts");
+    check(has(html(textarea("") | rows(5) | cols(30)), "rows=\"5\""), "rows/cols");
+    check(has(html(input("") | size_attr(12)), "size=\"12\""), "size_attr");
+    check(has(html(input("") | id("em")), "id=\"em\""), "id");
+    check(has(html(input("") | default_value("x")), "value=\"x\""), "default_value");
+    check(has(html(input("") | form_id("login")), "form=\"login\""), "form_id");
+    check(has(html(file_input() | capture("user")), "capture=\"user\""), "capture");
+
+    // ── input events wire attributes (generic client delegation handles firing) ─
+    check(has(html(input("") | on_invalid(1)), "data-ev-invalid=\""), "on_invalid");
+    check(has(html(input("") | on_paste(1)), "data-ev-paste=\""), "on_paste");
+    check(has(html(box() | on_wheel(1)), "data-ev-wheel=\""), "on_wheel");
+    check(has(html(box() | on_scroll(1)), "data-ev-scroll=\""), "on_scroll");
+    check(has(html(box() | on_context(1)), "data-ev-contextmenu=\""), "on_context");
+    check(has(html(input("") | on_copy(1)), "data-ev-copy=\""), "on_copy");
+    check(has(html(search_input() | on_search([](std::string v){ return v; })), "data-ev-search=\""), "on_search");
+
     std::cout << "test_complete: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

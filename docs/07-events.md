@@ -104,6 +104,57 @@ input() | type("password") | name("pw") | placeholder("Password")
 button("Send") | disabled(m.sending)
 ```
 
+### Validation & constraints
+
+Every native input constraint is a first-class mod (`<waya/surface/forms.hpp>`,
+included by the umbrella) — they drive the browser's own validation and `:invalid`
+styling:
+
+```cpp
+Mod required(bool = true);         // must be filled to submit
+Mod readonly(bool = true);         // shown, not editable
+Mod min_val(v); Mod max_val(v);    // numeric/date bounds
+Mod step_by(v); Mod step_any();    // numeric granularity
+Mod pattern(std::string re);       // regex the value must match
+Mod maxlength(int); Mod minlength(int);
+Mod title_hint(std::string);       // message shown on validation failure
+```
+
+```cpp
+email_input(m.email) | required() | autocomplete("email")
+number_input(m.qty)  | min_val(1.0) | max_val(99.0) | step_by(1.0)
+input(m.code)        | pattern("[0-9]{6}") | maxlength(6) | title_hint("6 digits")
+```
+
+### Mobile & assistive behaviour
+
+```cpp
+Mod inputmode(std::string);        // the phone keyboard: "numeric"/"decimal"/"email"/…
+Mod enterkey(std::string);         // the mobile Enter-key label: "send"/"go"/"search"
+Mod autocomplete(std::string);     // autofill hint: "email"/"current-password"/…
+Mod spellcheck(bool);
+Mod autocapitalize(std::string);   // "none"/"sentences"/"words"/"characters"
+```
+
+```cpp
+tel_input(m.phone) | inputmode("tel") | autocomplete("tel")
+search_input(m.q)  | inputmode("search") | enterkey("search")
+input(m.user)      | spellcheck(false) | autocapitalize("none")
+```
+
+### Sizing, multi-value & association
+
+```cpp
+Mod rows(int); Mod cols(int);      // textarea dimensions
+Mod size_attr(int);                // visible char width
+Mod allow_multiple(bool = true);   // select / file: multiple values
+Mod accepts(std::string);          // file accept filter ("image/*")
+Mod capture(std::string);          // mobile camera: "user"/"environment"
+Mod id(std::string);               // element id (pairs with label_for)
+Mod default_value(std::string);    // uncontrolled initial value
+Mod form_id(std::string);          // associate with a <form> by id (outside it)
+```
+
 ## Forms
 
 A `form(...)` groups named controls; `on_submit` gathers them into a single

@@ -196,6 +196,42 @@ there's a named mod for it, so you rarely touch the `css()` escape hatch.
 | `<button>` | `button(label)` |
 | `<form>` | `form(fields…)` + `on_submit(...)` |
 
+### Input attributes & validation
+
+| HTML attribute | waya mod |
+|---|---|
+| `required` / `readonly` | `required()` / `readonly()` |
+| `min` / `max` / `step` | `min_val(v)` / `max_val(v)` / `step_by(v)` / `step_any()` |
+| `pattern` | `pattern("[0-9]{3}")` |
+| `maxlength` / `minlength` | `maxlength(n)` / `minlength(n)` |
+| `inputmode` | `inputmode("numeric")` |
+| `enterkeyhint` | `enterkey("send")` |
+| `autocomplete` | `autocomplete("email")` |
+| `spellcheck` / `autocapitalize` | `spellcheck(bool)` / `autocapitalize("none")` |
+| `rows` / `cols` / `size` | `rows(n)` / `cols(n)` / `size_attr(n)` |
+| `multiple` / `accept` / `capture` | `allow_multiple()` / `accepts("image/*")` / `capture("user")` |
+| `id` / `value` / `form` / `list` | `id(...)` / `default_value(...)` / `form_id(...)` / `list_id(...)` |
+| `title` (validation msg) | `title_hint(...)` |
+
+### Input & element events
+
+| DOM event | waya mod |
+|---|---|
+| `input` / `change` | `on_input(fn)` / `on_change(fn)` |
+| `keydown` (Enter/Escape/any) | `on_enter` / `on_escape` / `on_key(k, ...)` / `on_keydown(fn)` |
+| `keyup` / `beforeinput` | `on_keyup(fn)` / `on_beforeinput(Msg)` |
+| `focus` / `blur` | `on_focus` / `on_blur` |
+| `invalid` (validation) | `on_invalid(Msg)` |
+| `search` | `on_search(fn)` |
+| `paste` / `copy` / `cut` | `on_paste` / `on_copy` / `on_cut` |
+| `select` (text) | `on_select_text(Msg)` |
+| `wheel` / `scroll` | `on_wheel(Msg)` / `on_scroll(Msg)` |
+| `contextmenu` | `on_context(Msg)` |
+| `dblclick` | `on_double(Msg)` |
+| pointer enter/leave, hover | `on_enter_pointer` / `on_leave_pointer` / `on_hover(a, b)` |
+| drag & drop | `draggable` / `on_drop` / `drop_target` |
+| any other DOM event | `on("eventname", Msg)` / `on_ev("eventname", fn)` — the client auto-delegates ANY `data-ev-*` |
+
 ## Media & graphics
 
 | HTML/SVG | waya |
