@@ -41,7 +41,7 @@ set(WAYA_RUNTIME_SOURCES
     src/json.cpp
     src/surface/http_util.cpp
     src/surface/session.cpp
-    # src/surface/runtime.cpp
+    src/surface/runtime.cpp
 )
 if(WAYA_RUNTIME_SOURCES)
     add_library(waya_runtime STATIC ${WAYA_RUNTIME_SOURCES})

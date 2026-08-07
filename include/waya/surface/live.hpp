@@ -77,6 +77,7 @@
 // net/http helpers, compiled once into waya_runtime.
 #include "http_util.hpp"
 #include "session.hpp"
+#include "runtime.hpp"
 
 namespace waya::surface {
 
@@ -712,73 +713,29 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
 } // namespace detail
 
 /// Serve a Surface Program live. Thread-per-connection (one open client can't
-/// block others). Blocks until Ctrl-C.
+/// block others). Blocks until Ctrl-C. The accept loop, socket setup + hardening
+/// live in the compiled runtime (surface/runtime.cpp); this templated shell only
+/// builds the per-connection handler that knows the app's Program.
 template <typename P>
 int live(LiveConfig cfg = {}) {
     check_program<P>();   // readable diagnostics before anything else
     if (const char* p = std::getenv("WAYA_PORT")) cfg.port = std::atoi(p);
     if (const char* h = std::getenv("WAYA_HOST")) cfg.host = h;
 
-    // Bind IPv6 dual-stack for the default all-interfaces case: bind `::` with
-    // IPV6_V6ONLY off, so ONE socket accepts BOTH IPv4 and IPv6 clients. Many
-    // proxies/tunnels/`localhost` resolvers reach the server over IPv6 (::1),
-    // which an IPv4-only 0.0.0.0 socket refuses. A specific WAYA_HOST still uses
-    // the exact IPv4 address given. Falls back to IPv4 if IPv6 is unavailable.
-    bool all_ifaces = std::string(cfg.host) == "0.0.0.0" || std::string(cfg.host) == "::";
-    int lfd = -1;
-    if (all_ifaces) {
-        lfd = ::socket(AF_INET6, SOCK_STREAM, 0);
-        if (lfd >= 0) {
-            int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-            int v6only = 0; ::setsockopt(lfd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
-            sockaddr_in6 a6{}; a6.sin6_family=AF_INET6; a6.sin6_port=htons((uint16_t)cfg.port); a6.sin6_addr=in6addr_any;
-            if (::bind(lfd,(sockaddr*)&a6,sizeof(a6)) < 0) { ::close(lfd); lfd = -1; }  // fall back to IPv4
-        }
-    }
-    if (lfd < 0) {   // specific host, or IPv6 unavailable → IPv4
-        lfd = ::socket(AF_INET, SOCK_STREAM, 0);
-        int one = 1; ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-        sockaddr_in a{}; a.sin_family=AF_INET; a.sin_port=htons((uint16_t)cfg.port);
-        a.sin_addr.s_addr = all_ifaces ? INADDR_ANY : inet_addr(cfg.host);
-        if (::bind(lfd,(sockaddr*)&a,sizeof(a))<0) { std::perror("waya: bind"); return 1; }
-    }
-    ::listen(lfd, 64);
-    detail::g_fd = lfd;
-    std::signal(SIGINT, detail::on_sigint); std::signal(SIGPIPE, SIG_IGN);
-#ifdef SIGTERM
-    std::signal(SIGTERM, detail::on_sigint);   // Docker/systemd stop -> clean exit
-#endif
+    ServeConfig sc;
+    sc.port  = cfg.port;
+    sc.host  = cfg.host;
+    sc.open  = cfg.open;
 
-    // When bound to all interfaces, "http://0.0.0.0"/"[::]" isn't a browsable
-    // address — open localhost locally, and ALSO print the LAN address so other
-    // devices (a phone on the same wifi) know where to point.
-    std::string open_host = all_ifaces ? "localhost" : std::string(cfg.host);
-    std::string url = "http://" + open_host + ":" + std::to_string(cfg.port);
-    std::fprintf(stderr, "waya: surface app on %s  (Ctrl-C to stop)\n", url.c_str());
-    if (all_ifaces) {
-        std::string lan = detail::lan_ip();
-        if (!lan.empty())
-            std::fprintf(stderr, "waya: on your network at http://%s:%d\n", lan.c_str(), cfg.port);
-    }
-    if (cfg.open && !std::getenv("WAYA_NO_OPEN")) {
-#if defined(_WIN32)
-        std::system(("start \"\" \"" + url + "\"").c_str());
-#elif defined(__APPLE__)
-        std::system(("open '"+url+"' >/dev/null 2>&1 &").c_str());
-#else
-        std::system(("xdg-open '"+url+"' >/dev/null 2>&1 &").c_str());
-#endif
-    }
-    for (;;) {
-        int conn = ::accept(lfd, nullptr, nullptr);
-        if (conn < 0) {
-            if (detail::g_fd < 0) break;      // shutting down
-            if (errno == EINTR) continue;     // interrupted by a signal, retry
-            continue;                          // transient accept error, keep serving
-        }
-        std::thread([conn, port=cfg.port, bg=cfg.page_bg, title=cfg.title]{ detail::handle<P>(conn, port, bg, title); }).detach();
-    }
-    return 0;
+    // The ONLY app-specific piece: handle one connection by rendering/serving
+    // Program P. Everything else (accept, sockets, signals, banner) is compiled
+    // once in detail::serve().
+    auto page_bg = cfg.page_bg;
+    auto title   = cfg.title;
+    int  port    = cfg.port;
+    return detail::serve(sc, [port, page_bg, title](int conn){
+        detail::handle<P>(conn, port, page_bg, title);
+    });
 }
 
 } // namespace waya::surface
