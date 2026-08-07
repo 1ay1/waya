@@ -89,6 +89,50 @@ int main() {
         check(html.find("data-wa-flip=\"k7\"") != std::string::npos, "animated() emits FLIP key");
     }
 
+    // ── list(): memoised keyed container ─────────────────────────────────────
+    {
+        struct It { int id; std::string t; };
+        auto keyf = [](const It& i){ return std::to_string(i.id); };
+        auto viewf = [](const It& i){ return row(text(i.t)); };
+        std::vector<It> base{{1,"A"},{2,"B"},{3,"C"}};
+
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        NodeRef a = list(0, base, keyf, viewf);
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        NodeRef b = list(0, base, keyf, viewf);
+        check(a.get() == b.get(), "list(): unchanged data returns the SAME cached container");
+        check(diff(a, b).empty(), "list(): unchanged -> zero diff ops");
+
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        std::vector<It> changed{{1,"A"},{2,"B2"},{3,"C"}};
+        NodeRef c = list(0, changed, keyf, viewf);
+        check(c.get() != a.get(), "list(): changed data rebuilds the container");
+        auto p = diff(a, c);
+        check(p.size() == 1, "list(): one row changed -> exactly one op");
+    }
+
+    // ── list_versioned(): O(1) skip when version is unchanged ────────────────
+    {
+        struct It { int id; std::string t; };
+        auto keyf = [](const It& i){ return std::to_string(i.id); };
+        int builds = 0;
+        auto viewf = [&](const It& i){ ++builds; return row(text(i.t)); };
+        std::vector<It> data{{1,"A"},{2,"B"}};
+
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        NodeRef a = list_versioned(0, /*version*/5, data, keyf, viewf);
+        int after_first = builds;
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        NodeRef b = list_versioned(0, /*version*/5, data, keyf, viewf);   // same version
+        check(builds == after_first, "list_versioned(): same version does NOT rebuild rows (O(1))");
+        check(a.get() == b.get(), "list_versioned(): same version returns cached container");
+
+        detail::begin_msg_capture(); detail::memo_begin_frame();
+        NodeRef c = list_versioned(0, /*version*/6, data, keyf, viewf);   // bumped version
+        check(builds > after_first, "list_versioned(): bumped version rebuilds");
+        check(c.get() != a.get(), "list_versioned(): bumped version returns a fresh container");
+    }
+
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

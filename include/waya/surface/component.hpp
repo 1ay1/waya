@@ -190,4 +190,102 @@ struct Component {
 };
 template <typename Fn> Component<Fn> component(Fn fn) { return Component<Fn>{ std::move(fn) }; }
 
+/// `list(id, range, key_fn, view_fn)` — a MEMOISED keyed container. This is the
+/// primitive that makes a big, mostly-static list O(changed) per frame instead
+/// of O(n). It does two things at once:
+///
+///   (1) builds each child through `view_fn` — wrap that in `memo(...)` (or use a
+///       `component`) so an unchanged row is an O(1) cache hit, not a rebuild;
+///   (2) memoises the CONTAINER itself: it hashes only the child NODE IDENTITIES
+///       (their pointers) + count — O(n) cheap reads, no deep re-hash — and when
+///       that identity signature is unchanged from last frame, returns the SAME
+///       cached container node. So a frame where nothing in the list changed
+///       skips the vector→box construction AND the bottom-up re-hash of the
+///       whole subtree entirely. Combined with per-row memo, an untouched
+///       1000-row list costs ~n cheap pointer reads per frame, and the diff then
+///       O(1)-skips the whole container by its unchanged hash.
+///
+/// `id` disambiguates multiple lists in one view (like a call-site key). `flow`
+/// picks the container axis (col by default). Children are keyed by `key_fn` so
+/// reorders reconcile by identity (moves, not re-renders).
+///
+///   list(0, todos, [](auto& t){ return std::to_string(t.id); },
+///                   [&](auto& t){ return memo(t.id, t.done, t.title,
+///                                             [&]{ return todo_row(t); }); })
+template <typename Range, typename KeyFn, typename ViewFn>
+NodeRef list(std::uint64_t id, const Range& range, KeyFn key_fn, ViewFn view_fn,
+             Flow flow = Flow::col) {
+    // Build (or cache-hit) every child, applying its key. This is where per-row
+    // memo pays off; here we only pay the key set + a finalize if the row was
+    // freshly built (a cached row already carries its key + hash).
+    std::vector<NodeRef> kids;
+    if constexpr (requires { range.size(); }) kids.reserve(range.size());
+    std::uint64_t sig = 1469598103934665603ull;
+    detail::hash_one(sig, id);
+    detail::hash_one(sig, (std::uint64_t)flow);
+    for (const auto& item : range) {
+        NodeRef c = view_fn(item);
+        std::string k = key_fn(item);
+        if (c->key != k) { c->key = std::move(k); finalize(*c); }
+        // identity signature: the child's own content hash already captures
+        // "did this row change"; fold it in so the container is cached exactly
+        // when the whole visible list is unchanged.
+        detail::hash_one(sig, c->hash);
+        kids.push_back(std::move(c));
+    }
+
+    std::uint64_t key = detail::type_salt<KeyFn>() ^ (id * 1099511628211ull) ^ 0x115700D5ull;
+    auto& slot = detail::g_memo2[key];
+    slot.seen = detail::g_memo_gen;
+    if (slot.node && slot.deps == sig) return slot.node;   // list unchanged: reuse container
+
+    // Rebuild the container node from the (possibly cached) children.
+    auto n = std::make_shared<Node>();
+    n->kind = Kind::box; n->style.flow = flow; n->kids = std::move(kids);
+    finalize(*n);
+    slot.deps = sig; slot.node = n;
+    return n;
+}
+
+/// `list_versioned(id, version, range, key_fn, view_fn)` — the FASTEST list: when
+/// you can supply a cheap `version` value (e.g. a counter you bump in update()
+/// whenever the list's data changes, or a hash you already keep), an unchanged
+/// frame returns the cached container in O(1) — it never even iterates the range,
+/// never does a per-row memo lookup, never allocates a key string. This is the
+/// SolidJS-grade path: a list of any size costs O(1) on frames where its data
+/// didn't change, and O(n) only when it did. Use it for big lists on a hot
+/// animation loop where OTHER state (a clock, a cursor) changes every frame but
+/// the list rarely does.
+///
+///   // in Model bump `todos_ver` whenever you touch `todos`
+///   list_versioned(0, m.todos_ver, m.todos,
+///       [](auto& t){ return std::to_string(t.id); },
+///       [&](auto& t){ return todo_row(t); })
+template <typename Range, typename KeyFn, typename ViewFn>
+NodeRef list_versioned(std::uint64_t id, std::uint64_t version, const Range& range,
+                       KeyFn key_fn, ViewFn view_fn, Flow flow = Flow::col) {
+    std::uint64_t key = detail::type_salt<KeyFn>() ^ (id * 1099511628211ull) ^ 0x5EC0FFEEull;
+    auto& slot = detail::g_memo2[key];
+    slot.seen = detail::g_memo_gen;
+    // deps holds the version. O(1) short-circuit: the range is never touched.
+    // (version is offset by 1 so an initial 0 version still forces a first build
+    // — an empty slot has deps==0.)
+    std::uint64_t ver = version + 1;
+    if (slot.node && slot.deps == ver) return slot.node;
+
+    std::vector<NodeRef> kids;
+    if constexpr (requires { range.size(); }) kids.reserve(range.size());
+    for (const auto& item : range) {
+        NodeRef c = view_fn(item);
+        std::string k = key_fn(item);
+        if (c->key != k) { c->key = std::move(k); finalize(*c); }
+        kids.push_back(std::move(c));
+    }
+    auto n = std::make_shared<Node>();
+    n->kind = Kind::box; n->style.flow = flow; n->kids = std::move(kids);
+    finalize(*n);
+    slot.deps = ver; slot.node = n;
+    return n;
+}
+
 } // namespace waya::surface

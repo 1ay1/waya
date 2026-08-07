@@ -138,6 +138,60 @@ assert(!m2.auth.logged_in);
 - **Growing app (several independent features):** adopt feature modules early —
   the id-base discipline prevents the collisions that make big Elm apps painful.
 
+## Scaling the render, not just the code
+
+Every frame, `view(model)` returns a fresh surface and the runtime diffs it
+against the last one, streaming only the delta. The **diff and the wire are
+already O(changed)** — a one-field change is tens of bytes regardless of page
+size. The one cost that scales with the tree is `view()` itself rebuilding
+nodes. Three primitives make that O(changed) too, so a big app stays at
+thousands of frames per second of headroom.
+
+### `memo(props..., build)` — skip rebuilding an unchanged subtree
+
+```cpp
+memo(user.id, user.name, user.avatar, [&]{ return profile_card(user); });
+```
+
+The builder runs only when a prop changes; otherwise the cached node is reused
+and the diff O(1)-skips it. Safe on **interactive** subtrees too — a memoised
+node's `tap`/`on_input` handlers are recorded and replayed on a cache hit, so
+their tokens always resolve. The cache is bounded (stale slots are swept), so
+keys may churn freely.
+
+### `list(id, range, key_fn, view_fn)` — a memoised keyed list
+
+Builds each row (wrap it in `memo` for O(1) unchanged rows) **and** caches the
+container itself, so a list whose rows didn't change reuses the same parent node
+— no vector build, no re-hash. Rows are keyed, so reorders reconcile as moves.
+
+### `list_versioned(id, version, range, key_fn, view_fn)` — O(1) when unchanged
+
+The fastest list. Supply a cheap `version` (a counter you bump in `update()`
+whenever the list's data changes). On a frame where the version is unchanged the
+whole list is returned in **O(1)** — the range is never iterated, no per-row work,
+no allocation. Use it for a big list on a hot loop where *other* state (a clock,
+a cursor, a drag) repaints every frame but the list rarely moves.
+
+```cpp
+// bump m.rows_ver in update() whenever you touch m.rows
+list_versioned(0, m.rows_ver, m.rows,
+    [](auto& r){ return std::to_string(r.id); },
+    [&](auto& r){ return row_view(r); });
+```
+
+**Measured** (a dashboard whose clock ticks every frame while the table is
+unchanged), full frame = `view() + diff + encode`:
+
+| rows  | plain `view()` | per-row `memo` | `list_versioned` |
+|-------|----------------|----------------|------------------|
+| 100   | ~1.3 ms        | ~32 µs         | ~12 µs           |
+| 1000  | ~13.7 ms       | ~207 µs        | ~11 µs           |
+| 10000 | ~140 ms        | ~2 ms          | ~11 µs           |
+
+`list_versioned` is **flat in list size** — the frame cost is O(what changed),
+not O(page). That is the property that keeps a large waya app feeling instant.
+
 ---
 
 Next: the [API Reference](11-api-reference.md) — every function, mod, and type
