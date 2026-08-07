@@ -19,6 +19,11 @@ namespace dr {
 using namespace waya::surface;
 
 inline constexpr int   STRIP_LEN   = 100;   // finish line, in "feet" units
+inline constexpr long  DIST_SCALE  = 45;    // sub-unit resolution for distance
+                                            // (tuned so a clean run finishes ~4-5s)
+inline constexpr int   OPP_FRAMES  = 168;   // frames the opponent takes to finish
+                                            // (~5.6s — beatable by a clean run,
+                                            //  but a sloppy/blown run loses)
 inline constexpr int   GEARS       = 4;     // shift up through 4 gears
 inline constexpr int   REDLINE     = 100;   // tach tops out here (0..100)
 inline constexpr int   BLOW_FRAMES = 18;    // frames over redline before it blows
@@ -43,12 +48,16 @@ struct Model {
     bool  gas    = false;       // throttle currently held
 
     // race state
-    int   pos     = 0;          // distance down the strip, 0..STRIP_LEN
+    int   pos     = 0;          // player distance down the strip, 0..STRIP_LEN
     int   opp_pos = 0;          // the opponent's distance (lane 2)
+    long  pos_hi  = 0;          // high-resolution player distance accumulator
+                                // (pos = pos_hi / DIST_SCALE, avoids int-trunc
+                                // stalls when speed is small)
     int   speed   = 0;          // current speed (derived from gear+rpm)
     int   count   = 0;          // countdown frames remaining (Count phase)
     long  frame   = 0;          // global tick counter
     long  elapsed = 0;          // race frames since green (the score, /FPS)
+    bool  won     = false;      // did the player cross before the opponent?
 
     // records (best = lowest finishing time in frames; 0 = none yet)
     long  best_frames = 0;

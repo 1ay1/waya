@@ -131,18 +131,21 @@ std::pair<Model, Cmd<Msg>> update(Model m, Msg msg) {
                 m.over--;
             }
 
-            // Speed & distance. Distance accrues slowly so the quarter-mile
-            // takes several seconds — the drama is in the tach, not raw pace.
+            // Speed & distance. Accumulate distance at high resolution so a low
+            // speed still makes steady progress (integer pos would stall when
+            // speed/frame rounds to 0). pos is the whole-unit view for the view.
             m.speed = gear_speed(m.gear, m.rpm);
-            m.pos  += std::max(0, m.speed) / 20;
+            m.pos_hi += std::max(0, m.speed);
+            m.pos = (int)std::min<long>(STRIP_LEN, m.pos_hi / DIST_SCALE);
 
-            // The opponent (lane 2): a steady, beatable pace — finishes ~4.4s if
-            // you dawdle, so a clean run wins.
-            m.opp_pos = std::min(STRIP_LEN, (int)(m.elapsed * STRIP_LEN / 132));
+            // The opponent (lane 2): a steady, beatable pace — reaches the line in
+            // OPP_FRAMES (~4.4s), so a clean run beats it.
+            m.opp_pos = (int)std::min<long>(STRIP_LEN, m.elapsed * STRIP_LEN / OPP_FRAMES);
 
             if (m.pos >= STRIP_LEN) {
                 m.pos = STRIP_LEN;
                 m.phase = Phase::Finished;
+                m.won = (m.elapsed <= OPP_FRAMES);   // beat the rival to the line
                 if (m.best_frames == 0 || m.elapsed < m.best_frames)
                     m.best_frames = m.elapsed;
             }

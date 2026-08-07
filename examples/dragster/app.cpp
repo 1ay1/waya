@@ -94,7 +94,9 @@ struct Dragster {
           : m.phase == Phase::Count
                 ? tree(m)
           : m.phase == Phase::Finished
-                ? overlay("FINISH", std::string("time ") + et + "s   ·   best " + best, good)
+                ? overlay(m.won ? "YOU WIN!" : "YOU LOSE",
+                          std::string("time ") + et + "s   ·   best " + best,
+                          m.won ? good : warn)
           : m.phase == Phase::Blown
                 ? overlay("ENGINE BLOWN", "held past the redline — press enter", warn)
           : m.phase == Phase::Fouled

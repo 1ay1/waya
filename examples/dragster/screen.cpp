@@ -98,6 +98,7 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     // road centre-line dashes on the ground, scrolling left as you move.
     std::vector<NodeRef> dashes;
     const int N = 10;
+    dashes.reserve(N + 2);
     const double off = (scroll % 100) / 100.0 * (108.0 / N);
     for (int i = -1; i < N + 1; ++i) {
         double x = i * (108.0 / N) - off;
@@ -114,6 +115,7 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     // sky with scrolling distance ticks up top (finish-line markers).
     std::vector<NodeRef> ticks;
     const int T = 14;
+    ticks.reserve(T + 2);
     const double toff = (scroll % 100) / 100.0 * (108.0 / T);
     for (int i = -1; i < T + 1; ++i) {
         double x = i * (108.0 / T) - toff;
