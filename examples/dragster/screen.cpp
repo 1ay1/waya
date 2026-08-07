@@ -24,44 +24,77 @@ namespace {
 
 using waya::rgb;
 
-// ── the side-view dragster, as a pixel sprite ───────────────────────────────
-// A long low rail dragster facing RIGHT: skinny front, big fat rear slick, a
-// driver cockpit and a rear wing. '#'=black body, 'O'=tyre, '.'=empty.
-// 20 wide × 8 tall.
-constexpr int SW = 20, SH = 8;
-constexpr const char* SPRITE[SH] = {
-    ".........#..........",  // wing mast
-    ".......#####........",  // rear wing
-    "...OO....###....#...",  // cockpit + nose tip
-    "..OOOO..######.####.",  // body upper
-    ".OOOOOO#############",  // full chassis rail
-    ".OOOOOO#########.oo.",  // chassis + front wheel
-    "..OOOO.........oooo.",  // rear slick lower + front wheel
-    "...OO...........oo..",  // rear slick contact
-};
+// ── the side-view dragster ───────────────────────────────────────────────
+// A clean, recognizable rail dragster facing RIGHT, built from real shapes (not
+// a pixel grid): a big rear slick, a small front wheel on a long axle beam, a
+// low tapered body, a cockpit bubble and a rear wing. `hue` tints the livery so
+// the two racers differ; `firing` adds an exhaust flame.
+NodeRef sprite(std::uint32_t hue, bool firing) {
+    waya::Color H = waya::rgb(hue);
+    auto rimC = 0x3a3f52u;
 
-NodeRef sprite() {
-    std::vector<NodeRef> cells;
-    cells.reserve(SW * SH);
-    for (int r = 0; r < SH; ++r)
-        for (int c = 0; c < SW; ++c) {
-            char ch = SPRITE[r][c];
-            NodeRef cell;
-            if (ch == '#')      cell = box() | bg(car);
-            else if (ch == 'O') cell = box() | bg(0x0a0a0c) | round(pct(50));  // fat rear slick
-            else if (ch == 'o') cell = box() | bg(0x1a1a1e) | round(pct(50));  // front wheel
-            else                cell = box() | opacity(0.0f);
-            cells.push_back(std::move(cell));
-        }
-    return box_(std::move(cells))
-        | grid_cols(SW) | grid_rows(SH) | gap(0)
-        | w(pct(100)) | h(pct(100))
-        | detail::raw_css("filter", "drop-shadow(2px 3px 0 rgba(0,0,0,.35))");
+    // a wheel: dark tyre + a subtle rim ring + a bright hub.
+    auto wheel = [&](float leftPct, float botPct, float dPct){
+        return box(
+            box() | absolute() | pin() | round(pct(50))
+                  | detail::raw_css("background","radial-gradient(circle at 38% 35%, #2b2f3d 0%, #0c0d12 62%, #05060a 100%)"),
+            box() | absolute() | pin() | round(pct(50)) | detail::raw_css("box-shadow","inset 0 0 0 2px "+rgb(rimC).css()),
+            box() | absolute() | left(pct(32)) | top(pct(32)) | w(pct(36)) | h(pct(36)) | round(pct(50))
+                  | detail::raw_css("background","radial-gradient(circle at 40% 40%, #6b7288, #2a2e3c)"))
+            | absolute() | left(pct(leftPct)) | bottom(pct(botPct)) | w(pct(dPct))
+            | detail::raw_css("aspect-ratio","1/1")
+            | detail::raw_css("filter","drop-shadow(0 3px 3px rgba(0,0,0,.4))");
+    };
+
+    // the long chassis beam from rear axle to front wheel.
+    auto beam = box()
+        | absolute() | left(pct(16)) | bottom(pct(30)) | w(pct(60)) | h(pct(7)) | round(px(3))
+        | gradient(H.lighten(0.1f).opaque(), H.darken(0.25f).opaque(), 180)
+        | detail::raw_css("box-shadow","inset 0 1px 0 rgba(255,255,255,.25)");
+
+    // the driver body / engine cowling behind the rear axle (the fat back end).
+    auto body = box()
+        | absolute() | left(pct(2)) | bottom(pct(30)) | w(pct(30)) | h(pct(26))
+        | detail::raw_css("border-radius","10px 4px 4px 10px")
+        | gradient(H.lighten(0.18f).opaque(), H.darken(0.2f).opaque(), 180)
+        | detail::raw_css("box-shadow","inset 0 2px 0 rgba(255,255,255,.3), inset 0 -3px 6px rgba(0,0,0,.35)");
+
+    // cockpit bubble + roll hoop.
+    auto cockpit = box()
+        | absolute() | left(pct(30)) | bottom(pct(52)) | w(pct(16)) | h(pct(20))
+        | detail::raw_css("border-radius","8px 8px 0 0")
+        | detail::raw_css("background","linear-gradient(180deg, rgba(180,220,255,.9), rgba(90,130,180,.7))")
+        | detail::raw_css("box-shadow","inset 0 1px 0 rgba(255,255,255,.6)");
+
+    // rear wing on a mast.
+    auto wing = box(
+        box() | absolute() | left(pct(40)) | top(pct(0)) | w(pct(6)) | h(pct(38)) | bg(H.darken(0.2f).opaque()))
+        | absolute() | left(pct(0)) | top(pct(4)) | w(pct(26)) | h(pct(12)) | round(px(3))
+        | gradient(H.lighten(0.1f).opaque(), H.darken(0.3f).opaque(), 180)
+        | detail::raw_css("box-shadow","0 2px 4px rgba(0,0,0,.4)");
+
+    // nose cone tapering to the front wheel.
+    auto nose = box()
+        | absolute() | left(pct(64)) | bottom(pct(31)) | w(pct(20)) | h(pct(9))
+        | detail::raw_css("border-radius","3px 8px 8px 3px")
+        | gradient(H.lighten(0.12f).opaque(), H.darken(0.25f).opaque(), 180);
+
+    // exhaust flame off the back when firing.
+    auto flame = box()
+        | absolute() | left(pct(-10)) | bottom(pct(38)) | w(pct(16)) | h(pct(10)) | round(px(6))
+        | opacity(firing ? 1.0f : 0.0f)
+        | detail::raw_css("background","linear-gradient(90deg, transparent, "+rgb(amber).css()+", "+rgb(warn).css()+")")
+        | detail::raw_css("filter","blur(1.5px)");
+
+    return box(flame, wing, beam, wheel(4, 6, 40), body, cockpit, nose, wheel(66, 18, 22))
+        | detail::raw_css("position","relative")
+        | w(pct(100)) | h(pct(100));
 }
 
 // One lane: purple sky over mint ground, scrolling road markings, and a car
-// sliding across by `progress` (0..1). `firing` shows the exhaust flame.
-NodeRef lane(double progress, int scroll, bool moving, bool firing) {
+// sliding across by `progress` (0..1). `firing` shows the exhaust flame; `hue`
+// tints the car livery so the two racers differ.
+NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_t hue) {
     // road centre-line dashes on the ground, scrolling left as you move.
     std::vector<NodeRef> dashes;
     const int N = 10;
@@ -92,30 +125,24 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing) {
         | absolute() | top(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(52))
         | gradient(sky, skyLo, 180) | overflow("hidden");
 
-    // the car sits on the road, slides 3%..76% across as progress runs.
-    double cx = 3.0 + progress * 73.0;
+    // the car sits on the road, slides 3%..74% across as progress runs.
+    double cx = 3.0 + progress * 71.0;
     // a soft shadow ellipse under it.
     auto shadow = box()
-        | absolute() | left(pct((float)cx + 1)) | bottom(pct(17)) | w(pct(18)) | h(pct(6))
-        | round(pct(50)) | bg(rgb(0x000000).alpha(0.28f));
-    // exhaust flame trailing behind (to the left).
-    auto flame = box()
-        | absolute() | left(pct((float)cx - 3)) | bottom(pct(34)) | w(pct(5)) | h(pct(7))
-        | round(px(3)) | opacity(firing ? 1.0f : 0.0f)
-        | detail::raw_css("background",
-            "linear-gradient(90deg, transparent, " + rgb(amber).css() + ", " + rgb(warn).css() + ")")
-        | detail::raw_css("filter", "blur(1px)");
-    auto car_l = box(sprite())
-        | absolute() | left(pct((float)cx)) | bottom(pct(19)) | w(pct(22)) | h(pct(40))
+        | absolute() | left(pct((float)cx + 2)) | bottom(pct(15)) | w(pct(20)) | h(pct(7))
+        | round(pct(50)) | bg(rgb(0x000000).alpha(0.3f))
+        | detail::raw_css("filter", "blur(2px)");
+    auto car_l = box(sprite(hue, firing))
+        | absolute() | left(pct((float)cx)) | bottom(pct(16)) | w(pct(26)) | h(pct(52))
         | (moving ? transition("left .1s linear") : Mod{});
 
-    return box(sky_band, ground_band, shadow, flame, car_l)
+    return box(sky_band, ground_band, shadow, car_l)
         | absolute() | pin() | overflow("hidden");
 }
 
 // A lane placed in a fixed vertical slice of the screen [top%, height%].
-NodeRef lane_at(float topPct, float hPct, double progress, int scroll, bool moving, bool firing) {
-    return box(lane(progress, scroll, moving, firing))
+NodeRef lane_at(float topPct, float hPct, double progress, int scroll, bool moving, bool firing, std::uint32_t hue) {
+    return box(lane(progress, scroll, moving, firing, hue))
         | absolute() | top(pct(topPct)) | left(pct(0)) | right(pct(0)) | h(pct(hPct))
         | overflow("hidden");
 }
@@ -129,9 +156,10 @@ NodeRef strip_screen(const Model& m) {
     const double you = (double)m.pos     / STRIP_LEN;
     const double opp = (double)m.opp_pos / STRIP_LEN;
 
-    // two lanes stacked, separated by a slim black band. Player on top.
-    auto top_lane = lane_at(0,  47, you, scroll, racing, firing);
-    auto bot_lane = lane_at(53, 47, opp, scroll, true,   racing);
+    // two lanes stacked, separated by a slim black band. Player on top (cyan
+    // livery), opponent below (amber livery).
+    auto top_lane = lane_at(0,  47, you, scroll, racing, firing, cyan);
+    auto bot_lane = lane_at(53, 47, opp, scroll, true,   racing, amber);
 
     // the black centre band (between the lanes) — where the HUD digits sit.
     auto bandM = box() | absolute() | top(pct(47)) | left(pct(0)) | right(pct(0)) | h(pct(6)) | bg(band);
