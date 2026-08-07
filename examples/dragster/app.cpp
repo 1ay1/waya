@@ -142,22 +142,40 @@ struct Dragster {
             text("ACTIVISION") | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
                 | weight(Weight::black) | tracking_em(0.24f)
         ) | items_center | gap(rem(1.1f))
-          | pad_x(rem(1.6f)) | pad_y(rem(1.0f))
           | gradient(0x191c25, 0x0d0e14, 180)
           | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.08)")
           | detail::raw_css("border-top", "1px solid rgba(255,255,255,.08)")
-          | safe_area();
+          // pad the strip AND respect device safe-area insets in one shorthand
+          // (a bare safe_area() would overwrite the padding with just the insets,
+          // which are 0 on desktop — leaving no outer margin).
+          | detail::raw_css("padding",
+              "1rem max(1.6rem, env(safe-area-inset-right)) "
+              "max(1rem, env(safe-area-inset-bottom)) max(1.6rem, env(safe-area-inset-left))");
 
         // the screen area: the two-lane race, with the phase overlay on top.
         auto screen = box(strip_screen(m), ov)
             | detail::raw_css("position", "relative")
             | grow() | w_full | overflow("hidden");
 
-        // whole window = a flex column: screen grows, dashboard docks below.
-        return col(fx(), screen, dash)
+        // the game "cabinet": screen grows on top, the data strip docks below.
+        // Rounded + bordered so it reads as one framed unit.
+        auto cabinet = col(screen, dash)
+            | overflow("hidden") | round(rem(0.9f))
+            | grow() | w_full
+            | detail::raw_css("border", "1px solid rgba(255,255,255,.1)")
+            | detail::raw_css("box-shadow", "0 20px 60px -20px rgba(0,0,0,.8)");
+
+        // whole window: the cabinet inset from the edges by an even outer margin
+        // (safe-area aware), on the dark backdrop.
+        return box(fx(), cabinet)
             | overflow("hidden") | bg(dr::page)
+            | detail::raw_css("display", "flex")
             | detail::raw_css("height", "100dvh")
             | detail::raw_css("width", "100dvw")
+            | detail::raw_css("box-sizing", "border-box")
+            | detail::raw_css("padding",
+                "max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) "
+                "max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left))")
             // global keyboard — Space = throttle, Up/W = shift, Enter/R = start.
             | hotkey(" ",          GasTog{})
             | hotkey("ArrowUp",    Shift{})
