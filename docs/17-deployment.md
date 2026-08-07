@@ -33,10 +33,27 @@ middleware to add:
 - **Security headers** on every page: `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`
   (clickjacking defence), and `Referrer-Policy: strict-origin-when-cross-origin`.
-- **Correct methods**: the server answers `GET` and `HEAD`; any other verb gets a
-  `405 Method Not Allowed` with an `Allow: GET, HEAD` header (a live app's state
-  changes travel over the socket, not HTTP verbs). `HEAD` returns the full
-  headers — including the `Content-Length` of the GET body — with no body.
+- **Correct methods**: the server answers `GET` and `HEAD`; `OPTIONS` returns
+  `204` with an `Allow: GET, HEAD, OPTIONS` header; any other verb gets a
+  `405 Method Not Allowed` with the same `Allow` (a live app's state changes
+  travel over the socket, not HTTP verbs). `HEAD` returns the full headers —
+  including the `Content-Length` of the GET body — with no body.
+- **Persistent connections**: HTTP/1.1 keep-alive is on — one socket serves many
+  requests (the proxy pools the upstream connection). The response advertises
+  `Connection: keep-alive` + `Keep-Alive: timeout=60`; a client's
+  `Connection: close` is honored.
+- **Conditional requests**: the SSR page carries a weak `ETag`; a revalidating
+  `If-None-Match` gets a `304 Not Modified` with no body, so a caching proxy or
+  browser skips re-downloading an unchanged first paint.
+- **Every response carries `Date:` and `Server: waya`** (RFC 9110 origin MUSTs).
+- **Bounded, abuse-resistant parsing**: a request is read with hard caps — 64 KB
+  of headers, 100 header fields, 8 KB per line, 8 MB body. A slow-loris or
+  oversized request is answered `431`/`400` and dropped up front, never pinning
+  a worker. Socket timeouts (`SO_RCVTIMEO`/`SNDTIMEO`, 60s) back this at the TCP
+  layer, and `TCP_NODELAY` removes Nagle latency on the small live frames.
+- **`X-Forwarded-*` aware**: behind a proxy the effective scheme/host/client-IP
+  come from `X-Forwarded-Proto`/`-Host`/`-For` — set them at the proxy (the
+  bundled configs do) and redirects, cookies and logs stay correct.
 - **Caching**: the live HTML is `Cache-Control: no-store` (it's personalised and
   upgrades itself over the socket, so it must never be served stale); the SEO
   files (`/robots.txt`, `/sitemap.xml`) and `/favicon.ico` are cacheable.
@@ -65,21 +82,32 @@ docker run -p 8080:8080 my-waya-app
 
 ## Behind a reverse proxy
 
-waya needs the WebSocket upgrade to pass through. nginx:
+waya is an **origin** server: it speaks clean HTTP/1.1 + WebSocket on one port
+and expects a reverse proxy in front to terminate TLS, do HTTP/2 & /3, serve
+edge static, and rate-limit at the edge. Ready-to-use configs ship in
+[`deploy/`](https://github.com/) — `Caddyfile` (auto-HTTPS), `nginx.conf`, and a
+`docker-compose.yml` that runs the app behind Caddy.
+
+The two things a proxy MUST do: pass the WebSocket **Upgrade** through, and set
+the **`X-Forwarded-*`** headers. nginx:
 
 ```nginx
 location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
-    proxy_set_header Upgrade    $http_upgrade;   # WebSocket upgrade
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host       $host;
-    proxy_read_timeout 3600s;                    # keep long-lived sockets open
+    proxy_set_header Upgrade    $http_upgrade;        # WebSocket upgrade
+    proxy_set_header Connection $connection_upgrade;  # map: keep-alive vs upgrade
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Proto $scheme;       # so waya knows https
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_read_timeout 3600s;                         # keep long-lived sockets open
 }
 ```
 
-Caddy does it automatically (`reverse_proxy 127.0.0.1:8080`). Fly.io / Render /
-Railway: expose port 8080, set the health check to `/healthz`, done.
+Caddy does the upgrade + `X-Forwarded-*` automatically (`reverse_proxy
+127.0.0.1:8080`). Fly.io / Render / Railway: expose port 8080, set the health
+check to `/healthz`, done.
 
 ## Scaling & resilience
 

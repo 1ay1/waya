@@ -1,0 +1,51 @@
+# deploy/docker-compose.yml — the full production topology in one file:
+# a waya app (origin, HTTP/1.1 + WS on :8080) behind Caddy (TLS/HTTP2/3 edge).
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Build your app by setting TARGET (an examples/ name, or your own target).
+# For a real domain, edit deploy/Caddyfile and expose 443/tcp + 443/udp.
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        TARGET: counter          # <-- your waya target
+    environment:
+      WAYA_NO_OPEN: "1"          # never launch a browser in a container
+      WAYA_HOST: "0.0.0.0"
+      WAYA_PORT: "8080"
+      WAYA_LOG: "1"              # one structured access-log line per request
+      # WAYA_WORKERS: "8"        # effect thread-pool size (default: CPU count)
+    expose:
+      - "8080"                   # internal only; the proxy is the front door
+    restart: unless-stopped
+    stop_grace_period: 10s       # SIGTERM -> graceful drain, then stop
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+
+  proxy:
+    image: caddy:2
+    environment:
+      WAYA_ORIGIN: "app:8080"   # Caddyfile reverse_proxy target inside the network
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"           # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

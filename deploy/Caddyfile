@@ -1,0 +1,26 @@
+# deploy/Caddyfile — a waya app behind Caddy (automatic HTTPS).
+#
+#   caddy run --config deploy/Caddyfile
+#
+# Caddy terminates TLS (auto-provisioning a cert via Let's Encrypt for a real
+# domain), speaks HTTP/2 and HTTP/3 to clients, and reverse-proxies clean
+# HTTP/1.1 + WebSocket to the waya origin on :8080. reverse_proxy passes the
+# WebSocket Upgrade and sets X-Forwarded-* automatically — nothing else needed.
+
+# Upstream defaults to the local origin for bare-metal (`caddy run`). Under
+# docker-compose the origin is another service, so the compose file sets
+# WAYA_ORIGIN=app:8080 in Caddy's environment and it's used here.
+{
+	auto_https disable_redirects
+}
+
+localhost {
+	encode zstd gzip
+	reverse_proxy {$WAYA_ORIGIN:127.0.0.1:8080} {
+		# Long-lived live WebSockets: don't time them out.
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+}

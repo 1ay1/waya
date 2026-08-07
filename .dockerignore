@@ -1,0 +1,12 @@
+# Keep the Docker build context small & reproducible.
+build/
+build-*/
+.git/
+.github/
+.cache/
+docs/
+reference/
+*.o
+*.a
+.DS_Store
+compile_commands.json
