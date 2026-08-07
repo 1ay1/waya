@@ -103,7 +103,9 @@ inline std::string client(int port) {
     "var _sid=sessionStorage.getItem('waya-sid');"
     "if(!_sid){_sid=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));sessionStorage.setItem('waya-sid',_sid);}"
     "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);}"
-    "function connect(){ws=new WebSocket('ws://'+location.hostname+':"+std::to_string(port)+"/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
+    "function connect(){var _wsproto=(location.protocol==='https:'?'wss://':'ws://');"
+    "var _wshost=location.host||(location.hostname+':"+std::to_string(port)+"');"
+    "ws=new WebSocket(_wsproto+_wshost+'/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
     "ws.binaryType='arraybuffer';"
     "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';}started=true;route();};"
     // Text frames are runtime control messages (navigation, dev hot-reload);
