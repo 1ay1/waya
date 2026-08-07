@@ -18,6 +18,8 @@
 
 #include "node.hpp"
 #include "sugar.hpp"     // col_/row_/push/screens/color — batteries-included
+#include "complete.hpp"  // browser-parity mods (flex/grid/transform/scroll/text/…)
+#include "forms.hpp"     // every native input type + fieldset/datalist/progress
 #include "layout.hpp"
 #include "dom.hpp"
 #include "diff.hpp"
