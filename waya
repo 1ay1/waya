@@ -74,6 +74,81 @@ examples() {
     grep -oE 'foreach\(ex [^)]*' "$ROOT/CMakeLists.txt" 2>/dev/null | sed 's/foreach(ex //'
 }
 
+# One-line blurb for an example, scraped from the first `///` (or `//`) comment
+# in its source. Non-ASCII bytes (the em-dash separator maya uses) are dropped
+# to a hyphen FIRST -- so this function, and this whole script, stays pure ASCII
+# (a high byte in a quoted sed pattern breaks BSD sh under `set -u`). Then we
+# strip the leading comment marker and the redundant "examples/NAME.cpp -"
+# filename prefix, leaving just the human sentence.
+describe() {
+    _src="$ROOT/examples/$1.cpp"
+    [ -f "$_src" ] || return 0
+    sed -n '1,8p' "$_src" \
+        | grep -m1 -E '^///?[[:space:]]' \
+        | LC_ALL=C tr '\342\200\224' '-  ' | LC_ALL=C tr -d '\200-\377' \
+        | sed -e 's|^///*[[:space:]]*||' \
+              -e "s|^examples/$1\.cpp[[:space:]]*[-:]*[[:space:]]*||" \
+              -e 's|^[[:space:]]*[-:][[:space:]]*||' \
+        | cut -c1-58
+}
+
+# ── Interactive picker ───────────────────────────────────────────────────────
+# Renders a numbered menu of the example targets (with blurbs) and echoes the
+# chosen target name on stdout. Returns non-zero if the user aborts. Requires a
+# TTY on stdin; callers gate on [ -t 0 ] before invoking.
+pick_example() {
+    _i=0
+    _names=""
+    printf '%bwaya%b pick an example:\n\n' "$C" "$Z" >&2
+    for _t in $(examples); do
+        _i=$((_i + 1))
+        _names="$_names $_t"
+        _d="$(describe "$_t")"
+        printf '  %b%2d%b  %b%-10s%b  %s\n' "$G" "$_i" "$Z" "$B" "$_t" "$Z" "$_d" >&2
+    done
+    _count=$_i
+    printf '\n%bwaya%b choose 1-%d or a name (Enter=1, q=quit): ' "$C" "$Z" "$_count" >&2
+    IFS= read -r _sel </dev/tty || { printf '\n' >&2; return 1; }
+    case "$_sel" in
+        q|Q|quit|exit) return 1 ;;
+        '') _sel=1 ;;
+    esac
+    # numeric choice -> map to the Nth name
+    case "$_sel" in
+        *[!0-9]*) : ;;  # not a pure number, treat as a name below
+        *)
+            if [ "$_sel" -ge 1 ] 2>/dev/null && [ "$_sel" -le "$_count" ]; then
+                _n=0
+                for _t in $_names; do
+                    _n=$((_n + 1))
+                    [ "$_n" -eq "$_sel" ] && { printf '%s' "$_t"; return 0; }
+                done
+            fi
+            printf '%bwaya%b %berror%b no example #%s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2
+            return 1 ;;
+    esac
+    # name choice -> accept if it is a real target
+    for _t in $_names; do
+        [ "$_t" = "$_sel" ] && { printf '%s' "$_t"; return 0; }
+    done
+    printf '%bwaya%b %berror%b unknown example: %s\n' "$C" "$Z" "$R" "$Z" "$_sel" >&2
+    return 1
+}
+
+# Resolve a target for run/dev/build: use the positional arg if given, else
+# open the interactive picker on a TTY, else fall back to the default.
+# Sets the global PICKED.
+resolve_target() {
+    _arg="${1:-}"
+    if [ -n "$_arg" ]; then PICKED="$_arg"; return 0; fi
+    if [ -t 0 ] && [ -t 2 ]; then
+        PICKED="$(pick_example)" || exit 0
+        [ -n "$PICKED" ] || exit 0
+        return 0
+    fi
+    PICKED="counter"
+}
+
 # Resolve $BUILD to an absolute path: absolute inputs (e.g. -d /tmp/x) are used
 # as-is; relative ones are anchored at the repo root, so `waya` works no matter
 # what directory you invoke it from.
@@ -117,7 +192,7 @@ kill_port() {
 cmd_dev() {
     parse_opts "$@"
     set -- $REST
-    target="${1:-counter}"
+    resolve_target "${1:-}"; target="$PICKED"
     need_cmake
     kill_port
     # dev.sh takes (target, build-dir) positionally; honours WAYA_PORT/HOST/JOBS.
@@ -127,7 +202,7 @@ cmd_dev() {
 cmd_build() {
     parse_opts "$@"
     set -- $REST
-    target="${1:-counter}"
+    resolve_target "${1:-}"; target="$PICKED"
     need_cmake
     bdir="$(abs_build)"
     [ -f "$bdir/CMakeCache.txt" ] || {
@@ -154,7 +229,7 @@ find_binary() {
 cmd_run() {
     parse_opts "$@"
     set -- $REST
-    target="${1:-counter}"
+    resolve_target "${1:-}"; target="$PICKED"
     cmd_build "$target" -d "$BUILD"
     bin="$(find_binary "$target")" || die "no binary produced for '$target'."
     kill_port
@@ -164,7 +239,19 @@ cmd_run() {
 
 cmd_list() {
     say "example targets (use with dev / run / build):"
-    for t in $(examples); do printf '  %s\n' "$t"; done
+    for t in $(examples); do
+        d="$(describe "$t")"
+        printf '  %b%-10s%b  %s\n' "$B" "$t" "$Z" "$d"
+    done
+}
+
+# `waya pick` - open the menu, then run whatever is chosen (Ctrl-C to stop).
+cmd_pick() {
+    parse_opts "$@"
+    [ -t 0 ] && [ -t 2 ] || die "pick needs an interactive terminal (try: waya list)."
+    picked="$(pick_example)" || exit 0
+    [ -n "$picked" ] || exit 0
+    cmd_run "$picked" -d "$BUILD"
 }
 
 cmd_clean() {
@@ -223,6 +310,7 @@ ${B}Commands:${Z}
   dev [target]       watch, rebuild & live-reload   (default target: counter)
   build [target]     configure if needed, then build one target
   run [target]       build then run the server      (alias: serve)
+  pick               interactively choose an example, then run it
   list               list the example targets
   clean              remove the build directory
   doctor             check cmake / compiler / file watcher
@@ -237,6 +325,8 @@ ${B}Options${Z} (for dev / build / run):
 
 ${B}Examples:${Z}
   waya new my-app && cd my-app && waya run
+  waya pick                       # menu of examples, run your choice
+  waya run                        # no target -> interactive picker
   waya dev palette
   waya run counter --port 9000 --no-open
   waya list
@@ -252,6 +342,7 @@ case "$CMD" in
     dev|watch)         cmd_dev "$@" ;;
     build|b)           cmd_build "$@" ;;
     run|serve|start)   cmd_run "$@" ;;
+    pick|choose|menu)  cmd_pick "$@" ;;
     list|ls|examples)  cmd_list ;;
     clean)             cmd_clean "$@" ;;
     doctor|check)      cmd_doctor ;;
