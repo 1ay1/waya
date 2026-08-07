@@ -17,6 +17,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <chrono>
 
 namespace waya::surface {
 namespace detail {
@@ -75,7 +76,10 @@ int serve(const ServeConfig& cfg, std::function<void(int conn)> on_conn) {
     std::signal(SIGINT, on_sigint);
     std::signal(SIGPIPE, SIG_IGN);
 #ifdef SIGTERM
-    std::signal(SIGTERM, on_sigint);
+    // SIGTERM (docker stop / systemd / k8s rolling deploy): begin a graceful
+    // drain — stop accepting new connections, let in-flight work finish, then
+    // the accept loop breaks and we return for an orderly exit.
+    std::signal(SIGTERM, [](int){ g_draining = true; int fd=g_fd.exchange(-1); if(fd>=0)::shutdown(fd, SHUT_RDWR); });
 #endif
 
     const std::string open_host = all_ifaces ? "localhost" : cfg.host;
@@ -98,15 +102,19 @@ int serve(const ServeConfig& cfg, std::function<void(int conn)> on_conn) {
     }
 
     for (;;) {
+        if (g_draining) break;              // SIGTERM: stop taking new work
         int conn = ::accept(lfd, nullptr, nullptr);
         if (conn < 0) {
-            if (g_fd < 0) break;            // shutting down
-            if (errno == EINTR) continue;   // signal, retry
-            continue;                        // transient accept error, keep serving
+            if (g_fd < 0 || g_draining) break;   // shutting down / draining
+            if (errno == EINTR) continue;        // signal, retry
+            continue;                             // transient accept error, keep serving
         }
         tune_conn(conn);
         std::thread([on_conn, conn]{ on_conn(conn); }).detach();
     }
+    // Drain grace: give detached in-flight handlers a brief moment to finish
+    // writing their responses before the process exits.
+    if (g_draining) std::this_thread::sleep_for(std::chrono::milliseconds(250));
     return 0;
 }
 

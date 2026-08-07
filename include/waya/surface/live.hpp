@@ -517,12 +517,19 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     std::string route = request_path(req);
     std::string_view method = request_method(req);
     bool head_only = (method == "HEAD");
+    // OPTIONS is answered with the allowed methods (RFC 9110 9.3.7) so a
+    // preflight/discovery probe gets a correct 204 instead of an SSR page.
+    if (method == "OPTIONS") {
+        std::string r = "HTTP/1.1 204 No Content\r\n" + sec_headers() +
+                        "Allow: GET, HEAD, OPTIONS\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        send_all(conn, r.data(), r.size()); access_log(method, route, 204); ::close(conn); return;
+    }
     // A live SSR server serves GET/HEAD only (state changes travel over the
     // socket, not HTTP verbs). Anything else is 405 with an Allow header —
     // correct, and it stops a stray POST from getting a 200 HTML page.
     if (method != "GET" && !head_only) {
         auto r = http_response("405 Method Not Allowed", "text/plain; charset=utf-8",
-                               "405 Method Not Allowed\n", "Allow: GET, HEAD\r\n");
+                               "405 Method Not Allowed\n", "Allow: GET, HEAD, OPTIONS\r\n");
         send_all(conn, r.data(), r.size());
         access_log(method, route, 405);
         ::close(conn); return;
@@ -694,17 +701,34 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "</head><body><div id=\"root\">" + ssr.html + "</div>" + client(port) + "</body></html>";
     std::string http;
     int status = 200;
+    // Conditional request: a weak ETag over the rendered document lets a caching
+    // proxy (or the browser) revalidate cheaply. If it still matches, answer
+    // 304 Not Modified with no body (RFC 9110 13.1.2 / 15.4.5). Only for the
+    // default 200 render — redirects/custom statuses already returned above.
+    std::string etag = weak_etag(doc);
+    {
+        std::string inm{ Request{std::string(req), {}}.header("If-None-Match") };
+        if (!inm.empty() && inm.find(etag) != std::string_view::npos) {
+            std::string r = "HTTP/1.1 304 Not Modified\r\n" + sec_headers() +
+                            "ETag: " + etag + "\r\nCache-Control: no-cache\r\n"
+                            "Connection: close\r\nContent-Length: 0\r\n\r\n";
+            send_all(conn, r.data(), r.size());
+            access_log(method, route, 304);
+            ::close(conn); return;
+        }
+    }
+    const std::string etag_hdr = "ETag: " + etag + "\r\n";
 #ifdef WAYA_GZIP
     if (accepts_gzip(req)) {
         std::string gz = gzip(doc);
         if (!gz.empty()) {
             http = http_response("200 OK", "text/html; charset=utf-8", gz,
-                                 "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n", head_only);
+                                 "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n" + etag_hdr, head_only);
         }
     }
 #endif
     if (http.empty())
-        http = http_response("200 OK", "text/html; charset=utf-8", doc, {}, head_only);
+        http = http_response("200 OK", "text/html; charset=utf-8", doc, etag_hdr, head_only);
     send_all(conn, http.data(), http.size());
     access_log(method, route, status);
     ::close(conn);

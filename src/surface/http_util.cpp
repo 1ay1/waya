@@ -4,8 +4,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <cerrno>
 
@@ -25,6 +29,195 @@
 namespace waya::surface::detail {
 
 std::atomic<int> g_fd{-1};
+std::atomic<bool> g_draining{false};
+
+// ── case-insensitive helpers (RFC 9110 header names are case-insensitive) ────
+static bool ci_eq(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i])) return false;
+    return true;
+}
+static std::string_view trim(std::string_view s) {
+    while (!s.empty() && (s.front()==' '||s.front()=='\t')) s.remove_prefix(1);
+    while (!s.empty() && (s.back()==' '||s.back()=='\t'||s.back()=='\r')) s.remove_suffix(1);
+    return s;
+}
+
+// ── Request accessors ────────────────────────────────────────────────────────
+std::string_view Request::method() const {
+    std::string_view r = raw; auto sp = r.find(' ');
+    return sp == std::string_view::npos ? std::string_view{} : r.substr(0, sp);
+}
+std::string_view Request::target() const {
+    std::string_view r = raw; auto a = r.find(' ');
+    if (a == std::string_view::npos) return {};
+    auto b = r.find(' ', a+1);
+    if (b == std::string_view::npos) return {};
+    return r.substr(a+1, b-a-1);
+}
+std::string_view Request::version() const {
+    std::string_view r = raw; auto a = r.find(' ');
+    if (a == std::string_view::npos) return {};
+    auto b = r.find(' ', a+1);
+    if (b == std::string_view::npos) return {};
+    auto eol = r.find("\r\n", b+1);
+    return trim(r.substr(b+1, (eol==std::string_view::npos? r.size() : eol) - b - 1));
+}
+std::string Request::path() const {
+    std::string_view t = target();
+    auto q = t.find('?');
+    return std::string(q == std::string_view::npos ? t : t.substr(0, q));
+}
+std::string_view Request::header(std::string_view name) const {
+    std::string_view r = raw;
+    // Skip the request line.
+    auto pos = r.find("\r\n");
+    if (pos == std::string_view::npos) return {};
+    pos += 2;
+    while (pos < r.size()) {
+        auto eol = r.find("\r\n", pos);
+        if (eol == std::string_view::npos || eol == pos) break;   // end of headers
+        auto colon = r.find(':', pos);
+        if (colon != std::string_view::npos && colon < eol) {
+            std::string_view key = trim(r.substr(pos, colon - pos));
+            if (ci_eq(key, name)) return trim(r.substr(colon+1, eol - colon - 1));
+        }
+        pos = eol + 2;
+    }
+    return {};
+}
+bool Request::has_header(std::string_view name) const { return !header(name).empty(); }
+
+bool Request::wants_keep_alive() const {
+    std::string_view conn = header("Connection");
+    std::string_view ver  = version();
+    // A token-list match, case-insensitive.
+    auto has_token = [&](std::string_view tok){
+        std::string_view c = conn;
+        while (!c.empty()) {
+            auto comma = c.find(',');
+            std::string_view t = trim(comma==std::string_view::npos ? c : c.substr(0, comma));
+            if (ci_eq(t, tok)) return true;
+            if (comma==std::string_view::npos) break;
+            c = c.substr(comma+1);
+        }
+        return false;
+    };
+    if (has_token("close")) return false;
+    if (ci_eq(ver, "HTTP/1.0")) return has_token("keep-alive");
+    return true;   // HTTP/1.1 default: persistent
+}
+
+std::string Request::forwarded_proto(std::string_view fallback) const {
+    std::string_view v = header("X-Forwarded-Proto");
+    if (v.empty()) return std::string(fallback);
+    auto comma = v.find(',');   // first hop is the client-facing one
+    return std::string(trim(comma==std::string_view::npos ? v : v.substr(0, comma)));
+}
+std::string Request::forwarded_host(std::string_view fallback) const {
+    std::string_view v = header("X-Forwarded-Host");
+    if (v.empty()) v = header("Host");
+    if (v.empty()) return std::string(fallback);
+    auto comma = v.find(',');
+    return std::string(trim(comma==std::string_view::npos ? v : v.substr(0, comma)));
+}
+std::string Request::forwarded_for(std::string_view direct_ip) const {
+    std::string_view v = header("X-Forwarded-For");
+    if (v.empty()) return std::string(direct_ip);
+    auto comma = v.find(',');   // left-most = original client
+    return std::string(trim(comma==std::string_view::npos ? v : v.substr(0, comma)));
+}
+
+// ── weak ETag (FNV-1a) ───────────────────────────────────────────────────────
+std::string weak_etag(std::string_view body) {
+    std::uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : body) { h ^= c; h *= 1099511628211ull; }
+    char buf[32]; std::snprintf(buf, sizeof(buf), "W/\"%016llx\"", (unsigned long long)h);
+    return buf;
+}
+
+// ── bounded request reader (keep-alive aware) ────────────────────────────────
+ReadStatus read_request(int fd, Request& out, std::string& carry, const RequestLimits& lim) {
+    out.raw.clear(); out.body.clear();
+    std::string& buf = carry;   // may already hold a pipelined next request
+    std::size_t hdr_end = std::string::npos;
+
+    // Read until we have the full header block (\r\n\r\n) or hit a bound.
+    for (;;) {
+        if ((hdr_end = buf.find("\r\n\r\n")) != std::string::npos) break;
+        if (buf.size() > lim.max_request) return ReadStatus::TooLarge;
+        char tmp[16384];
+        ssize_t r = ::recv(fd, tmp, sizeof(tmp), 0);
+        if (r == 0) return buf.empty() ? ReadStatus::Closed : ReadStatus::Malformed;
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return buf.empty() ? ReadStatus::Timeout : ReadStatus::Malformed;
+            return buf.empty() ? ReadStatus::Closed : ReadStatus::Malformed;
+        }
+        buf.append(tmp, (std::size_t)r);
+    }
+    if (hdr_end + 4 > lim.max_request + 4) return ReadStatus::TooLarge;
+
+    out.raw.assign(buf, 0, hdr_end + 4);
+
+    // Validate the request line + per-line/header-count bounds.
+    {
+        std::string_view r = out.raw;
+        auto first_eol = r.find("\r\n");
+        if (first_eol == std::string_view::npos || first_eol > lim.max_line) return ReadStatus::Malformed;
+        // request line must be METHOD SP TARGET SP VERSION
+        std::string_view line = r.substr(0, first_eol);
+        auto s1 = line.find(' ');
+        if (s1 == std::string_view::npos) return ReadStatus::Malformed;
+        auto s2 = line.find(' ', s1+1);
+        if (s2 == std::string_view::npos) return ReadStatus::Malformed;
+        if (line.substr(s2+1, 5) != "HTTP/") return ReadStatus::Malformed;
+        // header lines
+        int count = 0;
+        std::size_t pos = first_eol + 2;
+        while (pos < r.size()) {
+            auto eol = r.find("\r\n", pos);
+            if (eol == std::string_view::npos || eol == pos) break;
+            if (eol - pos > lim.max_line) return ReadStatus::TooLarge;
+            if (++count > lim.max_headers) return ReadStatus::TooLarge;
+            if (r.find(':', pos) == std::string_view::npos || r.find(':', pos) >= eol)
+                return ReadStatus::Malformed;   // header without a colon
+            pos = eol + 2;
+        }
+    }
+
+    // Any bytes after the header block are body and/or a pipelined request.
+    std::string rest = buf.substr(hdr_end + 4);
+    buf.clear();
+
+    // Body: only for a declared Content-Length within max_body. (chunked request
+    // bodies are rejected — an SSR origin behind a proxy that de-chunks.)
+    std::string_view te = out.header("Transfer-Encoding");
+    if (!te.empty() && te.find("chunked") != std::string_view::npos) return ReadStatus::Malformed;
+    std::string_view cl = out.header("Content-Length");
+    std::size_t need = 0;
+    if (!cl.empty()) {
+        char* end = nullptr;
+        unsigned long long v = std::strtoull(std::string(cl).c_str(), &end, 10);
+        if (!end || *end != '\0') return ReadStatus::Malformed;
+        if (v > lim.max_body) return ReadStatus::TooLarge;
+        need = (std::size_t)v;
+    }
+    out.body = std::move(rest);
+    while (out.body.size() < need) {
+        char tmp[16384];
+        ssize_t r = ::recv(fd, tmp, sizeof(tmp), 0);
+        if (r <= 0) return ReadStatus::Malformed;
+        out.body.append(tmp, (std::size_t)r);
+        if (out.body.size() > lim.max_body + need) return ReadStatus::TooLarge;
+    }
+    // Split off exactly `need` body bytes; the remainder is the next pipelined
+    // request, preserved in carry.
+    if (out.body.size() > need) { carry = out.body.substr(need); out.body.resize(need); }
+    return ReadStatus::Ok;
+}
 
 void on_sigint(int){ int fd=g_fd.exchange(-1); if(fd>=0)::close(fd);
     std::fprintf(stderr,"\nwaya: stopped.\n"); std::_Exit(0); }
@@ -70,15 +263,24 @@ std::string sec_headers(){
 
 std::string http_response(const char* status, const std::string& ctype,
                           const std::string& body, const std::string& extra_headers,
-                          bool head_only, bool cache){
+                          bool head_only, bool cache, bool keep_alive){
     std::string h = "HTTP/1.1 " + std::string(status) + "\r\n";
+    // Date is a MUST for an origin server (RFC 9110 6.6.1).
+    { std::time_t t = std::time(nullptr); char d[40];
+      std::strftime(d, sizeof d, "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&t));
+      h += "Date: "; h += d; h += "\r\n"; }
+    h += "Server: waya\r\n";
     h += "Content-Type: " + ctype + "\r\n";
     h += cache ? "Cache-Control: public, max-age=3600\r\n"
                : "Cache-Control: no-store\r\n";
     h += sec_headers();
     h += extra_headers;
     h += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-    h += "Connection: close\r\n\r\n";
+    // Persistent-connection support: keep the socket open for the next request
+    // when the client asked to and we're not draining. Advertise the idle
+    // timeout so a proxy can pool correctly.
+    if (keep_alive) h += "Connection: keep-alive\r\nKeep-Alive: timeout=60\r\n\r\n";
+    else            h += "Connection: close\r\n\r\n";
     if (!head_only) h += body;
     return h;
 }
