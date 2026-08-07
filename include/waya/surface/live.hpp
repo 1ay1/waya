@@ -143,6 +143,52 @@ inline std::string request_path(std::string_view req){
     std::string p{req.substr(start, end - start)};
     return p.empty() ? "/" : p;
 }
+/// The HTTP method token, e.g. "GET" from "GET /about HTTP/1.1".
+inline std::string_view request_method(std::string_view req){
+    auto sp = req.find(' ');
+    return sp == std::string_view::npos ? std::string_view{"GET"} : req.substr(0, sp);
+}
+/// The set of response headers a production SSR page always carries: the type,
+/// a caching policy, and the security headers a hardened server sends. `extra`
+/// appends anything response-specific (Content-Encoding, Allow, ...).
+/// - no-store on the HTML so a personalised, live-upgraded page is never cached
+///   stale by a browser/proxy (the app streams its own updates over the socket);
+/// - nosniff stops content-type confusion attacks;
+/// - frame-ancestors 'self' + X-Frame-Options blocks clickjacking;
+/// - a strict-origin referrer policy leaks less on outbound links.
+inline std::string sec_headers(){
+    return "X-Content-Type-Options: nosniff\r\n"
+           "X-Frame-Options: SAMEORIGIN\r\n"
+           "Content-Security-Policy: frame-ancestors 'self'\r\n"
+           "Referrer-Policy: strict-origin-when-cross-origin\r\n";
+}
+/// Build a complete HTTP/1.1 response. `status` is the full status line text
+/// ("200 OK", "404 Not Found", "405 Method Not Allowed"), `ctype` the
+/// Content-Type. `head_only` sends headers but omits the body (HTTP HEAD).
+inline std::string http_response(const char* status, const std::string& ctype,
+                                 const std::string& body, const std::string& extra_headers = {},
+                                 bool head_only = false, bool cache = false){
+    std::string h = "HTTP/1.1 " + std::string(status) + "\r\n";
+    h += "Content-Type: " + ctype + "\r\n";
+    h += cache ? "Cache-Control: public, max-age=3600\r\n"
+               : "Cache-Control: no-store\r\n";
+    h += sec_headers();
+    h += extra_headers;
+    h += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+    h += "Connection: close\r\n\r\n";
+    if (!head_only) h += body;
+    return h;
+}
+/// A structured access-log line: method, path, status. Opt-in — off by default
+/// so a dev run isn't noisy, on when WAYA_LOG is set (production behind a proxy).
+/// One line per request to stderr, so it composes with journald/Docker logs.
+inline void access_log(std::string_view method, const std::string& path, int status){
+    static const bool on = std::getenv("WAYA_LOG") != nullptr;
+    if (!on) return;
+    std::time_t t = std::time(nullptr); char ts[32];
+    std::strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&t));
+    std::fprintf(stderr, "waya: %s %.*s %s %d\n", ts, (int)method.size(), method.data(), path.c_str(), status);
+}
 /// Write ALL bytes, looping over short/partial writes. A single ::send can
 /// short-write on a backpressured socket (far likelier through a proxy than on
 /// loopback), which would truncate an HTTP response or handshake. Returns false
@@ -858,25 +904,35 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
     // The WebSocket then takes over live; its first full paint reconciles onto
     // this SSR'd DOM (same node structure → usually a no-op).
     std::string route = request_path(req);
+    std::string_view method = request_method(req);
+    bool head_only = (method == "HEAD");
+    // A live SSR server serves GET/HEAD only (state changes travel over the
+    // socket, not HTTP verbs). Anything else is 405 with an Allow header —
+    // correct, and it stops a stray POST from getting a 200 HTML page.
+    if (method != "GET" && !head_only) {
+        auto r = http_response("405 Method Not Allowed", "text/plain; charset=utf-8",
+                               "405 Method Not Allowed\n", "Allow: GET, HEAD\r\n");
+        send_all(conn, r.data(), r.size());
+        access_log(method, route, 405);
+        ::close(conn); return;
+    }
 
     // Health check for load balancers / orchestrators (Docker, k8s, Fly.io).
     // A cheap 200 that doesn't render the app — answers "is the process up?".
     if (route == "/healthz" || route.rfind("/healthz?",0)==0) {
-        const char* http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
-                           "Content-Length: 2\r\nConnection: close\r\n\r\nok";
-        send_all(conn, http, std::strlen(http)); ::close(conn); return;
+        auto r = http_response("200 OK", "text/plain; charset=utf-8", "ok", {}, head_only);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
     }
 
     // SEO plumbing files, served automatically. robots.txt tells crawlers they
     // may index everything and where the sitemap is; sitemap.xml lists the
     // routes the app declared (P::sitemap()). Both are optional — default robots
-    // allows all.
+    // allows all. Cacheable (they change rarely).
     if (route == "/robots.txt" || route.rfind("/robots.txt?",0)==0) {
         std::string body = "User-agent: *\nAllow: /\n";
         if constexpr (requires { P::site_url(); }) body += "Sitemap: " + std::string(P::site_url()) + "/sitemap.xml\n";
-        std::string http = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
-            std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-        send_all(conn, http.data(), http.size()); ::close(conn); return;
+        auto r = http_response("200 OK", "text/plain; charset=utf-8", body, {}, head_only, /*cache=*/true);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
     }
     if (route == "/sitemap.xml" || route.rfind("/sitemap.xml?",0)==0) {
         std::string base; if constexpr (requires { P::site_url(); }) base = P::site_url();
@@ -887,9 +943,15 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
             "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">";
         for (auto& p : paths){ body += "<url><loc>"; body += base + p; body += "</loc></url>"; }
         body += "</urlset>";
-        std::string http = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-Length: " +
-            std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-        send_all(conn, http.data(), http.size()); ::close(conn); return;
+        auto r = http_response("200 OK", "application/xml; charset=utf-8", body, {}, head_only, /*cache=*/true);
+        send_all(conn, r.data(), r.size()); access_log(method, route, 200); ::close(conn); return;
+    }
+    // The dev-mode favicon: browsers auto-request /favicon.ico; answer it with a
+    // 204 so it isn't SSR'd as the app (and doesn't 404-noise the logs).
+    if (route == "/favicon.ico") {
+        std::string r = "HTTP/1.1 204 No Content\r\n" + sec_headers() +
+                        "Cache-Control: public, max-age=86400\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        send_all(conn, r.data(), r.size()); access_log(method, route, 204); ::close(conn); return;
     }
 
     auto [ssr_model, ssr_cmd] = detail::init_of<P, Model, Msg>();
@@ -998,20 +1060,20 @@ void handle(int conn, int port, std::uint32_t page_bg = 0x0b1020, const char* pa
         "<style id=\"wsheet\">" + ssr.css + "</style>"
         "</head><body><div id=\"root\">" + ssr.html + "</div>" + client(port) + "</body></html>";
     std::string http;
+    int status = 200;
 #ifdef WAYA_GZIP
     if (accepts_gzip(req)) {
         std::string gz = gzip(doc);
         if (!gz.empty()) {
-            http = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-                   "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n"
-                   "Content-Length: " + std::to_string(gz.size()) + "\r\nConnection: close\r\n\r\n" + gz;
+            http = http_response("200 OK", "text/html; charset=utf-8", gz,
+                                 "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n", head_only);
         }
     }
 #endif
     if (http.empty())
-        http = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-               "Content-Length: " + std::to_string(doc.size()) + "\r\nConnection: close\r\n\r\n" + doc;
+        http = http_response("200 OK", "text/html; charset=utf-8", doc, {}, head_only);
     send_all(conn, http.data(), http.size());
+    access_log(method, route, status);
     ::close(conn);
 }
 

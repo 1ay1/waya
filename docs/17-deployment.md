@@ -23,6 +23,28 @@ Runtime knobs are environment variables (no config file):
 | `WAYA_HOST` | Bind address (default `0.0.0.0`) |
 | `WAYA_NO_OPEN` | Don't try to open a browser (set this in production) |
 | `WAYA_WORKERS` | Size of the effect thread pool (default: CPU count) |
+| `WAYA_LOG` | Set to enable one-line access logs (method, path, status) to stderr |
+
+## HTTP hardening
+
+Every response the runtime serves is production-hardened out of the box — no
+middleware to add:
+
+- **Security headers** on every page: `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`
+  (clickjacking defence), and `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Correct methods**: the server answers `GET` and `HEAD`; any other verb gets a
+  `405 Method Not Allowed` with an `Allow: GET, HEAD` header (a live app's state
+  changes travel over the socket, not HTTP verbs). `HEAD` returns the full
+  headers — including the `Content-Length` of the GET body — with no body.
+- **Caching**: the live HTML is `Cache-Control: no-store` (it's personalised and
+  upgrades itself over the socket, so it must never be served stale); the SEO
+  files (`/robots.txt`, `/sitemap.xml`) and `/favicon.ico` are cacheable.
+- **`/favicon.ico`** is answered with a cheap `204 No Content` so a browser's
+  automatic request isn't rendered as the app or logged as a 404.
+- **Access logs**: set `WAYA_LOG=1` for a structured line per request
+  (`waya: <iso-ts> <method> <path> <status>`) that composes with journald/Docker
+  log collection. Off by default so a dev run stays quiet.
 
 ## Health check
 
