@@ -104,14 +104,14 @@ struct Dragster {
         // ── the data strip: one instrument row of evenly-spaced segments, each
         // divided by a hairline, so it reads as a single cohesive panel ────────
         std::uint32_t etc = m.phase==Phase::Finished ? good
-                          : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : 0xffffff;
+                          : (m.phase==Phase::Blown||m.phase==Phase::Fouled) ? warn : ink;
         bool running = m.phase==Phase::Race || m.phase==Phase::Count;
 
         // a labelled field: caption over value, consistent baseline across cells.
         auto field = [&](std::string label, NodeRef value){
             return col(
-                text(std::move(label)) | fg(waya::rgba(0xffffff,0.5f)) | font(9) | term
-                    | weight(Weight::bold) | uppercase | tracking_em(0.2f),
+                text(std::move(label)) | fg(inkFaint) | font(9) | term
+                    | weight(Weight::bold) | uppercase | tracking_em(0.22f),
                 value
             ) | gap(4);
         };
@@ -120,7 +120,7 @@ struct Dragster {
                  | weight(Weight::black) | tabular_nums | leading(1.0f);
         };
         // a hairline vertical divider between segments.
-        auto div = [&]{ return box() | w(px(1)) | h(px(34)) | bg(waya::rgba(0xffffff,0.09f)); };
+        auto div = [&]{ return box() | w(px(1)) | h(px(30)) | bg(line_c); };
 
         auto controls = row(
             hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
@@ -131,7 +131,7 @@ struct Dragster {
         auto dash = row(
             field("time", val(std::string(et) + "s", etc, 30)),
             div(),
-            field("gear", val(m.gear ? std::to_string(m.gear) : "N", 0xffffff, 22)),
+            field("gear", val(m.gear ? std::to_string(m.gear) : "N", cyan, 22)),
             div(),
             field("best", val(best, good, 22)),
             div(),
@@ -139,12 +139,12 @@ struct Dragster {
             div(),
             controls,
             div(),
-            text("ACTIVISION") | fg(waya::rgba(0xffffff,0.55f)) | font(10) | term
+            text("ACTIVISION") | fg(inkSoft) | font(10) | term
                 | weight(Weight::black) | tracking_em(0.24f)
         ) | items_center | gap(rem(1.1f))
-          | gradient(0x191c25, 0x0d0e14, 180)
-          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.08)")
-          | detail::raw_css("border-top", "1px solid rgba(255,255,255,.08)")
+          | gradient(panel, panelLo, 180)
+          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)")
+          | detail::raw_css("border-top", "1px solid " + waya::rgb(line_c).css())
           // pad the strip AND respect device safe-area insets in one shorthand
           // (a bare safe_area() would overwrite the padding with just the insets,
           // which are 0 on desktop — leaving no outer margin).
@@ -162,8 +162,8 @@ struct Dragster {
         auto cabinet = col(screen, dash)
             | overflow("hidden") | round(rem(0.9f))
             | grow() | w_full
-            | detail::raw_css("border", "1px solid rgba(255,255,255,.1)")
-            | detail::raw_css("box-shadow", "0 20px 60px -20px rgba(0,0,0,.8)");
+            | detail::raw_css("border", "1px solid " + waya::rgb(line_c).css())
+            | detail::raw_css("box-shadow", "0 24px 70px -24px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.03)");
 
         // whole window: the cabinet inset from the edges by an even outer margin
         // (safe-area aware), on the dark backdrop.
