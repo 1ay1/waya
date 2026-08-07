@@ -89,6 +89,7 @@ nav:
       - Reusable Components: 20-components-reuse.md
   - Reference:
       - API Reference: 11-api-reference.md
+      - Browser Parity (CSS/HTML → waya): 14-browser-parity.md
       - Recipes & Patterns: 12-recipes.md
       - Examples Walkthrough: 13-examples.md
       - Glossary: glossary.md
