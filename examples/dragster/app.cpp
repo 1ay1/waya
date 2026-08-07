@@ -121,38 +121,47 @@ struct Dragster {
             return text(std::move(v)) | fg(c) | font(size) | mono_font
                  | weight(Weight::black) | tabular_nums | leading(1.0f);
         };
-        // a hairline vertical divider between segments.
-        auto div = [&]{ return box() | w(px(1)) | h(px(30)) | bg(line_c); };
+        // a hairline vertical divider between segments (desktop only).
+        auto div = [&]{ return box() | w(px(1)) | h(px(30)) | bg(line_c) | hide_below(Md); };
 
         auto controls = row(
             hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
             hud_pill("↑",     "SHIFT", Shift{},  amber, false),
             hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
-        ) | gap(8);
+        ) | gap(8) | wrap;
 
-        auto dash = row(
+        // the readout cluster (time / gear / best) — stays a tidy group.
+        auto readouts = row(
             field("time", val(std::string(et) + "s", etc, 30)),
             div(),
             field("gear", val(m.gear ? std::to_string(m.gear) : "N", cyan, 22)),
             div(),
-            field("best", val(best, good, 22)),
-            div(),
-            box(field("tach", tachometer_bar(m))) | grow(),   // the tach fills the middle
-            div(),
-            controls,
-            div(),
-            text("ACTIVISION") | fg(inkSoft) | font(10) | term
-                | weight(Weight::black) | tracking_em(0.24f)
-        ) | items_center | gap(rem(1.1f))
+            field("best", val(best, good, 22))
+        ) | items_center | gap(rem(1.0f));
+
+        // Top line of the strip: readouts on the left, controls on the right.
+        // They sit on one line on desktop and WRAP (controls drop below) on
+        // narrow screens instead of overflowing.
+        auto topline = row(
+            readouts,
+            spacer(),
+            controls
+        ) | items_center | gap(rem(1.0f)) | w_full | wrap
+          | detail::raw_css("row-gap", "12px");
+
+        // the tach spans the FULL width on its own line — always readable.
+        auto tachline = box(field("tach", tachometer_bar(m))) | w_full;
+
+        auto dash = col(
+            topline,
+            tachline
+        ) | gap(rem(0.9f))
           | gradient(panel, panelLo, 180)
           | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)")
           | detail::raw_css("border-top", "1px solid " + waya::rgb(line_c).css())
-          // pad the strip AND respect device safe-area insets in one shorthand
-          // (a bare safe_area() would overwrite the padding with just the insets,
-          // which are 0 on desktop — leaving no outer margin).
           | detail::raw_css("padding",
-              "1rem max(1.6rem, env(safe-area-inset-right)) "
-              "max(1rem, env(safe-area-inset-bottom)) max(1.6rem, env(safe-area-inset-left))");
+              "0.9rem max(1.4rem, env(safe-area-inset-right)) "
+              "max(0.9rem, env(safe-area-inset-bottom)) max(1.4rem, env(safe-area-inset-left))");
 
         // the screen area: the two-lane race, with the phase overlay on top.
         auto screen = box(strip_screen(m), ov)
