@@ -87,38 +87,50 @@ static void refinalize(const NodeRef& n) {
 
 // ── the reference applier: mutate `root` in place per the patch ─────────────
 static void apply_patch(NodeRef& root, const Patch& patch) {
+    // This is the SPEC: a faithful mirror of the browser applier (client.hpp).
+    // Each op touches exactly one channel; if the diff forgets a channel, the
+    // round-trip fails here — that is what makes `apply(a,diff(a,b))==b` a real
+    // theorem about the real client, not a coincidence between two appliers.
+    auto morph_shell = [](Node& dst, const Node& src) {
+        // set_shell: copy ONLY the shell fields (attrs/class/wiring), never the
+        // body (text/src/checked/selected/options/points) or children.
+        dst.style = src.style; dst.tag = src.tag; dst.name = src.name;
+        dst.disabled = src.disabled; dst.placeholder = src.placeholder;
+        dst.input_type = src.input_type; dst.draggable = src.draggable;
+        dst.on_tap = src.on_tap; dst.on_input = src.on_input; dst.on_change = src.on_change;
+        dst.events = src.events; dst.attrs = src.attrs;
+    };
     for (auto& op : patch) {
         switch (op.op) {
-            case Op::set_text: {
+            // set_text: body text (span/button label). set_inner: markup body.
+            case Op::set_text: case Op::set_inner: {
                 if (auto n = at_path(root, op.path)) { n->text = op.s; finalize(*n); }
                 break;
             }
-            // set_src: image url only.
-            case Op::set_src: {
-                if (auto n = at_path(root, op.path)) { n->src = op.s; finalize(*n); }
-                break;
-            }
-            // set_paint: a NODE-LEVEL change (style/tap/attrs/control value). The
-            // browser MORPHS attributes in place and leaves the children alone
-            // (they're reconciled by their own deeper ops). So we copy only the
-            // paint-level fields, preserving the existing child subtree.
-            case Op::set_paint: {
-                if (op.path.empty()) {
-                    // root paint change: morph fields on root, keep its kids
-                    auto& src = *op.node; auto kids = root->kids;
-                    *root = src; root->kids = std::move(kids); finalize(*root);
-                    break;
-                }
+            // set_prop: one reflected DOM property, addressed by name. The DOM
+            // `.value` maps to different Node fields by kind (a <select>'s value
+            // is its chosen option; an <input>'s is its text) — exactly as the
+            // browser's e.value does. Mirror that here.
+            case Op::set_prop: {
                 if (auto n = at_path(root, op.path)) {
-                    auto kids = n->kids;      // preserve children
-                    *n = *op.node;            // copy all fields from the new node
-                    n->kids = std::move(kids);
+                    if (op.prop == "value") {
+                        if (n->kind == Kind::select) n->selected = op.s;
+                        else                         n->text = op.s;
+                    }
+                    else if (op.prop == "src")     n->src = op.s;
+                    else if (op.prop == "checked") n->checked = !op.s.empty();
                     finalize(*n);
                 }
                 break;
             }
-            // set_path / replace carry a full replacement subtree.
-            case Op::set_path: case Op::replace: {
+            // set_shell: morph attrs+class in place; children/body preserved.
+            case Op::set_shell: {
+                if (op.path.empty()) { morph_shell(*root, *op.node); finalize(*root); break; }
+                if (auto n = at_path(root, op.path)) { morph_shell(*n, *op.node); finalize(*n); }
+                break;
+            }
+            // replace carries a full replacement subtree.
+            case Op::replace: {
                 NodeRef parent; unsigned idx;
                 if (op.path.empty()) { root = clone(op.node); break; }
                 if (split_parent(root, op.path, parent, idx) && parent && idx < parent->kids.size()) {
@@ -166,11 +178,24 @@ static void apply_patch(NodeRef& root, const Patch& patch) {
 }
 
 // ── random tree generators ──────────────────────────────────────────────────
+// A leaf that exercises EVERY body channel, so the round-trip theorem covers
+// each kind's mutation (text/button label, markup inner, input value, checkbox
+// state, image/media src, select value+options, path geometry) — not just boxes.
 static NodeRef gen_leaf(Rng& r) {
-    switch (r.pick(4)) {
+    switch (r.pick(10)) {
         case 0: return text(std::string(1, (char)('a' + r.pick(6))));
         case 1: return image("/img" + std::to_string(r.pick(4)) + ".png");
         case 2: return text(std::to_string(r.pick(100)));
+        case 3: return button("b" + std::to_string(r.pick(5)));
+        case 4: return markup("<b>" + std::to_string(r.pick(5)) + "</b>");
+        case 5: return (input(std::string(1,(char)('a'+r.pick(4)))) | on_input(1)).done();
+        case 6: return checkbox(r.chance(50));
+        case 7: {
+            std::vector<Opt> opts; unsigned k = 1 + r.pick(3);
+            for (unsigned i=0;i<k;++i) opts.push_back(option("o"+std::to_string(i)));
+            return select(std::move(opts), "o" + std::to_string(r.pick(k)));
+        }
+        case 8: return path({ {0,0}, {(float)r.pick(10),(float)r.pick(10)}, {5,5} });
         default: {
             auto t = text("styled");
             return (r.chance(50) ? (t | fg(0x100000 * (1 + r.pick(9)))) : (t | bg(0x001000))).done();

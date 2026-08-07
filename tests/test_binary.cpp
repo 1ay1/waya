@@ -37,7 +37,15 @@ static Frame decode(const std::string& buf) {
         int k = r.b[r.p++];
         std::uint64_t d = r.vi(); std::string path;
         for (std::uint64_t j=0;j<d;++j){ if(j) path+='.'; path += std::to_string(r.vi()); }
-        std::string payload = (k==5) ? "" : r.str();
+        // Payload shape by opcode, mirroring the JS client's readFrame:
+        //   remove(5), move(7): no string   set_prop(4): [prop,value]
+        //   insert_at(8): [to,html]         everything else: a single string.
+        std::string payload;
+        if (k==5) payload = "";
+        else if (k==7) { r.vi(); r.vi(); }              // move [from,to]
+        else if (k==4) { r.str(); payload = r.str(); }  // set_prop [prop,value] -> keep value
+        else if (k==8) { r.vi(); payload = r.str(); }   // insert_at [to,html]
+        else payload = r.str();
         f.ops.emplace_back(k, path, payload);
     }
     return f;
@@ -61,12 +69,12 @@ int main() {
         CHECK(std::get<2>(f.ops[0]) == "43");
     }
 
-    // ── a full paint is a single `paint` op (7) carrying the root html ──────
+    // ── a full paint is a single `paint` op (OP_PAINT) carrying the root html ─
     {
         auto bin = encode_full(*view(0));
         auto f = decode(bin);
         CHECK(f.ops.size() == 1);
-        CHECK(std::get<0>(f.ops[0]) == 7);        // paint
+        CHECK(std::get<0>(f.ops[0]) == OP_PAINT);  // paint
         CHECK(std::get<1>(f.ops[0]) == "");       // root path
         CHECK(std::get<2>(f.ops[0]).find("<div") != std::string::npos);
         CHECK(!f.css.empty());                    // the stylesheet

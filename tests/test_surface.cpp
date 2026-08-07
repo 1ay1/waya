@@ -94,12 +94,12 @@ int main() {
     }
     CHECK(diff(view(7), view(7)).empty());
 
-    // ── a style-only change diffs as set_paint ──────────────────────────────
+    // ── a style-only change diffs as set_shell (attrs channel) ────────────
     {
         auto a = text("x") | fg(0x111111);
         auto b = text("x") | fg(0x222222);
         auto p = diff(a, b);
-        CHECK(p.size() == 1 && p[0].op == Op::set_paint);
+        CHECK(p.size() == 1 && p[0].op == Op::set_shell);
     }
 
     // ── keyed diff is SAFE against duplicate keys ───────────────────────────
@@ -126,7 +126,8 @@ int main() {
     {
         auto j = patch_json(diff(view(1), view(2)));
         CHECK(has(j, "\"css\":"));
-        CHECK(has(j, "\"ops\":[[0,\"1\",\"2\"]]"));
+        // set_text is wire opcode 2; the count text lives at path "1".
+        CHECK(has(j, "\"ops\":[[2,\"1\",\"2\"]]"));
     }
 
     // ── client WS URL is DEPLOYMENT-ROBUST (regression guard) ───────────────
@@ -156,8 +157,8 @@ int main() {
         auto delta = delta_frame(diff(view(0), view(1)));
         CHECK(has(full,  "\"css\":"));   CHECK(has(full,  "\"ops\":"));
         CHECK(has(delta, "\"css\":"));   CHECK(has(delta, "\"ops\":"));
-        CHECK(has(full,  "[7,\"\","));   // the paint op carries the root html
-        CHECK(has(delta, "[0,\"1\",\"1\"]")); // the delta is a set_text
+        CHECK(has(full,  "[9,\"\","));   // the paint op (OP_PAINT=9) carries the root html
+        CHECK(has(delta, "[2,\"1\",\"1\"]")); // the delta is a set_text (opcode 2)
     }
 
     // ── EVERYTHING IS A MOD: style, layout, state, interactivity all `node|mod` ─

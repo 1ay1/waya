@@ -354,17 +354,40 @@ private:
     // (a container with children the client reconciles independently); every
     // other kind is either a leaf already (text/media) or has body the client
     // re-parses (control/path/markup), so we defer to the full emit for those.
+    // The SHELL of a node: its open tag, attributes and class, with an EMPTY
+    // body. Used by set_shell, whose client action is attrs-only — the body
+    // (text/inner/children) rides its own op, so shipping it here is redundant.
+    // Void controls (input/checkbox/radio) have no body and no closing tag, so
+    // they render whole via emit(); everything else gets `<tag attrs></tag>`.
     void emit_shell(std::string& o, const Node& nd){
-        if(nd.kind != Kind::box){ emit(o, nd); return; }
-        const std::string& tg = nd.tag.empty() ? std::string("div") : nd.tag;
+        switch(nd.kind){
+            case Kind::input: case Kind::checkbox: case Kind::radio:
+            case Kind::image: case Kind::video: case Kind::audio:
+                emit(o, nd); return;                       // no morphable body
+            default: break;
+        }
+        const char* tg = shell_tag(nd);
         o+='<'; o+=tg; open_attrs(o,nd); o+='>'; o+="</"; o+=tg; o+='>';
+    }
+    // The HTML element name for a node's shell — mirrors what emit() opens with.
+    static const char* shell_tag(const Node& nd){
+        if(!nd.tag.empty()) return nd.tag.c_str();
+        switch(nd.kind){
+            case Kind::button:   return "button";
+            case Kind::text:     return "span";
+            case Kind::textarea: return "textarea";
+            case Kind::select:   return "select";
+            case Kind::form:     return "form";
+            default:             return "div";
+        }
     }
 
 public:
-    // Which kinds gain from a shallow set_paint render? Only a box: its children
-    // are separate DOM nodes the client keeps and diffs on their own. A leaf or
-    // a body-bearing kind must ship whole.
-    static bool wants_shell(Kind k){ return k == Kind::box; }
+    // Which kinds gain from a shallow set_shell render? Every kind whose body is
+    // a separate wire channel (text/inner/children) — i.e. everything except the
+    // void controls, which emit_shell renders whole anyway.
+    static bool wants_shell(Kind k){ return k != Kind::input && k != Kind::checkbox
+        && k != Kind::radio && k != Kind::image && k != Kind::video && k != Kind::audio; }
 };
 
 } // namespace waya::surface

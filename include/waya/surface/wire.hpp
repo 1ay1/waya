@@ -28,14 +28,21 @@ inline std::pair<std::string,std::string> render_fragment(const Node& n){
 }
 
 /// Render just the node's OWN element (attrs + wiring, empty body) for a
-/// `set_paint` op — the client morphs attributes in place and keeps the
-/// existing children, so shipping the subtree is wasted bytes+CPU. Falls back
-/// to a full fragment for kinds that aren't shallow-safe (see wants_shell()).
-inline std::pair<std::string,std::string> render_paint(const Node& n){
-    DomBackend b;
-    auto out = DomBackend::wants_shell(n.kind) ? b.render_shallow(n) : b.render(n);
-    return { out.html, out.css };
+/// set_shell op — the client morphs attributes in place and keeps the existing
+/// children/body, so shipping the subtree would be wasted bytes the client
+/// discards. ALWAYS shallow now: set_shell's client action is attrs-only for
+/// every kind (body channels ride their own ops), so no kind needs the body
+/// here.
+inline std::pair<std::string,std::string> render_shell(const Node& n){
+    DomBackend b; auto out = b.render_shallow(n); return { out.html, out.css };
 }
+
+// Wire opcodes shared by the JSON encoder, the binary encoder, and the JS
+// client (surface/client.hpp). The base ops are the Op enum ordinals:
+//   replace=0 set_shell=1 set_text=2 set_inner=3 set_prop=4 remove=5 insert=6 move=7
+// Two extra codes cover forms the base ordinals don't distinguish:
+static constexpr int WIRE_INSERT_AT = 8;   // keyed insert carrying a target index
+static constexpr int OP_PAINT       = 9;   // full-surface repaint (root html)
 
 /// A patch/frame → JSON. ONE shape for everything the terminal ever receives:
 ///
@@ -56,16 +63,22 @@ inline std::string ops_json(const Patch& p, std::string& css_out){
     for(std::size_t i=0;i<p.size();++i){
         if(i) ops+=',';
         const auto& op=p[i];
+        // Wire opcodes. The base ops use the Op enum ordinal; two structural
+        // forms get their own code so the client can size their payload:
+        //   insert with a target index -> insert_at (WIRE_INSERT_AT=8); plain append -> insert.
+        //   move -> its own [from,to] shape.
+        // A full paint is OP_PAINT (9). Everything else carries a single string.
         bool insert_at = (op.op==Op::insert && op.to>=0);
-        int wire = insert_at ? 9 : (op.op==Op::move ? 8 : (int)op.op);
+        int wire = insert_at ? WIRE_INSERT_AT : (int)op.op;
         ops+='['; ops+=std::to_string(wire); ops+=','; detail::jstr(ops,op.path);
         switch(op.op){
-            case Op::set_text: case Op::set_src: ops+=','; detail::jstr(ops, op.s); break;
-            case Op::set_paint: {
-                if(op.node){ auto [html,c]=render_paint(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
+            case Op::set_text: case Op::set_inner: ops+=','; detail::jstr(ops, op.s); break;
+            case Op::set_prop: ops+=','; detail::jstr(ops, op.prop); ops+=','; detail::jstr(ops, op.s); break;
+            case Op::set_shell: {
+                if(op.node){ auto [html,c]=render_shell(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
                 else ops+=",\"\"";
                 break; }
-            case Op::set_path: case Op::replace: {
+            case Op::replace: {
                 if(op.node){ auto [html,c]=render_fragment(*op.node); add_css(c); ops+=','; detail::jstr(ops, html); }
                 else ops+=",\"\"";
                 break; }
@@ -93,10 +106,9 @@ inline std::string delta_frame(const Patch& p){
 }
 
 /// A full-paint frame: repaint the whole surface. Same shape as a delta — one
-/// `paint` op (7) carrying the root HTML. This is what makes the terminal
+/// `paint` op (OP_PAINT) carrying the root HTML. This is what makes the terminal
 /// trivially resyncable: hand it a full frame and it's correct, no matter what
 /// state it was in.
-static constexpr int OP_PAINT = 7;
 inline std::string full_frame(const Node& root){
     auto [html, css] = render_fragment(root);
     std::string o="{\"css\":"; detail::jstr(o, css);

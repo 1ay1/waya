@@ -17,10 +17,10 @@
 ///
 /// payload:
 ///   set_text(0)/set_src(3): [str_len][str]
-///   set_paint(1)/set_path(2)/replace(4)/insert(6)/paint(7): [html_len][html]
-///   remove(5): (none)
-///   move(8): [from varint][to varint]
-///   insert_at(9): [to varint][html_len][html]
+///   replace(0)/set_shell(1)/insert(6)/insert_at(8)/paint(9): [html_len][html]
+///   set_text(2)/set_inner(3): [str_len][str]   set_prop(4): [prop][value]
+///   set_prop = [prop_len][prop][val_len][val]   move(7): [from][to]   remove(5): none
+///   insert_at(8): [to varint][html_len][html]
 
 #include "node.hpp"
 #include "dom.hpp"
@@ -69,22 +69,23 @@ inline std::string encode_delta(const Patch& p) {
     auto add_css = [&](const std::string& c){ if(!c.empty() && seen.insert(c).second) css += c; };
     for (const auto& op : p) {
         ++n;
-        // Keyed inserts carry a target index: encode as insert_at (9). `move`
-        // is wire op 8 (7 is reserved for a full paint on the client).
+        // Wire opcodes match wire.hpp: base ops are the Op enum ordinal; a keyed
+        // insert with a target index is WIRE_INSERT_AT; OP_PAINT is a full paint.
         bool insert_at = (op.op == Op::insert && op.to >= 0);
-        std::uint8_t wire = insert_at ? 9 : (op.op == Op::move ? 8 : (std::uint8_t)op.op);
+        std::uint8_t wire = insert_at ? (std::uint8_t)WIRE_INSERT_AT : (std::uint8_t)op.op;
         ops += char(wire);
         bin::put_path(ops, op.path);
         switch (op.op) {
-            case Op::set_text: case Op::set_src:
+            case Op::set_text: case Op::set_inner:
                 bin::put_str(ops, op.s); break;
-            case Op::set_paint: {
-                // client morphs attrs in place + keeps children -> ship a shell,
-                // not the whole subtree.
-                if (op.node) { auto [html,c] = render_paint(*op.node); add_css(c); bin::put_str(ops, html); }
+            case Op::set_prop:
+                bin::put_str(ops, op.prop); bin::put_str(ops, op.s); break;
+            case Op::set_shell: {
+                // attrs-only on the client -> ship the shallow shell, not the body.
+                if (op.node) { auto [html,c] = render_shell(*op.node); add_css(c); bin::put_str(ops, html); }
                 else bin::put_str(ops, "");
                 break; }
-            case Op::set_path: case Op::replace: {
+            case Op::replace: {
                 if (op.node) { auto [html,c] = render_fragment(*op.node); add_css(c); bin::put_str(ops, html); }
                 else bin::put_str(ops, "");
                 break; }
@@ -107,13 +108,14 @@ inline std::string encode_delta(const Patch& p) {
     return frame;
 }
 
-/// Encode a full paint as a binary frame: one `paint` op (7) carrying the root.
+/// Encode a full paint as a binary frame: one `paint` op (OP_PAINT) carrying
+/// the root.
 inline std::string encode_full(const Node& root) {
     auto [html, css] = render_fragment(root);
     std::string frame;
     bin::put_str(frame, css);
     bin::put_varint(frame, 1);
-    frame += char(7);            // OP_PAINT
+    frame += char(OP_PAINT);
     bin::put_varint(frame, 0);   // path depth 0 (root)
     bin::put_str(frame, html);
     return frame;

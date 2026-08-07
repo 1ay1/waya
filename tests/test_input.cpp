@@ -58,9 +58,14 @@ static Node* parent_of(NodeRef root, const std::string& path, int& child_idx) {
 static void replay_patch(NodeRef root, const Patch& p) {
     for (auto& op : p) {
         switch (op.op) {
-            case Op::set_text: at(root, op.path).text = op.s; break;
-            case Op::set_src:  at(root, op.path).src  = op.s; break;
-            case Op::set_paint: case Op::set_path: case Op::replace: {
+            case Op::set_text: case Op::set_inner: at(root, op.path).text = op.s; break;
+            case Op::set_prop: {
+                Node& n = at(root, op.path);
+                if (op.prop == "value") { if (n.kind == Kind::select) n.selected = op.s; else n.text = op.s; }
+                else if (op.prop == "src")     n.src = op.s;
+                else if (op.prop == "checked") n.checked = !op.s.empty();
+                break; }
+            case Op::set_shell: case Op::replace: {
                 int ci; Node* par = parent_of(root, op.path, ci);
                 if (op.node) par->kids[ci] = op.node;    // adopt the fresh subtree
                 break; }
@@ -149,19 +154,21 @@ int main() {
     // disabled reaches the attribute
     CHECK(has(html_of(input("x") | disabled()), "disabled"));
 
-    // a control field change diffs as set_paint (not replace) — cheap update
+    // a control field change diffs as set_prop (checked property) — cheap update
     {
         auto a = checkbox(false) | on_change(1);
         auto b = checkbox(true)  | on_change(1);
         auto p = diff(a, b);
-        CHECK(p.size() == 1 && p[0].op == Op::set_paint);
+        bool has_checked = false;
+        for (auto& op : p) if (op.op == Op::set_prop && op.prop == "checked") has_checked = true;
+        CHECK(has_checked);
     }
-    // select value change → set_paint
+    // select value change → set_prop(value)
     {
         auto a = select({option("x"),option("y")}, "x");
         auto b = select({option("x"),option("y")}, "y");
         auto p = diff(a, b);
-        CHECK(p.size() == 1 && p[0].op == Op::set_paint);
+        CHECK(p.size() == 1 && p[0].op == Op::set_prop && p[0].prop == "value" && p[0].s == "y");
     }
 
     // ═══ 2. KEYED-LIST MOVE DIFFING ══════════════════════════════════════════
@@ -245,7 +252,7 @@ int main() {
         for (auto& op : p) if (op.op==Op::insert && op.to==1) found=true;
         CHECK(found);
         auto j = patch_json(p);
-        CHECK(has(j, "[9,"));   // insert_at op id on the JSON wire
+        CHECK(has(j, "[8,"));   // insert_at op id on the JSON wire (WIRE_INSERT_AT)
     }
 
     // Changing a row's CONTENT while others reorder: the changed row updates in
@@ -365,12 +372,12 @@ int main() {
         CHECK(has(DomBackend{}.render(*(box() | hide_above(Md))).css, "@media(min-width:768px)"));
     }
 
-    // event change diffs as set_paint (cheap, node-level)
+    // event change diffs as set_shell (attrs/wiring channel, node-level)
     {
         auto a = box() | on_enter(Save);
         auto b = box() | on_enter(Close);
         auto p = diff(a, b);
-        CHECK(p.size() == 1 && p[0].op == Op::set_paint);
+        CHECK(p.size() == 1 && p[0].op == Op::set_shell);
     }
 
     std::cout << "test_input: " << g_pass << " passed, " << g_fail << " failed\n";

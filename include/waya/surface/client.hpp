@@ -35,12 +35,15 @@ inline std::string client(int port) {
     "var css=str();var nop=vi();var ops=[];"
     "for(var i=0;i<nop;i++){var k=b[p++];var d=vi();var path='';"
     "for(var j=0;j<d;j++){path+=(j?'.':'')+vi();}"
-    // payload shape depends on op: remove(5) none; move(8) [from,to];
-    // insert_at(9) [to,html]; everything else a single html/text string.
+    // payload shape by opcode:
+    //   remove(5), move(7): no string.  move carries [from,to] varints.
+    //   set_prop(4): two strings [prop,value].  insert_at(8): [to,html].
+    //   everything else: a single html/text string.
     "var payload;"
     "if(k===5){payload='';}"
-    "else if(k===8){payload=[vi(),vi()];}"
-    "else if(k===9){var to=vi();payload=[to,str()];}"
+    "else if(k===7){payload=[vi(),vi()];}"
+    "else if(k===4){var pr=str();payload=[pr,str()];}"
+    "else if(k===8){var to=vi();payload=[to,str()];}"
     "else{payload=str();}"
     "ops.push([k,path,payload]);}"
     "return{css:css,ops:ops};}"
@@ -62,25 +65,38 @@ inline std::string client(int port) {
     "else if('value'in nw&&e.value!==nw.value){e.value=nw.value;}"
     "if('checked'in nw&&e.checked!==nw.checked)e.checked=nw.checked;"
     "if('textContent'in nw&&nw.tagName==='TEXTAREA'&&e.value!==nw.value)e.value=nw.value;}}"
+    // apply ONE op. Each opcode maps to exactly one DOM mutation on exactly one
+    // channel (see docs/internals/wire-protocol-design.md). Opcodes:
+    //   0 replace   swap the whole element for a fresh subtree
+    //   1 set_shell morph attrs+class in place; body/children untouched
+    //   2 set_text  set textContent (span label, button label)
+    //   3 set_inner set innerHTML (markup/SVG body)
+    //   4 set_prop  set ONE reflected property [prop,value] (value/checked/src)
+    //   5 remove / 6 insert(append) / 7 move / 8 insert_at   structural
+    //   9 paint     full-surface repaint
+    "function setProp(e,pr,v){"
+    // 'checked' is a boolean property; '' clears it. Don't fight a focused field.
+    "if(pr==='checked'){e.checked=!!v;return;}"
+    "if(pr==='value'){if(document.activeElement!==e)e.value=v;return;}"
+    "if(pr==='src'){e.src=v;e.setAttribute('src',v);return;}"
+    "e.setAttribute(pr,v);}"
     "function apply(op){var k=op[0],p=op[1],e=at(p);"
-    "if(k===7){R.innerHTML=op[2];}"
-    "else if(k===0){if(e)e.textContent=op[2];}"
-    // set_paint(1): a NODE-LEVEL change (style/tap/control value). Morph the
-    // live element in place so focus/caret survive; the node's CHILDREN are
-    // diffed by their own deeper ops, so we only touch attrs here (+ the value
-    // for a leaf control). Fall back to replace only if the tag changed.
-    "else if(k===1){if(e){var nw=frag(op[2]);"
-    "if(!nw||nw.tagName!==e.tagName){if(e&&nw)e.replaceWith(nw);}"
-    "else if(editable(e)){morphControl(e,nw);}"
-    "else{morphAttrs(e,nw);}}}"
-    "else if(k===2||k===4){if(e)e.replaceWith(frag(op[2]));}"
-    "else if(k===3){if(e){var f=frag(op[2]);if(e.tagName==='IMG')e.src=f.src;else e.replaceWith(f);}}"
-    "else if(k===5){if(e)e.remove();}"
-    "else if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));}"
-    // insert_at: op[2]=[to,html]; insert BEFORE the current child at `to`.
-    "else if(k===9){var pa=at(p);if(pa){var nd=frag(op[2][1]);var ref=pa.childNodes[op[2][0]];pa.insertBefore(nd,ref||null);}}"
-    // move: op[2]=[from,to]; detach the child at `from`, reinsert before `to`.
-    "else if(k===8){var pa=at(p);if(pa){var from=op[2][0],to=op[2][1];var nd=pa.childNodes[from];if(nd){nd.remove();var ref=pa.childNodes[to];pa.insertBefore(nd,ref||null);}}}}"
+    "if(k===9){R.innerHTML=op[2];return;}"
+    "if(!e&&k!==6&&k!==8)return;"
+    // 1 set_shell: morph attributes in place so focus/caret/scroll survive; the
+    // body (text/inner/children) is carried by its own ops, so we NEVER touch it
+    // here. Fall back to a full replace only if the tag itself changed.
+    "if(k===1){var nw=frag(op[2]);if(!nw){return;}if(nw.tagName!==e.tagName){e.replaceWith(nw);}else{morphAttrs(e,nw);}return;}"
+    "if(k===2){e.textContent=op[2];return;}"
+    "if(k===3){e.innerHTML=op[2];return;}"
+    "if(k===4){setProp(e,op[2][0],op[2][1]);return;}"
+    "if(k===0){e.replaceWith(frag(op[2]));return;}"
+    "if(k===5){e.remove();return;}"
+    "if(k===6){var pa=at(p);if(pa)pa.appendChild(frag(op[2]));return;}"
+    // 8 insert_at: op[2]=[to,html]; insert BEFORE the current child at `to`.
+    "if(k===8){var pa=at(p);if(pa){var nd=frag(op[2][1]);var ref=pa.childNodes[op[2][0]];pa.insertBefore(nd,ref||null);}return;}"
+    // 7 move: op[2]=[from,to]; detach the child at `from`, reinsert before `to`.
+    "if(k===7){var pa=at(p);if(pa){var from=op[2][0],to=op[2][1];var nd=pa.childNodes[from];if(nd){nd.remove();var ref=pa.childNodes[to];pa.insertBefore(nd,ref||null);}}return;}}"
     // — rAF-coalesced paint: queue frames, apply them all in one animation frame —
     // With FLIP: before applying, snapshot the positions of [data-wa-flip]
     // elements; after, animate each from its old box to its new one (a smooth
@@ -101,7 +117,7 @@ inline std::string client(int port) {
     "var dx=o.left-n.left,dy=o.top-n.top;if(dx||dy){el.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration:260,easing:'cubic-bezier(.2,.7,.2,1)'});}});}"
     // does any queued frame carry a structural (reordering) op? only then is a
     // FLIP snapshot worth its forced reflow.
-    "function structural(frames){for(var fi=0;fi<frames.length;fi++){var os=frames[fi].ops;for(var i=0;i<os.length;i++){var k=os[i][0];if(k===8||k===9||k===6||k===5)return true;}}return false;}"
+    "function structural(frames){for(var fi=0;fi<frames.length;fi++){var os=frames[fi].ops;for(var i=0;i<os.length;i++){var k=os[i][0];if(k===7||k===8||k===6||k===5||k===0)return true;}}return false;}"
     "function flush(){raf=0;var frames=q;q=[];var willMove=structural(frames);var prev=willMove?flipSnapshot():null;"
     "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)S.textContent+=m.css;"
     "for(var i=0;i<m.ops.length;i++){apply(m.ops[i]);}}"

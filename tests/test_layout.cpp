@@ -193,11 +193,11 @@ int main() {
         auto th = css_of(box() | themed());
         CHECK(has(th, "background:var(--wa-bg)") && has(th, "color:var(--wa-text)"));
         CHECK(has(th, "transition:background-color"));
-        // a LIVE theme switch is ONE op (root set_paint); children read vars
+        // a LIVE theme switch is ONE op (root set_shell); children read vars
         auto a = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::dark()) | themed();
         auto b = box(text("x") | fg_text, box() | bg_surface) | theme(Theme::dark().tint(0xef4444)) | themed();
         auto p = diff(a, b);
-        CHECK(p.size() == 1 && p[0].op == Op::set_paint && p[0].path == "");
+        CHECK(p.size() == 1 && p[0].op == Op::set_shell && p[0].path == "");
     }
 
     // ── alignment defaults: a ROW vertically-centres, a COL doesn't force it ─
