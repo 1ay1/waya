@@ -363,6 +363,13 @@ int main() {
         CHECK(ov->style.has_z && ov->style.z >= 1000);
         CHECK(modal(false, text("x"))->kind == Kind::box);   // closed → empty
         CHECK(modal(true,  text("x"))->style.pos == Pos::fixed);
+        // overlay() is a REAL modal: it carries the markers the client uses to
+        // isolate focus/keyboard/clicks from the layer underneath.
+        auto h = html_of(overlay(text("m")));
+        CHECK(has(h, "data-modal=\"1\""));
+        CHECK(has(h, "role=\"dialog\""));
+        CHECK(has(h, "aria-modal=\"true\""));
+        CHECK(has(h, "tabindex=\"-1\""));
     }
 
     // ═══ MOBILE RESPONSIVENESS ─ breakpoint mods + visibility ══════════════

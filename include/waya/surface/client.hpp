@@ -167,11 +167,29 @@ inline std::string client(int port) {
     "else if(k==='@url'){history.pushState({},'',v);}}"
     "window.addEventListener('popstate',route);"
     "connect();"
+    // ── Modal isolation ──────────────────────────────────────────────────
+    // When any [data-modal] is on screen, the layer underneath must be inert:
+    // no clicks, no keyboard shortcuts, no keydown handlers, no generic events
+    // reach it. `modalTop()` returns the current top-most modal (or null), and
+    // `inModal(node)` tests whether an event target lives inside it. Every event
+    // path below consults these so a modal that LOOKS blocking actually IS.
+    "function modalTop(){var m=document.querySelectorAll('[data-modal]');return m.length?m[m.length-1]:null;}"
+    "function inModal(n){var m=modalTop();if(!m)return true;return !!(n&&m.contains(n));}"
+    // When a modal appears, pull focus into it (so Tab/Enter stay inside) and
+    // remember where focus was so we can restore it when the modal closes.
+    "var _preModal=null;"
+    "function syncModalFocus(){var m=modalTop();"
+    "if(m){if(!m.contains(document.activeElement)){_preModal=document.activeElement;"
+    "var f=m.querySelector('[data-tap],a,button,input,select,textarea,[tabindex]')||m;try{f.focus({preventScroll:true});}catch(e){}}}"
+    "else if(_preModal){try{_preModal.focus({preventScroll:true});}catch(e){}_preModal=null;}}"
     "document.addEventListener('click',function(ev){var t=ev.target.closest('[data-tap]');"
     // If a [data-stop] element sits between the click and the tap target, the
     // click was 'inside' (e.g. modal content) — don't fire the outer tap
     // (e.g. a backdrop close). This is on_backdrop / stop() done right.
     "if(t&&ws&&ws.readyState===1){var st=ev.target.closest('[data-stop]');"
+    // Modal isolation: a tap outside the open modal is swallowed (the layer
+    // underneath is inert). Taps on the backdrop still fire their own data-tap.
+    "if(!inModal(t)){ev.preventDefault();ev.stopPropagation();return;}"
     "if(st&&t.contains(st)&&st!==t)return;ev.preventDefault();"
     // Optimistic: an element opted into instant-busy gets [data-busy] the moment
     // it's clicked (disabled + dimmed), cleared automatically when the next
@@ -221,12 +239,13 @@ inline std::string client(int port) {
     "return (ev.key||'').toLowerCase()===want;}"
     // keydown: walk up to the nearest node wiring keydown, honor the key filter.
     "document.addEventListener('keydown',function(ev){var t=ev.target;while(t&&t!==document){var s=evattr(t,'keydown');"
-    "if(s!=null&&evMatch(s,ev)){ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
+    "if(s!=null&&evMatch(s,ev)){if(!inModal(t))return;ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
     // Global shortcuts: an element tagged [data-ev-shortcut] fires from ANYWHERE
     // (no focus needed) — for Cmd+K palettes, game controls, etc. One element may
     // carry MANY hotkeys, packed as a ';'-separated list of "<msg>|<key>" entries.
+    // While a modal is open, only shortcuts INSIDE it are honoured.
     "document.addEventListener('keydown',function(ev){var els=document.querySelectorAll('[data-ev-shortcut]');"
-    "for(var i=0;i<els.length;i++){var list=els[i].getAttribute('data-ev-shortcut');if(!list)continue;"
+    "for(var i=0;i<els.length;i++){if(!inModal(els[i]))continue;var list=els[i].getAttribute('data-ev-shortcut');if(!list)continue;"
     "var entries=list.split(';');for(var j=0;j<entries.length;j++){var s=entries[j];var bar=s.indexOf('|');if(bar<0)continue;"
     "if(evMatch('|'+s.slice(bar+1),ev)){ev.preventDefault();sendev(s.slice(0,bar),ev.key);return;}}}},true);"
     // focus/blur are non-bubbling → capture phase.
@@ -258,8 +277,9 @@ inline std::string client(int port) {
     "var type=k.slice(2);type=type.charAt(0).toLowerCase()+type.slice(1);if(wired[type]||seen[type])continue;seen[type]=1;}}"
     "for(var type in seen){(function(t){var prop='ev'+t.charAt(0).toUpperCase()+t.slice(1);"
     "document.addEventListener(t,function(ev){var el=ev.target;while(el&&el!==document){if(el.dataset&&el.dataset[prop]!=null){"
-    "sendev(el.dataset[prop],payload(el)||'');return;}el=el.parentElement;}},true);wired[t]=1;})(type);}}"
-    "bindGeneric();var _paint=paint;paint=function(f){_paint(f);bindGeneric();};"
+    "if(!inModal(el))return;sendev(el.dataset[prop],payload(el)||'');return;}el=el.parentElement;}},true);wired[t]=1;})(type);}}"
+    "bindGeneric();var _paint=paint;paint=function(f){_paint(f);bindGeneric();syncModalFocus();};"
+    "syncModalFocus();"
     "})();</script>";
 }
 

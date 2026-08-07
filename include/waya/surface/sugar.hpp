@@ -246,6 +246,12 @@ inline NodeRef fragment(std::vector<NodeRef> kids){
 /// centred. The backdrop fades in; the content is padded off the edges so a
 /// dialog never touches the screen on small viewports. Add `tap(Close)` for a
 /// click-away, and `stop()` on the panel so content clicks don't close it.
+///
+/// It is a REAL modal: marked `data-modal` + `role=dialog`/`aria-modal`, it
+/// captures pointer events (nothing beneath it is clickable) and, via the
+/// client, SUPPRESSES keyboard shortcuts / keydown handlers outside it and moves
+/// focus into it while it's open — so the layer underneath can't be driven by
+/// the keyboard or mouse. No app wiring needed.
 inline NodeRef overlay(NodeRef content){
     auto n = box(std::move(content));
     auto& s = n->style;
@@ -260,6 +266,12 @@ inline NodeRef overlay(NodeRef content){
     s.extra.emplace_back("backdrop-filter", "blur(6px)");
     s.extra.emplace_back("-webkit-backdrop-filter", "blur(6px)");
     s.extra.emplace_back("animation", "wa-fade 200ms ease both");
+    // Modal semantics: the client enforces focus/keyboard/click isolation for
+    // any node carrying data-modal; the ARIA role/flag make it correct for AT.
+    n->attrs.emplace_back("data-modal", "1");
+    n->attrs.emplace_back("role", "dialog");
+    n->attrs.emplace_back("aria-modal", "true");
+    n->attrs.emplace_back("tabindex", "-1");   // focusable target so focus can land in it
     finalize(*n);
     return n;
 }

@@ -49,6 +49,8 @@ struct Dragster {
             prompt
         ) | gap(18) | center
           | absolute() | pin() | z(10)
+          | attr("data-modal","1") | attr("role","dialog") | attr("aria-modal","true") | tab_index(-1)
+          | hotkey("Enter", Start{}) | hotkey("r", Start{}) | hotkey(" ", Start{})
           | bg(waya::rgba(0x000000, 0.78f)) | backdrop_blur(2);
     }
 
@@ -66,7 +68,9 @@ struct Dragster {
             text(green ? "GREEN!" : "GET SET…") | fg(green ? good : amber)
                 | font(22) | weight(Weight::black) | term | text_align(Justify::center)
         ) | gap(14) | center
-          | absolute() | pin() | z(9) | bg(waya::rgba(0x000000, 0.5f));
+          | absolute() | pin() | z(9)
+          | attr("data-modal","1") | attr("role","dialog") | attr("aria-modal","true") | tab_index(-1)
+          | bg(waya::rgba(0x000000, 0.5f));
     }
 
     static NodeRef fx() {
