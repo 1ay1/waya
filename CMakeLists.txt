@@ -13,7 +13,32 @@ target_include_directories(waya INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 
-target_compile_features(waya INTERFACE cxx_std_26)
+# ── C++26, requested so it NEVER breaks configure ───────────────────────────
+# We can't just do `target_compile_features(waya INTERFACE cxx_std_26)`: if the
+# running CMake predates C++26 awareness (or the compiler's feature table lacks
+# the entry, as Apple clang 21 does), the *Generate* step hard-fails with
+# "feature cxx_std_26 is not known" - even though the compiler happily accepts
+# -std=c++2c. So we request the feature only when this CMake actually knows it,
+# and otherwise inject the raw standard flag ourselves. Either path lands on
+# C++26; neither can abort configuration.
+if("cxx_std_26" IN_LIST CMAKE_CXX_KNOWN_FEATURES)
+    target_compile_features(waya INTERFACE cxx_std_26)
+else()
+    if(MSVC)
+        target_compile_options(waya INTERFACE /std:c++latest)
+    else()
+        # -std=c++26 on compilers that spell it that way, -std=c++2c on the
+        # ones that only know the pre-ratification name (Apple clang, older
+        # Clang/GCC). We probe once and cache the winner.
+        include(CheckCXXCompilerFlag)
+        check_cxx_compiler_flag("-std=c++26" WAYA_HAS_STD_CXX26)
+        if(WAYA_HAS_STD_CXX26)
+            target_compile_options(waya INTERFACE -std=c++26)
+        else()
+            target_compile_options(waya INTERFACE -std=c++2c)
+        endif()
+    endif()
+endif()
 
 # The live runtime (surface/live.hpp) uses std::thread — one thread per
 # connection so a single open socket can't block the server. Link Threads for
