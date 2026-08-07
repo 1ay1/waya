@@ -72,10 +72,11 @@ inline NodeRef progress(float pct, Tone tone = Tone::primary) {
 // slider — a themed range input
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// `slider(value, min, max, msg)` — a range control. Sends the new value as a
-/// string on input; parse it in `update`. Registers its track/thumb CSS once.
-template <typename Msg>
-NodeRef slider(float value, float min, float max, Msg msg, float step = 1) {
+/// `slider(value, min, max, to_msg)` — a range control. `to_msg` is a mapper
+/// `(std::string newValue) -> Msg`, so the dragged value actually reaches your
+/// update (parse it there). Registers its track/thumb CSS once.
+template <typename ToMsg>
+NodeRef slider(float value, float min, float max, ToMsg to_msg, float step = 1) {
     assets().css(
         "input.wa-range{-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;"
         "background:var(--wa-line,#334155);outline:none;width:100%}"
@@ -90,7 +91,7 @@ NodeRef slider(float value, float min, float max, Msg msg, float step = 1) {
         | attr("min", detail::numstr(min))
         | attr("max", detail::numstr(max))
         | attr("step", detail::numstr(step))
-        | on_input(msg);
+        | on_input(std::move(to_msg));   // mapper: the value string -> Msg
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -31,11 +31,12 @@ int main() {
     check(has(css_of(progress(-5)), "width:0%"), "progress clamps low");
     check(has(html_of(progress(30)), "role=\"progressbar\""), "progress role");
 
-    // ── slider is a themed range ─────────────────────────────────────────────
-    { auto s = slider(50, 0, 100, 3);
+    // ── slider is a themed range that delivers its value ─────────────────────
+    { auto s = slider(50, 0, 100, [](std::string v){ return v; });   // mapper: value -> Msg
       auto h = html_of(s);
       check(has(h, "type=\"range\""), "slider is a range input");
       check(has(h, "min=\"0\"") && has(h, "max=\"100\""), "slider min/max");
+      check(has(h, "data-input"), "slider wires on_input so the dragged value reaches update");
       check(has(assets().style_css(), "wa-range"), "slider registers thumb css"); }
 
     // ── menu shows items only when open ──────────────────────────────────────

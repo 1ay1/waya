@@ -271,13 +271,14 @@ NodeRef switch_field(std::string title, std::string desc, bool on, Msg msg){
 }
 
 /// `checkbox_field("I agree", on, Msg{})` — a checkbox + inline label; clicking
-/// either toggles it.
+/// either toggles it. The message is wired via the checkbox's change event only
+/// (NOT a tap on both the box and the <label>, which native label-forwarding
+/// would fire twice — cancelling the toggle).
 template <typename Msg>
 NodeRef checkbox_field(std::string label, bool on, Msg msg){
-    return row(checkbox(on) | tap(msg),
+    return row(checkbox(on) | on_change([msg](std::string){ return msg; }),
                text(std::move(label)) | fg_text | detail::raw_css("font-size","14px"))
-        | gap(10) | items_center | as("label") | detail::raw_css("cursor","pointer")
-        | tap(msg);
+        | gap(10) | items_center | as("label") | detail::raw_css("cursor","pointer");
 }
 
 /// `form_actions(buttons…)` — a right-aligned button bar for a form footer.

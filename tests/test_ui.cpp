@@ -75,6 +75,16 @@ int main() {
       check(has(html_of(tt), "tip"), "tooltip renders text");
       check(has(assets().style_css(), ".wa-tip-wrap"), "tooltip registers group-hover css"); }
 
+    // checkbox_field must wire the toggle ONCE (via the checkbox's change event),
+    // never as a tap on both the checkbox and the wrapping <label> — native
+    // label-forwarding would fire that twice and cancel the toggle. (regression)
+    { auto cf = checkbox_field("I agree", false, 7);
+      auto h = html_of(cf);
+      auto count = [&](const std::string& s){ std::size_t n=0,p=0; while((p=h.find(s,p))!=std::string::npos){++n;p+=s.size();} return n; };
+      check(count("data-tap") == 0, "checkbox_field emits no data-tap (no double-fire)");
+      check(count("data-change") == 1, "checkbox_field wires the toggle exactly once");
+      check(has(h, "<label"), "checkbox_field is a <label> so the text stays clickable"); }
+
     std::cout << "test_ui: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
