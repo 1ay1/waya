@@ -149,11 +149,13 @@ struct Dragster {
             | detail::raw_css("position", "relative")
             | detail::raw_css("height", "100dvh")
             | detail::raw_css("width", "100dvw")
-            // global keyboard
+            // global keyboard — Space = throttle, Up/W = shift, Enter/R = start.
+            // (Shift itself isn't used as a game key: it's a modifier and holding
+            // it interferes with other keydowns.)
             | hotkey(" ",          GasTog{})
             | hotkey("ArrowUp",    Shift{})
-            | hotkey("Shift",      Shift{})
             | hotkey("w",          Shift{})
+            | hotkey("ArrowRight", Shift{})
             | hotkey("Enter",      Start{})
             | hotkey("r",          Start{})
             | as_main;

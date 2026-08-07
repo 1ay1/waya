@@ -210,11 +210,28 @@ private:
     /// "<msg>" or "<msg>|<arg>" (arg narrows, e.g. a key). The client reads these
     /// with one delegated listener per event type.
     void event_attrs(std::string& o, const Node& nd){
+        // Most events appear at most once per node. `shortcut` is special: a node
+        // can carry MANY global hotkeys (e.g. a game's root with space/arrows/
+        // enter). HTML attributes are unique, so emitting data-ev-shortcut once
+        // per hotkey would let the parser keep only the first and silently drop
+        // the rest. Coalesce every shortcut into ONE attribute as a semicolon-
+        // separated list of "<msg>|<key>" entries; the client parses the list.
+        std::string shortcuts;
         for(auto& e : nd.events){
+            if(e.event == "shortcut"){
+                if(!shortcuts.empty()) shortcuts += ';';
+                shortcuts += std::to_string(e.msg);
+                shortcuts += '|';
+                // key names in shortcuts don't contain ';' or '|'; still escape
+                // for attribute safety.
+                esc_attr(shortcuts, e.arg);
+                continue;
+            }
             o+=" data-ev-"; o+=e.event; o+="=\""; o+=std::to_string(e.msg);
             if(!e.arg.empty()){ o+='|'; esc_attr(o,e.arg); }
             o+='"';
         }
+        if(!shortcuts.empty()){ o+=" data-ev-shortcut=\""; o+=shortcuts; o+='"'; }
         if(nd.draggable){ o+=" draggable=\"true\"";
             if(!nd.name.empty() && nd.kind!=Kind::input && nd.kind!=Kind::textarea &&
                nd.kind!=Kind::checkbox && nd.kind!=Kind::radio && nd.kind!=Kind::select){

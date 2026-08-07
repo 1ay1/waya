@@ -223,9 +223,12 @@ inline std::string client(int port) {
     "document.addEventListener('keydown',function(ev){var t=ev.target;while(t&&t!==document){var s=evattr(t,'keydown');"
     "if(s!=null&&evMatch(s,ev)){ev.preventDefault();sendev(s,ev.key);return;}t=t.parentElement;}});"
     // Global shortcuts: an element tagged [data-ev-shortcut] fires from ANYWHERE
-    // (no focus needed) — for Cmd+K palettes etc. Registered at document level.
+    // (no focus needed) — for Cmd+K palettes, game controls, etc. One element may
+    // carry MANY hotkeys, packed as a ';'-separated list of "<msg>|<key>" entries.
     "document.addEventListener('keydown',function(ev){var els=document.querySelectorAll('[data-ev-shortcut]');"
-    "for(var i=0;i<els.length;i++){var s=els[i].getAttribute('data-ev-shortcut');if(s&&evMatch('|'+s.split('|')[1],ev)){ev.preventDefault();sendev(s.split('|')[0],ev.key);return;}}},true);"
+    "for(var i=0;i<els.length;i++){var list=els[i].getAttribute('data-ev-shortcut');if(!list)continue;"
+    "var entries=list.split(';');for(var j=0;j<entries.length;j++){var s=entries[j];var bar=s.indexOf('|');if(bar<0)continue;"
+    "if(evMatch('|'+s.slice(bar+1),ev)){ev.preventDefault();sendev(s.slice(0,bar),ev.key);return;}}}},true);"
     // focus/blur are non-bubbling → capture phase.
     "document.addEventListener('focus',function(ev){var s=evattr(ev.target,'focus');if(s!=null)sendev(s,payload(ev.target)||'');},true);"
     "document.addEventListener('blur',function(ev){var s=evattr(ev.target,'blur');if(s!=null)sendev(s,payload(ev.target)||'');},true);"

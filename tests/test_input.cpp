@@ -297,6 +297,24 @@ int main() {
         CHECK(has(h, "data-drop-arg=\"col-3\""));   // AND the target id is tagged
     }
 
+    // MULTIPLE global shortcuts on ONE node coalesce into a SINGLE
+    // data-ev-shortcut attribute (regression: each hotkey emitted its own
+    // data-ev-shortcut, and since HTML attrs are unique the parser kept only the
+    // first — so a game root with space/arrows/enter only responded to one key).
+    // They must pack as a ';'-separated "<token>|<key>" list.
+    {
+        enum { A, B, C };
+        auto h = html_of(box() | hotkey(" ", A) | hotkey("ArrowUp", B) | hotkey("Enter", C));
+        std::size_t first = h.find("data-ev-shortcut=");
+        CHECK(first != std::string::npos);
+        CHECK(h.find("data-ev-shortcut=", first + 1) == std::string::npos);  // exactly one
+        CHECK(has(h, "| "));         // space key present
+        CHECK(has(h, "|ArrowUp"));
+        CHECK(has(h, "|Enter"));
+        CHECK(has(h, ";"));          // the list separator
+    }
+    { enum { X }; auto h = html_of(box() | hotkey("k", X)); CHECK(has(h, "data-ev-shortcut=\"") && has(h, "|k")); }
+
     // form + on_submit
     {
         auto f = form(input("a") | name("user"), button("go")) | on_submit(Save);
