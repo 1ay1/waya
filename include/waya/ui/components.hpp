@@ -272,7 +272,7 @@ inline NodeRef tooltip(NodeRef trigger, std::string tip, std::string place="top"
 /// frosted chrome + a pop-in entrance. Built on the core `overlay` primitive.
 template <typename Msg, typename... Cs>
 NodeRef dialog(bool open, Msg close_msg, Cs... panel_children){
-    if (!open) return box();
+    if (!open) return nothing();
     auto panel = col(std::move(panel_children)...)
         | gap(16) | pad(28) | round(20)
         | detail::raw_css("background", "var(--wa-surface, #141b2e)")

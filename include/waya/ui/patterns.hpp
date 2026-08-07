@@ -305,4 +305,64 @@ NodeRef hero_section(std::string headline, std::string subhead = "", Actions... 
     ) | gap(24) | items_center | pad_y(48) | w_full;
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// App shells — the sidebar/dashboard layout, in one call. The sidebar collapses
+// on phones (only_desktop) so the content goes full-width; the content column
+// scrolls independently of the pinned rail.
+// ───────────────────────────────────────────────────────────────────────
+
+/// `sidebar_item(icon, "Label", active, msg)` — a nav row for a dashboard rail:
+/// icon + label, highlighted when active, keyboard-reachable.
+template <typename Msg>
+NodeRef sidebar_item(std::string ico, std::string label, bool active, Msg msg){
+    auto n = row(icon(ico, 18) | (active ? fg_text : fg_muted),
+                 text(std::move(label)) | (active ? fg_text : fg_muted)
+                     | detail::raw_css("font-size","14px") | (active ? semibold : medium))
+        | gap(12) | items_center | pad_x(12) | pad_y(10) | round(9) | pointer
+        | role("button") | tab_index(0) | tap(msg)
+        | transition("background-color .15s ease, color .15s ease");
+    if (active) n = n | detail::raw_css("background","color-mix(in srgb, var(--wa-primary,#6d7cff) 14%, transparent)");
+    else n = n | on(Hover, detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.04))"));
+    return n;
+}
+
+/// `sidebar_shell(brand, nav_items, content)` — a full dashboard layout: a
+/// fixed, sticky sidebar (brand on top, nav below) beside a scrolling content
+/// column. The sidebar hides on phones so the app goes full-width. Wrap in your
+/// page root (`| theme(t) | bg_page`).
+inline NodeRef sidebar_shell(NodeRef brand, std::vector<NodeRef> nav_items, NodeRef content){
+    std::vector<NodeRef> rail; rail.push_back(std::move(brand));
+    rail.push_back(box() | detail::raw_css("height","8px"));
+    for (auto& it : nav_items) rail.push_back(std::move(it));
+    auto sidebar = col_(std::move(rail)) | gap(4) | pad(18) | w(240)
+        | detail::raw_css("height","100vh") | sticky_top(0)
+        | detail::raw_css("background","var(--wa-surface, #0c1019)")
+        | detail::raw_css("border-right","1px solid var(--wa-line, rgba(255,255,255,.08))")
+        | only_desktop();
+    auto main_ = box(std::move(content)) | grow() | min_w(0)
+        | pad_fluid(16, 32) | detail::raw_css("max-width","1400px");
+    return row(std::move(sidebar), std::move(main_)) | items_stretch
+        | detail::raw_css("min-height","100vh") | w_full;
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Dialogs — higher-level on top of the core `dialog()`.
+// ───────────────────────────────────────────────────────────────────────
+
+/// `confirm_dialog(open, "Title", "message", "Confirm", on_confirm, on_cancel)` —
+/// a ready-made yes/no modal: title, body, and a Cancel + primary (or danger)
+/// action bar. Nothing when closed.
+template <typename ConfirmMsg, typename CancelMsg>
+NodeRef confirm_dialog(bool open, std::string title, std::string message,
+                       std::string confirm_label, ConfirmMsg on_confirm, CancelMsg on_cancel,
+                       Variant confirm_variant = Variant::primary){
+    return dialog(open, on_cancel,
+        text(std::move(title)) | fg_text | detail::raw_css("font-size","18px") | weight(Weight::bold),
+        text(std::move(message)) | fg_muted | detail::raw_css("font-size","14px") | leading(1.6f),
+        row(box() | grow(),
+            button("Cancel", on_cancel, Variant::secondary),
+            button(std::move(confirm_label), on_confirm, confirm_variant)) | gap(10) | items_center
+            | detail::raw_css("padding-top","8px"));
+}
+
 } // namespace waya::ui
