@@ -14,10 +14,63 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# ── The library (header-only for now) ───────────────────────────────────────
+# ── The library: two concerns, one umbrella ─────────────────────────────────
+# waya is an SSR/UI-rendering engine. The VIEW layer (node/dom/diff/layout/
+# sugar — templated on the app's Program) is header-only and lives in the
+# INTERFACE target `waya_dsl`: a consumer that only renders to an HTML string
+# pays zero socket/stream compile cost. The RUNTIME (sockets, accept loop,
+# sessions, HTTP/WS transport) is a SEPARATED CONCERN compiled ONCE into the
+# STATIC target `waya_runtime`, behind a type-erased façade so no app template
+# ever drags the transport through a header. `waya::waya` is the umbrella that
+# links both, so existing `target_link_libraries(app PRIVATE waya::waya)` is
+# unchanged. (Mirrors maya's compiled-lib layout.)
+
+# The pure, header-only view/DSL engine.
+add_library(waya_dsl INTERFACE)
+add_library(waya::dsl ALIAS waya_dsl)
+target_include_directories(waya_dsl INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+
+# The compiled runtime — sources are added here as non-templated code moves out
+# of the headers into src/. Empty is legal (an OBJECT-less STATIC lib) until the
+# first .cpp lands; kept explicit (not GLOB) like maya's MAYA_LIB_SOURCES.
+set(WAYA_RUNTIME_SOURCES
+    # src/net/http.cpp
+    # src/net/ws.cpp
+    # src/json.cpp
+    # src/surface/http_util.cpp
+    # src/surface/session.cpp
+    # src/surface/hub.cpp
+    # src/surface/pool.cpp
+    # src/surface/runtime.cpp
+)
+if(WAYA_RUNTIME_SOURCES)
+    add_library(waya_runtime STATIC ${WAYA_RUNTIME_SOURCES})
+else()
+    # No sources yet: a header-only shim so linking waya::runtime is always valid.
+    add_library(waya_runtime INTERFACE)
+endif()
+add_library(waya::runtime ALIAS waya_runtime)
+# C++26 module scanning is pure overhead here and has bitten maya with
+# nondeterministic rebuilds — waya uses no modules, so turn it off.
+if(NOT TARGET waya_runtime OR NOT WAYA_RUNTIME_SOURCES)
+else()
+    set_target_properties(waya_runtime PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+endif()
+
+# waya_runtime is the ONE target that must see the sockets/transport concern; it
+# builds on the view engine.
+if(WAYA_RUNTIME_SOURCES)
+    target_link_libraries(waya_runtime PUBLIC waya_dsl)
+else()
+    target_link_libraries(waya_runtime INTERFACE waya_dsl)
+endif()
+
+# The umbrella: view engine + runtime. This is what apps link.
 add_library(waya INTERFACE)
 add_library(waya::waya ALIAS waya)
-
+target_link_libraries(waya INTERFACE waya_dsl waya_runtime)
 target_include_directories(waya INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
@@ -31,10 +84,10 @@ target_include_directories(waya INTERFACE
 # and otherwise inject the raw standard flag ourselves. Either path lands on
 # C++26; neither can abort configuration.
 if("cxx_std_26" IN_LIST CMAKE_CXX_KNOWN_FEATURES)
-    target_compile_features(waya INTERFACE cxx_std_26)
+    target_compile_features(waya_dsl INTERFACE cxx_std_26)
 else()
     if(MSVC)
-        target_compile_options(waya INTERFACE /std:c++latest)
+        target_compile_options(waya_dsl INTERFACE /std:c++latest)
     else()
         # -std=c++26 on compilers that spell it that way, -std=c++2c on the
         # ones that only know the pre-ratification name (Apple clang, older
@@ -42,9 +95,9 @@ else()
         include(CheckCXXCompilerFlag)
         check_cxx_compiler_flag("-std=c++26" WAYA_HAS_STD_CXX26)
         if(WAYA_HAS_STD_CXX26)
-            target_compile_options(waya INTERFACE -std=c++26)
+            target_compile_options(waya_dsl INTERFACE -std=c++26)
         else()
-            target_compile_options(waya INTERFACE -std=c++2c)
+            target_compile_options(waya_dsl INTERFACE -std=c++2c)
         endif()
     endif()
 endif()
@@ -53,7 +106,7 @@ endif()
 # connection so a single open socket can't block the server. Link Threads for
 # any consumer that pulls it in.
 find_package(Threads REQUIRED)
-target_link_libraries(waya INTERFACE Threads::Threads)
+target_link_libraries(waya_dsl INTERFACE Threads::Threads)
 
 # ── Optional runtime features ───────────────────────────────────────
 # TLS enables HTTPS in Cmd::fetch/post (real external APIs). Off by default so
@@ -61,16 +114,16 @@ target_link_libraries(waya INTERFACE Threads::Threads)
 option(WAYA_TLS "Enable HTTPS in the HTTP client (requires OpenSSL)" OFF)
 if(WAYA_TLS)
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(waya INTERFACE OpenSSL::SSL OpenSSL::Crypto)
-    target_compile_definitions(waya INTERFACE WAYA_TLS)
+    target_link_libraries(waya_dsl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(waya_dsl INTERFACE WAYA_TLS)
 endif()
 
 # GZIP compresses the SSR first paint (smaller first byte). Requires zlib.
 option(WAYA_GZIP "Gzip-compress the SSR HTML (requires zlib)" OFF)
 if(WAYA_GZIP)
     find_package(ZLIB REQUIRED)
-    target_link_libraries(waya INTERFACE ZLIB::ZLIB)
-    target_compile_definitions(waya INTERFACE WAYA_GZIP)
+    target_link_libraries(waya_dsl INTERFACE ZLIB::ZLIB)
+    target_compile_definitions(waya_dsl INTERFACE WAYA_GZIP)
 endif()
 
 # ── Developer warning / sanitizer options ───────────────────────────────────
@@ -155,6 +208,29 @@ if(WAYA_BUILD_EXAMPLES)
         list(APPEND WAYA_EXAMPLE_TARGETS matrix)
     endif()
 
+    # Multi-file example: examples/airwave/ — an online radio player. Real live
+    # <audio> streams, a station browser, now-playing bar, animated visualizer.
+    # One component per header; app.cpp composes them.
+    file(GLOB WAYA_AIRWAVE_SRCS CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/examples/airwave/*.cpp")
+    if(WAYA_AIRWAVE_SRCS)
+        add_executable(airwave ${WAYA_AIRWAVE_SRCS})
+        target_link_libraries(airwave PRIVATE waya::waya waya_dev_flags)
+        list(APPEND WAYA_EXAMPLE_TARGETS airwave)
+    endif()
+
+    # Multi-file example: examples/autorace/ — a fully-playable homage to Mattel
+    # Auto Race (1976), the first handheld electronic game. A red-LED grid
+    # racer: steer between lanes, shift gears, dodge oncoming cars. Real
+    # keyboard controls via global hotkeys + a server game-loop tick.
+    file(GLOB WAYA_AUTORACE_SRCS CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/examples/autorace/*.cpp")
+    if(WAYA_AUTORACE_SRCS)
+        add_executable(autorace ${WAYA_AUTORACE_SRCS})
+        target_link_libraries(autorace PRIVATE waya::waya waya_dev_flags)
+        list(APPEND WAYA_EXAMPLE_TARGETS autorace)
+    endif()
+
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
     # Uses the first discovered example as the subject.
     if(WAYA_BUILD_TESTS AND UNIX AND WAYA_EXAMPLE_TARGETS)
@@ -180,7 +256,7 @@ endif()
 # ── Install ─────────────────────────────────────────────────────────────────
 include(GNUInstallDirs)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(TARGETS waya EXPORT wayaTargets)
+install(TARGETS waya waya_dsl waya_runtime EXPORT wayaTargets)
 install(EXPORT wayaTargets
     NAMESPACE waya::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/waya)
