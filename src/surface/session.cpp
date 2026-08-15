@@ -163,6 +163,61 @@ void Pool::worker() {
     }
 }
 
+// ── Scheduler ─────────────────────────────────────────────────
+long long Scheduler::now_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+Scheduler::Scheduler() {
+    std::thread([this]{ loop(); }).detach();
+}
+void Scheduler::after(long delay_ms, std::function<void()> fn,
+                      std::shared_ptr<std::atomic<bool>> alive) {
+    long long due = now_us() + (long long)delay_ms * 1000;
+    { std::lock_guard<std::mutex> l(m_);
+      heap_.push(Task{ due, 0, std::move(fn), std::move(alive), seq_++ }); }
+    cv_.notify_one();
+}
+void Scheduler::every(long interval_ms, std::function<void()> fn,
+                      std::shared_ptr<std::atomic<bool>> run) {
+    if (interval_ms <= 0) return;
+    long long due = now_us() + (long long)interval_ms * 1000;
+    { std::lock_guard<std::mutex> l(m_);
+      heap_.push(Task{ due, interval_ms, std::move(fn), std::move(run), seq_++ }); }
+    cv_.notify_one();
+}
+void Scheduler::loop() {
+    for (;;) {
+        std::unique_lock<std::mutex> l(m_);
+        if (heap_.empty()) { cv_.wait(l, [this]{ return !heap_.empty(); }); }
+        // Wait until the earliest task is due (or a sooner one arrives / wakes us).
+        long long due = heap_.top().due_us;
+        long long now = now_us();
+        if (due > now) {
+            cv_.wait_for(l, std::chrono::microseconds(due - now));
+            continue;   // re-check: the heap top may have changed
+        }
+        Task t = heap_.top(); heap_.pop();
+        l.unlock();
+
+        bool cancelled = t.run && !t.run->load();
+        if (!cancelled) {
+            // Run the callback on the Pool so a slow effect never delays the clock.
+            auto fn = t.fn;
+            Pool::instance().submit([fn]{ fn(); });
+        }
+        // Re-arm a repeating task (unless cancelled). Anchor the next fire to the
+        // scheduled time, not now, so the cadence doesn't drift.
+        if (t.interval_ms > 0 && !cancelled) {
+            std::lock_guard<std::mutex> l2(m_);
+            long long next = t.due_us + (long long)t.interval_ms * 1000;
+            long long floor = now_us();
+            if (next < floor) next = floor;            // fell behind (paused/overloaded): catch up
+            heap_.push(Task{ next, t.interval_ms, std::move(t.fn), std::move(t.run), seq_++ });
+        }
+    }
+}
+
 // ── SessionStore ────────────────────────────────────────────────────────────
 long SessionStore::now() {
     return (long)std::chrono::duration_cast<std::chrono::seconds>(

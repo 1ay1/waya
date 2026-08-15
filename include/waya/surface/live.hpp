@@ -164,10 +164,12 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
         [&](const typename Cmd<Msg>::After& a) {
             std::any m = a.msg; long ms = a.delay.count();
             std::weak_ptr<Session> ws_ = s;
-            std::thread([ws_, ms, m = std::move(m)]{
-                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            // One heap entry on the shared Scheduler — not a fresh sleeping thread
+            // per delayed message (a Cmd::after on every keystroke would spawn a
+            // thread per keystroke). The push runs on the Pool when due.
+            detail::Scheduler::instance().after(ms, [ws_, m = std::move(m)]{
                 if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(m);
-            }).detach();
+            });
         },
         [&](const typename Cmd<Msg>::Task& t) {
             auto work = t.work; std::weak_ptr<Session> ws_ = s;
@@ -276,15 +278,12 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
         std::uint64_t key = keyof(wanted[i]);
         auto run = std::make_shared<std::atomic<bool>>(true);
         std::weak_ptr<Session> ws_ = s;
-        std::thread([ws_, ms, m, run]{
-            while (*run) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-                if (!*run) break;
-                auto sp = ws_.lock();
-                if (!sp || !sp->alive) break;
-                sp->push_msg(m);
-            }
-        }).detach();
+        // One heap entry on the shared Scheduler, cancelled via `run` — not a
+        // dedicated sleeping thread per timer per session (5 timers x 1000
+        // sessions used to be 5000 OS threads). `run` flips false on reconcile.
+        detail::Scheduler::instance().every(ms, [ws_, m]{
+            if (auto sp = ws_.lock(); sp && sp->alive) sp->push_msg(m);
+        }, run);
         next.push_back({ms, key, std::move(m), run});
     }
     s->timers = std::move(next);

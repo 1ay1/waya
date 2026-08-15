@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -130,6 +131,50 @@ private:
     std::mutex m_;
     std::condition_variable cv_;
     std::deque<std::function<void()>> jobs_;
+};
+
+/// A single-threaded timer scheduler: ONE background thread servicing a min-heap
+/// of due times, instead of a dedicated std::thread per Cmd::after and per
+/// subscription interval. That old design spawned O(sessions x timers) sleeping
+/// OS threads — 5 timers across 1000 sessions = 5000 threads (~40 MB of stacks
+/// + scheduler thrash), and a Cmd::after on every keystroke spawned a thread per
+/// keystroke. Here every timed effect is a heap entry; the callbacks run on the
+/// Pool (so a slow callback never delays the clock). Cancellation is a shared
+/// atomic flag checked at fire time — O(1), no heap removal needed.
+class Scheduler {
+public:
+    static Scheduler& instance() { static Scheduler s; return s; }
+
+    /// Run `fn` once after `delay_ms`. If `alive` is given and false at fire
+    /// time, the callback is skipped (a dead session's timers self-cancel).
+    void after(long delay_ms, std::function<void()> fn,
+               std::shared_ptr<std::atomic<bool>> alive = {});
+
+    /// Run `fn` every `interval_ms` until `run` flips to false. `run` is the
+    /// same cancel flag the caller keeps, so stopping a subscription is O(1).
+    void every(long interval_ms, std::function<void()> fn,
+               std::shared_ptr<std::atomic<bool>> run);
+
+private:
+    Scheduler();
+    void loop();
+    struct Task {
+        long long due_us;                              // absolute fire time (steady, microseconds)
+        long interval_ms;                              // 0 = one-shot; >0 = repeating
+        std::function<void()> fn;
+        std::shared_ptr<std::atomic<bool>> run;        // cancel flag (may be null)
+        std::uint64_t seq;                             // tiebreaker for a stable heap order
+    };
+    struct Later {                                      // min-heap comparator (earliest due first)
+        bool operator()(const Task& a, const Task& b) const {
+            return a.due_us != b.due_us ? a.due_us > b.due_us : a.seq > b.seq;
+        }
+    };
+    static long long now_us();
+    std::mutex m_;
+    std::condition_variable cv_;
+    std::priority_queue<Task, std::vector<Task>, Later> heap_;
+    std::uint64_t seq_ = 0;
 };
 
 /// Retained models for session resumption. When a connection drops, we stash the

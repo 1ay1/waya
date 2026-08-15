@@ -408,6 +408,40 @@ int main() {
         for (auto& t : s->timers) *t.run = false;
     }
 
+    // ── Scheduler: ONE thread services all timed effects (after + every) ────
+    //    replaces the old per-Cmd::after / per-subscription-timer std::thread,
+    //    which spawned O(sessions x timers) sleeping OS threads.
+    {
+        using namespace std::chrono_literals;
+        auto& S = detail::Scheduler::instance();
+
+        // after() fires exactly once, roughly on time.
+        std::atomic<int> once{0};
+        S.after(40, [&]{ once++; });
+        std::this_thread::sleep_for(120ms);
+        CHECK(once.load() == 1);
+
+        // every() repeats until its run flag is cleared, and STAYS stopped.
+        std::atomic<int> ticks{0};
+        auto run = std::make_shared<std::atomic<bool>>(true);
+        S.every(25, [&]{ ticks++; }, run);
+        std::this_thread::sleep_for(130ms);
+        run->store(false);
+        int at_cancel = ticks.load();
+        CHECK(at_cancel >= 3);                          // fired several times
+        std::this_thread::sleep_for(90ms);
+        CHECK(ticks.load() <= at_cancel + 1);           // cancel actually stops it
+
+        // scale: many timers share the one scheduler thread (not N threads).
+        std::atomic<int> total{0};
+        std::vector<std::shared_ptr<std::atomic<bool>>> runs;
+        for (int i = 0; i < 500; ++i){ auto r = std::make_shared<std::atomic<bool>>(true);
+            runs.push_back(r); S.every(20, [&]{ total++; }, r); }
+        std::this_thread::sleep_for(90ms);
+        for (auto& r : runs) r->store(false);
+        CHECK(total.load() >= 500);                     // all 500 fired at least once
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
