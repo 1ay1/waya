@@ -235,6 +235,21 @@ int main() {
         check(detail::origin_allowed<Open>(req("https://evil.com")), "origin: no allowlist => allow all (dev)");
     }
 
+    // ── /metrics: Prometheus exposition format + live counters ────────────
+    {
+        using namespace waya::surface;
+        long long before = detail::metrics().http_requests.load();
+        detail::metrics().http_requests.fetch_add(1);         // simulate a served request
+        detail::metrics().ws_sessions_live.store(3);
+        std::string m = detail::metrics_text();
+        check(m.find("# TYPE waya_http_requests_total counter") != std::string::npos,
+              "metrics: Prometheus TYPE line present");
+        check(m.find("waya_ws_sessions_live 3") != std::string::npos,
+              "metrics: live-session gauge reflects the value");
+        check(m.find("waya_uptime_seconds") != std::string::npos, "metrics: uptime gauge present");
+        check(detail::metrics().http_requests.load() == before + 1, "metrics: request counter incremented");
+    }
+
     std::cout << "test_net: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

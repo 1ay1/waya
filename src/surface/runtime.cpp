@@ -331,6 +331,7 @@ int serve(const ServeConfig& cfg,
                     else if (sa.ss_family == AF_INET6)
                         ::inet_ntop(AF_INET6, &((sockaddr_in6*)&sa)->sin6_addr, ipbuf, sizeof(ipbuf));
                     if (!ip_allow(ipbuf)) {
+                        detail::metrics().rate_limited.fetch_add(1, std::memory_order_relaxed);
                         static const char* toomany =
                             "HTTP/1.1 429 Too Many Requests\r\n"
                             "Retry-After: 1\r\nConnection: close\r\nContent-Length: 18\r\n\r\n"

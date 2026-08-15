@@ -435,6 +435,8 @@ void run_ws_session(int conn, std::string req_str, int port,
 
         auto s = std::make_shared<Session>();
         s->conn = conn;
+        detail::metrics().ws_sessions_total.fetch_add(1, std::memory_order_relaxed);
+        detail::metrics().ws_sessions_live.fetch_add(1, std::memory_order_relaxed);
 
         // Session id for resumption: the client sends &s=<opaque> on the WS URL.
         std::string sid;
@@ -710,6 +712,7 @@ void run_ws_session(int conn, std::string req_str, int port,
             detail::SessionStore::instance().save<Model>(sid, model);
         s->shutdown_io();
         if (reader.joinable()) reader.join();
+        detail::metrics().ws_sessions_live.fetch_sub(1, std::memory_order_relaxed);
         detail::memo_reset();   // don't leak this session's cache onto a recycled thread
         ::close(conn);
         return;
@@ -758,6 +761,20 @@ bool serve_http(int conn, std::string_view req, int port,
     if (route == "/healthz" || route.rfind("/healthz?",0)==0) {
         auto r = http_response("200 OK", "text/plain; charset=utf-8", "ok", {}, head_only, false, keep);
         send_all(conn, r.data(), r.size()); access_log(method, route, 200); return keep;
+    }
+
+    // Prometheus metrics — request/error totals, live sessions, uptime. Gated:
+    // exposed only when WAYA_METRICS is set or the app opts in via
+    // `static bool expose_metrics()` (metrics can leak traffic shape, so it's
+    // off by default; scrape it on an internal network / behind auth).
+    {
+        bool metrics_on = std::getenv("WAYA_METRICS") != nullptr;
+        if constexpr (requires { P::expose_metrics(); }) metrics_on = metrics_on || P::expose_metrics();
+        if (metrics_on && (route == "/metrics" || route.rfind("/metrics?",0)==0)) {
+            auto r = http_response("200 OK", "text/plain; version=0.0.4; charset=utf-8",
+                                   detail::metrics_text(), {}, head_only, false, keep);
+            send_all(conn, r.data(), r.size()); access_log(method, route, 200); return keep;
+        }
     }
 
     if (route == "/robots.txt" || route.rfind("/robots.txt?",0)==0) {

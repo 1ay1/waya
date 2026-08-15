@@ -71,6 +71,21 @@ extern std::atomic<int> g_fd;
 /// connections and in-flight requests are allowed to finish before exit.
 extern std::atomic<bool> g_draining;
 
+/// Process-wide counters exposed at `/metrics` (Prometheus text format) for
+/// observability — request/error totals, live WebSocket sessions, and process
+/// uptime. All lock-free atomics, bumped on the hot paths. `metrics_text()`
+/// renders the current snapshot.
+struct Metrics {
+    std::atomic<long long> http_requests{0};   // total HTTP responses served
+    std::atomic<long long> http_errors{0};     // responses with status >= 500
+    std::atomic<long long> ws_sessions_total{0};  // WebSocket sessions ever opened
+    std::atomic<long long> ws_sessions_live{0};   // currently-open sessions
+    std::atomic<long long> rate_limited{0};    // connections rejected by the per-IP limiter
+};
+Metrics& metrics();
+/// Render the current metrics as a Prometheus exposition-format body.
+std::string metrics_text();
+
 /// A weak ETag for a body (FNV-1a of the bytes, quoted, W/ prefix). Lets a
 /// caching proxy revalidate the SSR page with If-None-Match -> 304.
 std::string weak_etag(std::string_view body);

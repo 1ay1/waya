@@ -1,6 +1,7 @@
 #include "waya/surface/http_util.hpp"
 
 #include <sys/socket.h>
+#include <chrono>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -288,7 +289,34 @@ std::string http_response(const char* status, const std::string& ctype,
     return h;
 }
 
+Metrics& metrics(){ static Metrics m; return m; }
+
+std::string metrics_text(){
+    static const long long start = (long long)std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    long long up = (long long)std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count() - start;
+    auto& m = metrics();
+    std::string o;
+    auto line = [&](const char* name, const char* help, const char* type, long long v){
+        o += "# HELP "; o += name; o += ' '; o += help; o += '\n';
+        o += "# TYPE "; o += name; o += ' '; o += type; o += '\n';
+        o += name; o += ' '; o += std::to_string(v); o += '\n';
+    };
+    line("waya_http_requests_total", "Total HTTP responses served.", "counter", m.http_requests.load());
+    line("waya_http_errors_total", "HTTP responses with status >= 500.", "counter", m.http_errors.load());
+    line("waya_ws_sessions_total", "WebSocket sessions ever opened.", "counter", m.ws_sessions_total.load());
+    line("waya_ws_sessions_live", "Currently-open WebSocket sessions.", "gauge", m.ws_sessions_live.load());
+    line("waya_rate_limited_total", "Connections rejected by the per-IP limiter.", "counter", m.rate_limited.load());
+    line("waya_uptime_seconds", "Seconds since the process started serving.", "gauge", up);
+    return o;
+}
+
 void access_log(std::string_view method, const std::string& path, int status){
+    // Count every response for /metrics (cheap, lock-free) — independent of the
+    // opt-in text logging below.
+    metrics().http_requests.fetch_add(1, std::memory_order_relaxed);
+    if (status >= 500) metrics().http_errors.fetch_add(1, std::memory_order_relaxed);
     static const bool on = std::getenv("WAYA_LOG") != nullptr;
     if (!on) return;
     std::time_t t = std::time(nullptr); char ts[32];
