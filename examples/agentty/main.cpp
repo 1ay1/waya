@@ -22,6 +22,7 @@
 #include "components/logo.hpp"
 #include "components/hero_background.hpp"
 #include "components/tui.hpp"
+#include "components/nav.hpp"
 
 using namespace waya::surface;
 using namespace waya::ui;
@@ -55,12 +56,11 @@ struct App {
             scroll_progress(theme.accent, theme.accent2),
 
             // ── NAV ──────────────────────────────────────────────────────────
-            site_nav("agentty", "v0.2.4",
+            //   agentty's OWN faithful top bar (brand + version pill, links,
+            //   ⌘K trigger, theme toggle, Discord + GitHub, mobile menu).
+            agentty::site_nav("v0.2.4",
                 { {"Docs", "/docs"}, {"Install", "/docs/installation"},
-                  {"Blog", "/blog"}, {"Community", "/community"} },
-                nav_cta("GitHub", "https://github.com/1ay1/agentty", false),
-                theme_toggle(),                          // one-call light/dark switch
-                nav_cta("Get started", "/docs/quick-start")),
+                  {"Manual", "/docs/interface"}, {"Blog", "/blog"}, {"Community", "/community"} }),
 
             // ── HERO ─────────────────────────────────────────────────────────
             //   app supplies its OWN logo + backdrop; the framework stays neutral.
