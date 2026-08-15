@@ -1812,6 +1812,10 @@ inline std::string jsonld(std::string type, std::vector<std::pair<std::string,st
 /// Call it at the embed site, on the node the widget returned.
 template <typename Child, typename Fn>
 inline NodeRef map_msg(NodeRef n, Fn f){
+    static_assert(std::is_invocable_v<Fn, Child>,
+        "waya: map_msg<Child>(node, f) needs f to be callable with the CHILD Msg — "
+        "f : Child -> Parent. Check that the explicit <Child> matches the message "
+        "type the widget's view actually wires (tap/on_input), and that f takes it.");
     if (!n) return n;
     auto remap = [&f](int tok){ detail::remap_token<Child>(tok, f); };
     std::function<void(Node&)> walk = [&](Node& nd){

@@ -560,6 +560,13 @@ template <typename ParentModel, typename ChildState, typename ChildUpdate,
           typename ChildMsg, typename Lift>
 auto embed_update(ParentModel model, ChildState ParentModel::* field,
                   ChildUpdate child_update, ChildMsg child_msg, Lift lift) {
+    static_assert(std::is_invocable_v<ChildUpdate, ChildState, ChildMsg>,
+        "waya: embed_update's `child_update` must be callable as "
+        "update(ChildState, ChildMsg). Check the widget's update signature and "
+        "that the ChildMsg you pass matches it.");
+    static_assert(std::is_invocable_v<Lift, ChildMsg>,
+        "waya: embed_update's `lift` must be callable with the CHILD Msg — "
+        "lift : ChildMsg -> ParentMsg (the SAME mapper you pass to map_msg).");
     auto [next_child, child_cmd] = child_update(model.*field, std::move(child_msg));
     model.*field = std::move(next_child);
     using ParentMsg = std::invoke_result_t<Lift, ChildMsg>;
