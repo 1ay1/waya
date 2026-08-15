@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -145,6 +146,40 @@ int main() {
                 std::printf("  scaling %dx rows -> %.1fx time (O(n): linear, was O(n\xc2\xb2): ~%dx)\n",
                             n/prev_n, us/prev_us, (n/prev_n)*(n/prev_n));
             prev_us = us; prev_n = n;
+        }
+    }
+
+    // ── Keyed reorder is O(n log n) + minimal ops ───────────────────
+    // A keyed list that reorders (drag-sort, live rank shuffle) is reconciled
+    // via a longest-increasing-subsequence: the maximal already-ordered set
+    // never moves, so moving K rows emits ~K move ops — not the O(n) cascade a
+    // naive left-to-right reconcile produces. Verify BOTH the op count and the
+    // time for a realistic few-row reorder of a big list.
+    {
+        using clock = std::chrono::steady_clock;
+        auto keyed = [](const std::vector<int>& order){
+            std::vector<NodeRef> rs; rs.reserve(order.size());
+            for (int id : order) rs.push_back(text("Row "+std::to_string(id)) | key("k"+std::to_string(id)));
+            return col_(std::move(rs));
+        };
+        std::printf("\n=== core: keyed reorder (move K rows of a 2000-row list) ===\n");
+        const int n = 2000;
+        std::vector<int> base(n); for (int i=0;i<n;i++) base[i]=i;
+        auto na = keyed(base);
+        std::mt19937 g(7);
+        for (int kmoves : {1, 5, 20}){
+            std::vector<int> v = base;
+            for (int j=0;j<kmoves;j++){
+                int from=g()%v.size(); int val=v[from]; v.erase(v.begin()+from);
+                int to=g()%(v.size()+1); v.insert(v.begin()+to,val);
+            }
+            auto nb = keyed(v);
+            std::size_t ops=0; auto t0=clock::now();
+            for (int r=0;r<100;r++) ops = diff(na, nb).size();
+            auto t1=clock::now();
+            double us = std::chrono::duration<double,std::micro>(t1-t0).count()/100;
+            std::printf("  move %2d rows: %6.0f us, %zu ops  (LIS: ~K ops, not the O(n) cascade)\n",
+                        kmoves, us, ops);
         }
     }
     std::printf("\n");

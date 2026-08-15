@@ -291,6 +291,34 @@ int main() {
     CHECK(roundtrip(keyed_list({"x"}),         keyed_list({}) ));             // clear
     CHECK(roundtrip(keyed_list({}),            keyed_list({"x","y"}) ));      // populate
 
+    // more reorder shapes (all must round-trip exactly).
+    CHECK(roundtrip(keyed_list({"a","b","c","d","e"}), keyed_list({"e","a","b","c","d"}))); // rotate
+    CHECK(roundtrip(keyed_list({"a","b","c","d","e"}), keyed_list({"a","c","e","b","d"}))); // interleave
+    CHECK(roundtrip(keyed_list({"a","b","c","d"}),     keyed_list({"d","x","b","c","a"}))); // move+insert
+    CHECK(roundtrip(keyed_list({"a","b","c","d","e"}), keyed_list({"b","d"})));             // reorder+shrink
+
+    // MINIMALITY: the LIS reconcile must emit ~K move ops for K displaced rows,
+    // NOT the O(n) cascade a naive left-to-right reconcile produces. Count the
+    // structural (move/insert/remove) ops on a 100-row list with one row moved.
+    {
+        auto count_struct = [](const Patch& p){
+            std::size_t n = 0;
+            for (auto& op : p) if (op.op==Op::move || op.op==Op::insert || op.op==Op::remove) ++n;
+            return n;
+        };
+        std::vector<std::string> base; for (int i=0;i<100;i++) base.push_back("r"+std::to_string(i));
+        // move the last row to the front: one displaced row.
+        auto moved = base; moved.insert(moved.begin(), moved.back()); moved.pop_back();
+        auto p = diff(keyed_list(base), keyed_list(moved));
+        CHECK(roundtrip(keyed_list(base), keyed_list(moved)));
+        CHECK(count_struct(p) <= 2);          // one move (LIS keeps the other 99 put)
+        // swap two adjacent rows: at most two moves, never a 100-op cascade.
+        auto swapped = base; std::swap(swapped[40], swapped[41]);
+        auto p2 = diff(keyed_list(base), keyed_list(swapped));
+        CHECK(roundtrip(keyed_list(base), keyed_list(swapped)));
+        CHECK(count_struct(p2) <= 2);
+    }
+
     std::cout << "test_diff_prop: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

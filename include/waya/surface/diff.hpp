@@ -188,51 +188,112 @@ inline void diff_children_positional(const Node& a, const Node& b,
 }
 
 /// Keyed child diff — match by `key`, emit move/insert/remove so a reordered
-/// list preserves each row's DOM. The plan is computed against a running model
-/// of the child order that mirrors exactly what the client applies, op by op,
-/// so `from`/`to` indices are always valid at apply time.
+/// list preserves each row's DOM. O(n log n): a longest-increasing-subsequence
+/// over the surviving nodes' old positions identifies the maximal set that is
+/// ALREADY in the right relative order (they never move); every other node is
+/// moved/inserted into place exactly once. This both minimises the number of
+/// move ops on the wire AND kills the old O(n²) linear-scan reconcile.
+///
+/// The op semantics match the client's applier (surface/client.hpp): `move
+/// [from,to]` detaches the child at `from` and reinserts before the child now
+/// at `to`; `insert_at [to,html]` inserts before the child at `to`. We process
+/// targets RIGHT-TO-LEFT so a just-placed successor is a stable reference point,
+/// and drive every index off one running model array (`cur`) that mirrors the
+/// client exactly — so `from`/`to` are always valid at apply time.
 inline void diff_children_keyed(const Node& a, const Node& b,
                                 const std::string& path, Patch& out) {
-    // Where does each old key currently live, and its node (for in-place diff)?
+    const std::size_t na = a.kids.size(), nb = b.kids.size();
+
+    // old key -> its index in a.kids (+ the node, for in-place diff).
     std::unordered_map<std::string, std::size_t> old_pos;
-    for (std::size_t i = 0; i < a.kids.size(); ++i) old_pos[a.kids[i]->key] = i;
-    std::unordered_map<std::string, bool> want;
-    for (auto& c : b.kids) want[c->key] = true;
+    old_pos.reserve(na * 2);
+    for (std::size_t i = 0; i < na; ++i) old_pos[a.kids[i]->key] = i;
+    std::unordered_set<std::string> want;
+    want.reserve(nb * 2);
+    for (auto& c : b.kids) want.insert(c->key);
 
-    // `cur` is the client's child order as we apply ops. Start from old order.
+    // `cur` models the client's child order as we mutate it. Start = old order.
+    // 1) Remove old keys absent from the new list (back-to-front so indices stay
+    //    valid), and diff-in-place the survivors against their new selves.
     std::vector<std::string> cur;
-    cur.reserve(a.kids.size());
-    std::unordered_map<std::string, NodeRef> old_node;
-    for (auto& c : a.kids) { cur.push_back(c->key); old_node[c->key] = c; }
-
-    // 1) Remove old keys not present in the new list (back-to-front indices are
-    //    computed live from `cur`, so each remove keeps the rest valid).
-    for (std::size_t i = cur.size(); i-- > 0; ) {
-        if (!want.count(cur[i])) {
+    cur.reserve(na);
+    for (std::size_t i = na; i-- > 0; ) {
+        if (!want.count(a.kids[i]->key))
             out.push_back({Op::remove, child(path, i)});
-            cur.erase(cur.begin() + i);
-        }
+    }
+    for (std::size_t i = 0; i < na; ++i)
+        if (want.count(a.kids[i]->key)) cur.push_back(a.kids[i]->key);
+
+    // 2) For each target position, the OLD index of that key (or -1 if new).
+    //    Also diff each surviving node in place now (content patches are order-
+    //    independent of the structural moves below).
+    std::vector<long> new_to_old(nb);
+    for (std::size_t t = 0; t < nb; ++t) {
+        const NodeRef& bc = b.kids[t];
+        auto it = old_pos.find(bc->key);
+        if (it == old_pos.end()) new_to_old[t] = -1;
+        else { new_to_old[t] = (long)it->second;
+               diff_node(*a.kids[it->second], *bc, child(path, t), bc, out); }
     }
 
-    // 2) Walk the target order. For each key: insert if new, else move it into
-    //    place from wherever it is now, then diff it in place.
-    for (std::size_t target = 0; target < b.kids.size(); ++target) {
-        const NodeRef& bc = b.kids[target];
-        const std::string& k = bc->key;
-        auto it = std::find(cur.begin(), cur.end(), k);
-        if (it == cur.end()) {
-            // New key: insert its subtree at `target`.
-            out.push_back({Op::insert, path, std::to_string(target), {}, bc, -1, (int)target});
-            cur.insert(cur.begin() + target, k);
+    // 3) LIS over the surviving old-indices: the target positions in the LIS are
+    //    already in correct relative order and must NOT move. `in_lis[t]` marks
+    //    them. (New nodes, new_to_old==-1, are never in the LIS.)
+    std::vector<char> in_lis(nb, 0);
+    {
+        // patience sort tracking predecessors; `tails[k]` = target-index whose
+        // old-index ends the best length-(k+1) increasing run so far.
+        std::vector<std::size_t> tails;         // indices into new_to_old
+        std::vector<long> prev(nb, -1);
+        tails.reserve(nb);
+        for (std::size_t t = 0; t < nb; ++t) {
+            if (new_to_old[t] < 0) continue;    // skip fresh nodes
+            long v = new_to_old[t];
+            // binary search: first tail whose old-index >= v (strict LIS).
+            std::size_t lo = 0, hi = tails.size();
+            while (lo < hi) { std::size_t mid = (lo + hi) / 2;
+                if (new_to_old[tails[mid]] < v) lo = mid + 1; else hi = mid; }
+            prev[t] = lo > 0 ? (long)tails[lo - 1] : -1;
+            if (lo == tails.size()) tails.push_back(t); else tails[lo] = t;
+        }
+        for (long t = tails.empty() ? -1 : (long)tails.back(); t >= 0; t = prev[t])
+            in_lis[(std::size_t)t] = 1;
+    }
+
+    // 4) Walk targets RIGHT-TO-LEFT, placing each displaced node immediately
+    //    BEFORE its successor (target ti+1, already finalised this pass), or at
+    //    the end for the last target. Anchoring by the successor — not an
+    //    absolute index — keeps the op sequence correct regardless of how many
+    //    elements to the left are still unplaced. LIS nodes are already in the
+    //    right relative order and are skipped, so ONLY genuinely-displaced nodes
+    //    (and fresh inserts) touch the model `cur` — which is why the common
+    //    few-row reorder is cheap even though `cur` is a plain vector.
+    for (std::size_t ti = nb; ti-- > 0; ) {
+        const std::string& k = b.kids[ti]->key;
+        bool fresh = new_to_old[ti] < 0;
+        if (!fresh && in_lis[ti]) continue;            // already correctly placed
+
+        // The anchor is the successor's CURRENT index in `cur`, or end-of-list.
+        std::size_t anchor = cur.size();
+        if (ti + 1 < nb) {
+            const std::string& sk = b.kids[ti + 1]->key;
+            for (std::size_t i = 0; i < cur.size(); ++i) if (cur[i] == sk) { anchor = i; break; }
+        }
+
+        if (fresh) {
+            out.push_back({Op::insert, path, std::to_string(anchor), {}, b.kids[ti], -1, (int)anchor});
+            cur.insert(cur.begin() + anchor, k);
         } else {
-            std::size_t from = (std::size_t)(it - cur.begin());
-            if (from != target) {
-                out.push_back({Op::move, path, {}, {}, {}, (int)from, (int)target});
+            std::size_t from = 0;
+            for (std::size_t i = 0; i < cur.size(); ++i) if (cur[i] == k) { from = i; break; }
+            // Erasing `from` first shifts the anchor left by one when the anchor
+            // sat to its right.
+            std::size_t to = (from < anchor) ? anchor - 1 : anchor;
+            if (from != to) {
+                out.push_back({Op::move, path, {}, {}, {}, (int)from, (int)to});
                 cur.erase(cur.begin() + from);
-                cur.insert(cur.begin() + target, k);
+                cur.insert(cur.begin() + to, k);
             }
-            // Diff the (now correctly placed) node against its old self.
-            diff_node(*old_node[k], *bc, child(path, target), bc, out);
         }
     }
 }
