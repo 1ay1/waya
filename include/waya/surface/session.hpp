@@ -197,6 +197,11 @@ public:
         if (id.empty()) return;
         std::lock_guard<std::mutex> l(m_);
         sweep_locked();
+        // Hard size cap: TTL alone bounds nothing if a client cycles unique
+        // session ids faster than they expire (a memory-DoS). Past max_entries,
+        // evict the OLDEST retained models so the store can't grow without
+        // bound — a resumed session that lost its slot just re-inits, no crash.
+        if (store_.size() >= (std::size_t)max_entries) evict_oldest_locked();
         store_[id] = Entry{ std::any{std::move(model)}, now() };
     }
 
@@ -220,8 +225,16 @@ private:
     struct Entry { std::any model; long ts; };
     static long now();
     void sweep_locked();
+    void evict_oldest_locked();
     std::mutex m_;
+    std::size_t max_entries = 50000;   // absolute cap; oldest evicted past this
     std::unordered_map<std::string, Entry> store_;
+
+    SessionStore(){
+        if (const char* e = std::getenv("WAYA_SESSION_CAP")){
+            long v = std::atol(e); if (v > 0) max_entries = (std::size_t)v;
+        }
+    }
 };
 
 }  // namespace detail

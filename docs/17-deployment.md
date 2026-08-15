@@ -28,6 +28,7 @@ Runtime knobs are environment variables (no config file):
 | `WAYA_CONN_RATE` | Per-IP new-connection rate, conns/sec (default 20). `0` disables (behind a trusted LB that already limits). |
 | `WAYA_CONN_BURST` | Per-IP connection burst allowance (default 40). |
 | `WAYA_MAX_CONN` | Global live-connection ceiling (default 10000); excess gets a fast `503`. |
+| `WAYA_SESSION_CAP` | Max retained models for reconnect-resume (default 50000); past it the oldest are evicted. Bounds memory under a unique-session-id flood. |
 | `WAYA_METRICS` | Set to expose `GET /metrics` (Prometheus). Off by default (leaks traffic shape). |
 
 ## HTTP hardening

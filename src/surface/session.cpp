@@ -243,5 +243,18 @@ void SessionStore::sweep_locked() {
         it = (it->second.ts < cutoff) ? store_.erase(it) : std::next(it);
 }
 
+void SessionStore::evict_oldest_locked() {
+    // Drop ~10% of the store (at least one) by oldest timestamp, so we amortise
+    // the cost instead of doing an O(n) scan on every single save at the cap.
+    if (store_.empty()) return;
+    std::size_t drop = std::max<std::size_t>(1, store_.size() / 10);
+    std::vector<std::pair<long, std::string>> by_age;
+    by_age.reserve(store_.size());
+    for (auto& [id, e] : store_) by_age.emplace_back(e.ts, id);
+    std::partial_sort(by_age.begin(), by_age.begin() + drop, by_age.end(),
+                      [](auto& a, auto& b){ return a.first < b.first; });
+    for (std::size_t i = 0; i < drop; ++i) store_.erase(by_age[i].second);
+}
+
 } // namespace detail
 } // namespace waya::surface
