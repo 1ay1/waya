@@ -769,7 +769,16 @@ bool serve_http(int conn, std::string_view req, int port,
         "<meta name=\"theme-color\" content=\"" + bg + "\">"
         "<title>" + [&]{ std::string t; std::string src = mt.title.empty() ? std::string(page_title?page_title:"") : mt.title; for(char c:src){ if(c=='<')t+="&lt;"; else if(c=='>')t+="&gt;"; else if(c=='&')t+="&amp;"; else t+=c; } return t; }() + "</title>"
         + head_seo
-        + assets().head_html() +
+        + assets().head_html()
+        // App-provided <head> HTML: analytics snippets (GA/Plausible/PostHog),
+        // font <link>s, site-verification <meta>s. Optional static P::head()
+        // returning a raw string; spliced verbatim into <head> (it's the app's
+        // own trusted markup, like markup()). Runs per request so it can vary
+        // by nothing here, but it's a stable string in practice.
+        + [&]() -> std::string {
+              if constexpr (requires { P::head(); }) return std::string(P::head());
+              else return std::string{};
+          }() +
         "<style>"
         "*{box-sizing:border-box;margin:0;padding:0}"
         // Root fills the viewport; overscroll is contained on html itself so the

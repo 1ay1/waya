@@ -140,6 +140,12 @@ int main() {
         CHECK(has(js, "location.protocol"));            // scheme derived from the page
         CHECK(has(js, "location.host"));                // host+port from the page, not hardcoded
         CHECK(!has(js, "'ws://'+location.hostname+':8080"));  // the exact old bug is gone
+        // analytics: a pageview fires on every in-app route change (pushState),
+        // dispatched as a CustomEvent + forwarded to the common SPA analytics
+        // APIs, so nav is tracked without a page load.
+        CHECK(has(js, "waya:pageview"));                 // the CustomEvent any tool can listen to
+        CHECK(has(js, "firePageview"));                  // called from route()
+        CHECK(has(js, "window.gtag") && has(js, "window.plausible"));  // GA4 + Plausible auto-forwarded
     }
 
     // ── "anything": a 5000-point chart is ONE node ──────────────────────

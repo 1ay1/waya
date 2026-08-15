@@ -255,6 +255,48 @@ static std::vector<std::string> sitemap() {
 Both are optional. With them, your site ships a valid sitemap and robots policy
 with zero extra plumbing.
 
+## Analytics
+
+Two facts about waya shape analytics: (1) the initial page is real SSR'd HTML,
+and (2) in-app navigation is `pushState` over the WebSocket — no page reload. A
+stock analytics snippet handles the first load but would miss every in-app route
+change. waya closes both gaps.
+
+**Load the snippet with `head()`.** An optional `static const char* head()` (or
+`std::string`) on your Program is spliced verbatim into `<head>` on every SSR —
+the place for an analytics tag, a font `<link>`, or a site-verification `<meta>`.
+
+```cpp
+struct App {
+    // …Model / Msg / view / update…
+    static const char* head() {
+        return R"(<script defer data-domain="acme.dev"
+                          src="https://plausible.io/js/script.js"></script>)";
+    }
+};
+```
+
+It's trusted markup you control (like `markup()`), so put only your own tags
+there.
+
+**Pageviews fire automatically.** On every route change (a `nav`/`Cmd::navigate`,
+a back/forward, the first load), the client fires a pageview so SPA-style
+navigation is tracked without a reload. It does two things:
+
+- dispatches a `waya:pageview` **CustomEvent** whose `detail` is the new URL —
+  listen to it for any tool or custom pipeline:
+  ```js
+  window.addEventListener('waya:pageview', e => myTracker.page(e.detail));
+  ```
+- forwards to the common tools if present — **GA4** (`gtag('event','page_view')`),
+  **Plausible**, **Fathom**, **PostHog** (`$pageview`), and **Umami** — so those
+  Just Work after you drop their snippet in `head()`, with zero extra code.
+
+Duplicate URLs are de-duped, so a re-render at the same path won't double-count.
+For custom events (a signup, a purchase), call your tool's API directly from
+JS in an event listener, or send a `Cmd` that your `head()` snippet's code
+reacts to.
+
 ## SEO checklist
 
 - ✅ Give every route a distinct `title` and `description` in `meta`.

@@ -155,7 +155,21 @@ inline std::string client(int port) {
     // dropped connection doesn't wipe a half-filled form or a wizard step.
     "var _sid=sessionStorage.getItem('waya-sid');"
     "if(!_sid){_sid=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));sessionStorage.setItem('waya-sid',_sid);}"
-    "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);}"
+    // Analytics pageview: waya navigates with pushState (no page load), so a
+    // stock analytics snippet's auto-pageview never fires on in-app route
+    // changes. firePageview() is called on every route() — it dispatches a
+    // `waya:pageview` CustomEvent (detail = the URL) for any listener, AND calls
+    // the common SPA-pageview APIs if the tool is present, so GA4 / Plausible /
+    // Fathom / PostHog track in-app navigation with zero wiring.
+    "var _pvLast='';"
+    "function firePageview(){var u=location.pathname+location.search;if(u===_pvLast)return;_pvLast=u;"
+    "try{window.dispatchEvent(new CustomEvent('waya:pageview',{detail:u}));}catch(_){}"
+    "try{if(window.gtag)gtag('event','page_view',{page_path:u,page_location:location.href});}catch(_){}"
+    "try{if(window.plausible)plausible('pageview');}catch(_){}"
+    "try{if(window.fathom&&fathom.trackPageview)fathom.trackPageview();}catch(_){}"
+    "try{if(window.posthog&&posthog.capture)posthog.capture('$pageview');}catch(_){}"
+    "try{if(window.umami&&umami.track)umami.track();}catch(_){}}"
+    "function route(){if(ws&&ws.readyState===1)ws.send('@route|'+location.pathname+location.search);firePageview();}"
     "function connect(){var _wsproto=(location.protocol==='https:'?'wss://':'ws://');"
     "var _wshost=location.host||(location.hostname+':"+std::to_string(port)+"');"
     "ws=new WebSocket(_wsproto+_wshost+'/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
