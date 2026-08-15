@@ -28,5 +28,8 @@
 #include "ui/command_palette.hpp"
 #include "ui/history.hpp"
 #include "ui/routes.hpp"
+#include "ui/table.hpp"
+#include "ui/reorderable.hpp"
+#include "ui/i18n.hpp"
 #include "ui/virtual_list.hpp"
 #include "ui/patterns.hpp"

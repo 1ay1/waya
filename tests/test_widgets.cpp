@@ -381,6 +381,81 @@ int main() {
         check(pages.match("/users/7").param("id")=="7", "match() exposes params without rendering");
     }
 
+    // ── Table<Row>: sort / filter / paginate as pure derivation ────────────
+    {
+        struct Sb{ int c; bool operator==(const Sb&)const=default; };
+        struct Gp{ int p; bool operator==(const Gp&)const=default; };
+        struct U { std::string name; int score; };
+        std::vector<U> us = {{"Charlie",30},{"Alice",90},{"Bob",50},{"Dave",70},{"Eve",10}};
+        std::vector<TableColumn<U>> cols = {
+            col<U>("Name",  [](const U& u){ return text(u.name); })
+                .sortable([](const U& a, const U& b){ return a.name < b.name; })
+                .searchable([](const U& u){ return u.name; }),
+            col<U>("Score", [](const U& u){ return text(std::to_string(u.score)); })
+                .sortable([](const U& a, const U& b){ return a.score < b.score; }),
+        };
+        // default order = insertion
+        TableState st;
+        check(table_order(us, cols, st).front()==0, "unsorted keeps insertion order");
+        // sort by score ascending then descending
+        st.sort_by(1);
+        check(us[table_order(us, cols, st).front()].score == 10, "sort ascending: lowest first");
+        st.sort_by(1);   // second click flips to descending
+        check(us[table_order(us, cols, st).front()].score == 90, "second click on same col = descending");
+        check(st.sort_desc, "sort_by toggles direction on the same column");
+        // filter is case-insensitive across searchable columns
+        TableState f; f.set_filter("A");
+        check(table_order(us, cols, f).size()==3, "filter 'A' matches Charlie/Alice/Dave (case-insens)");
+        f.set_filter("zzz");
+        check(table_order(us, cols, f).empty(), "a no-match filter yields no rows");
+        // pagination math
+        TableState p; p.page_size = 2;
+        check(table_page_count(5, p)==3, "5 rows / 2 per page = 3 pages");
+        check(table_page_count(4, p)==2 && table_page_count(0, p)==0, "page count rounds up / handles empty");
+        // the rendered table wires sortable headers + a pager
+        detail::begin_msg_capture();
+        auto th = html_of(data_table(us, cols, p, [](int c){ return Sb{c}; }, [](int pg){ return Gp{pg}; }));
+        check(has(th, "role=\"button\""), "sortable header is a tappable button");
+        check(has(th, " of "), "pager shows 'n of m' when paginated");
+        check((TableState{} == TableState{}), "TableState has value equality");
+    }
+
+    // ── reorderable: drag-to-reorder, the move computed for you ────────────
+    {
+        struct Drop{ int f, t; bool operator==(const Drop&)const=default; };
+        std::vector<std::string> v = {"a","b","c","d"};
+        apply_reorder(v, 0, 2);
+        check(v[0]=="b" && v[1]=="c" && v[2]=="a" && v[3]=="d", "apply_reorder moves an item and shifts");
+        apply_reorder(v, 3, 0);
+        check(v[0]=="d", "apply_reorder handles move-to-front");
+        auto snapshot = v;
+        apply_reorder(v, 5, 0);           // out of range
+        apply_reorder(v, 1, 1);           // same index
+        check(v == snapshot, "out-of-range / same-index reorder is a no-op");
+        auto [from, to] = parse_reorder("3:1");
+        check(from==3 && to==1, "parse_reorder splits 'from:to'");
+        check(parse_reorder("garbage").first == -1, "a malformed drop payload parses to -1 (safe)");
+        detail::begin_msg_capture();
+        auto rh = html_of(reorder_row(2, [](int f, int t){ return Drop{f, t}; }, text("item")));
+        check(has(rh, "draggable=\"true\""), "reorder_row is draggable");
+        check(has(rh, "data-drop-arg=\"2\"") && has(rh, "data-ev-drop"), "reorder_row is a drop target tagged with its index");
+    }
+
+    // ── i18n: catalogs + interpolation + plurals + fallback ────────────────
+    {
+        Catalog en = catalog({ {"greeting","Hello, {name}!"}, {"items","{n} item|{n} items"}, {"save","Save"} });
+        check(en.t("greeting", {{"name","Ada"}}) == "Hello, Ada!", "t() interpolates {name}");
+        check(en.t("save") == "Save", "t() of a plain string");
+        check(en.plural("items", 1) == "1 item", "plural picks the singular arm at n==1");
+        check(en.plural("items", 5) == "5 items", "plural picks the plural arm and substitutes {n}");
+        check(en.t("missing_key") == "missing_key", "a missing key renders itself (visible, not blank)");
+        // fallback chain: fr misses 'save', falls back to en
+        Catalog fr = catalog({ {"greeting","Bonjour, {name} !"} }); fr.fallback(en);
+        check(fr.t("greeting", {{"name","Ada"}}) == "Bonjour, Ada !", "fr uses its own translation");
+        check(fr.t("save") == "Save", "fr falls back to en for a missing key");
+        check(fr.has("save") && !fr.has("nope"), "has() sees through the fallback chain");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

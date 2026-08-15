@@ -206,6 +206,55 @@ data_table<User>(users, {
 });
 ```
 
+For an INTERACTIVE table — click a header to sort, type to filter, page through
+thousands of rows — hold a `TableState` in your model and describe columns with
+`col<Row>`. Sort/filter/page are all model state; the derivation is pure.
+
+```cpp
+struct Model { std::vector<User> users; TableState table; };  // table.page_size = 25
+
+std::vector<TableColumn<User>> columns(){
+    return {
+        col<User>("Name",  [](const User& u){ return text(u.name); })
+            .sortable([](const User& a, const User& b){ return a.name < b.name; })
+            .searchable([](const User& u){ return u.name; }),
+        col<User>("Score", [](const User& u){ return text(std::to_string(u.score)); })
+            .sortable([](const User& a, const User& b){ return a.score < b.score; }),
+    };
+}
+
+// update: m.table.sort_by(col), .set_filter(q), .go_page(n)
+// view:
+data_table(m.users, columns(), m.table, SortBy{}, GoPage{})
+```
+
+A header is clickable only if its column is `.sortable()` (first click ascending,
+second descending); filtering searches every `.searchable()` column
+(case-insensitive); a pager renders when `page_size > 0`. `table_order(rows,
+cols, state)` is the pure filter→sort→page pipeline — test it on plain data.
+
+### Drag to reorder — `reorderable`
+
+Drag & drop primitives (`draggable`/`on_drop`) exist; `reorderable` turns them
+into a list you can reorder, computing the move for you.
+
+```cpp
+struct Model { std::vector<Task> tasks; };
+struct Dropped { int from, to; };
+
+[&](Dropped d){ apply_reorder(m.tasks, d.from, d.to); return {m, Cmd::none()}; }
+
+// view: wrap each item; dragging A onto B fires onDrop(A_index, B_index)
+for (int i = 0; i < (int)m.tasks.size(); ++i)
+    rows.push_back(reorder_row(i,
+        [](int from, int to){ return Dropped{from, to}; },
+        task_card(m.tasks[i])));
+```
+
+`apply_reorder(vec, from, to)` is a pure vector move (out-of-range/same-index =
+no-op) you can unit-test; a malformed drop payload safely resolves to indices
+that no-op.
+
 ### Icons
 
 `icon("name", size = 24)` returns an inline SVG that tints with `fg(…)` (it uses
@@ -549,3 +598,31 @@ inline NodeRef badge(std::string label, Tone tone = Tone::neutral) {
 No base class, no macro, no registration. Take arguments, return a node, chain
 mods on the result. That's the whole model — and it's why the library needs no
 special privileges the core doesn't already give you.
+
+## Internationalization — `Catalog` + `t(key)`
+
+A waya view is a pure function of state, so translation is just a lookup the
+view does: swap the active `Catalog` and every `t("save")` renders in the new
+language on the next frame — no framework magic, because the whole UI is already
+rebuilt from the model each frame.
+
+```cpp
+Catalog en = catalog({
+    {"greeting", "Hello, {name}!"},
+    {"items",    "{n} item|{n} items"},   // singular | plural
+    {"save",     "Save"},
+});
+Catalog fr = catalog({ {"greeting", "Bonjour, {name} !"} });
+fr.fallback(en);                          // missing keys fall through to English
+
+// hold the active catalog in your model; the view reads it
+text(loc.t("greeting", {{"name", user.name}}));   // "Hello, Ada!"
+text(loc.plural("items", cart.size()));           // "3 items"
+text(loc.t("save"));                              // "Save" (fr falls back)
+```
+
+`t(key, args)` interpolates `{name}` placeholders; `plural(key, n)` picks the
+`singular|plural` arm by `|n|==1` and substitutes `{n}`. A missing key renders
+the KEY itself (visible, not blank) so untranslated strings are obvious, and
+`fallback()` chains catalogs so a partially-translated locale degrades to the
+default. It's pure lookup — no macro, no codegen, no global state.
