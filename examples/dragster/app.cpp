@@ -127,7 +127,7 @@ struct Dragster {
             hud_pill("space", "GAS",   GasTog{}, warn,  m.gas),
             hud_pill("↑",     "SHIFT", Shift{},  amber, false),
             hud_pill(running ? "R" : "↵", running ? "RESET" : "START", Start{}, good, running)
-        ) | gap(8) | wrap | detail::raw_css("row-gap", "8px");
+        ) | gap(8) | wrap | row_gap(8);
 
         // readouts — a tidy group, values bottom-aligned so 30px TIME and 22px
         // GEAR/BEST share one baseline.
@@ -141,7 +141,7 @@ struct Dragster {
         // on narrow screens instead of overflowing.
         auto topline = row(readouts, spacer(), controls)
             | items_center | gap(rem(1.0f)) | w_full | wrap
-            | detail::raw_css("row-gap", "10px");
+            | row_gap(10);
 
         // the tach spans the FULL width on its own line — always readable.
         auto tachline = tachometer_bar(m) | w_full;
@@ -149,15 +149,15 @@ struct Dragster {
         auto dash = col(topline, tachline)
           | gap(rem(0.7f))
           | gradient(panel, panelLo, 180)
-          | detail::raw_css("box-shadow", "inset 0 1px 0 rgba(255,255,255,.06)")
-          | detail::raw_css("border-top", "1px solid " + waya::rgb(line_c).css())
+          | inset_light(.06f)
+          | border_top(1, line_c)
           | detail::raw_css("padding",
               "0.85rem max(1.2rem, env(safe-area-inset-right)) "
               "max(0.85rem, env(safe-area-inset-bottom)) max(1.2rem, env(safe-area-inset-left))");
 
         // the screen area: the two-lane race, with the phase overlay on top.
         auto screen = box(strip_screen(m), ov)
-            | detail::raw_css("position", "relative")
+            | relative
             | grow() | w_full | overflow("hidden");
 
         // the game "cabinet": screen grows on top, the data strip docks below.
@@ -165,20 +165,17 @@ struct Dragster {
         auto cabinet = col(screen, dash)
             | overflow("hidden") | round(rem(0.9f))
             | grow() | w_full
-            | detail::raw_css("border", "1px solid " + waya::rgb(line_c).css())
-            | detail::raw_css("box-shadow", "0 24px 70px -24px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.03)");
+            | border(1, line_c)
+            | shadow("0 24px 70px -24px rgba(0,0,0,.9)")
+            | ring(rgba(0xffffff, .012f), 1);
 
         // whole window: the cabinet inset from the edges by an even outer margin
         // (safe-area aware), on the dark backdrop.
         return box(fx(), cabinet)
             | overflow("hidden") | bg(dr::page)
-            | detail::raw_css("display", "flex")
-            | detail::raw_css("height", "100dvh")
-            | detail::raw_css("width", "100dvw")
-            | detail::raw_css("box-sizing", "border-box")
-            | detail::raw_css("padding",
-                "max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) "
-                "max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left))")
+            | horizontal /* flex frame so the cabinet stretches */
+            | h(dvh(100)) | w(dvw(100))
+            | pad_safe(14)
             // global keyboard — Space = throttle, Up/W = shift, Enter/R = start.
             | hotkey(" ",          GasTog{})
             | hotkey("ArrowUp",    Shift{})

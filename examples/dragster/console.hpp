@@ -22,10 +22,8 @@ inline NodeRef keycap(std::string keytext, std::uint32_t c, bool active) {
         | pad_x(8) | pad_y(5) | round(px(7)) | center | select_none
         | bg(active ? k.opaque() : line_c)
         | border(1, active ? k.lighten(0.25f).opaque() : waya::rgb(line_c).lighten(0.15f).opaque())
-        | detail::raw_css("box-shadow",
-            active ? "inset 0 1px 0 rgba(255,255,255,.35)"
-                   : "inset 0 1px 0 rgba(255,255,255,.06)")
-        | detail::raw_css("min-width", "20px");
+        | inset_light(active ? .35f : .06f)
+        | min_w(20);
 }
 
 // The control chip: [key] LABEL, in a grouped tray. Whole chip is tappable.
@@ -41,14 +39,14 @@ inline NodeRef hud_pill(std::string keytext, std::string label, Msg msg, std::ui
     auto b = box(chip)
         | pad_x(11) | pad_y(8) | round(px(10))
         | pointer | select_none
-        | detail::raw_css("pointer-events", "auto")
+        | clickable
         | bg(active ? base.alpha(0.14f) : waya::rgb(panel))
         | border(1, active ? base.opaque() : line_c)
         | (active ? glow(c, 16) : Mod{})
         | transition("transform .08s ease, background .14s ease, border-color .14s ease")
         | on(Hover, bg(active ? base.alpha(0.2f) : waya::rgb(line_c).alpha(0.5f)),
-                    detail::raw_css("border-color", base.alpha(0.6f).css()))
-        | on(Active, detail::raw_css("transform", "translateY(1px)"));
+                    border_color(base.alpha(0.6f)))
+        | on(Active, translate(0, 1));
     return b | tap(std::move(msg));
 }
 

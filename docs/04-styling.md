@@ -22,6 +22,7 @@ Sizes take a `Len` — a value plus a unit. Construct one with a factory:
 | `pct(v)` | percent | `w(pct(100))` |
 | `rem(v)` | root em | `max_w(rem(48))` |
 | `vw(v)` / `vh(v)` | viewport width/height | `h(vh(100))` |
+| `dvh(v)` / `dvw(v)` | **dynamic** viewport — mobile-safe (excludes the URL bar) | `h(dvh(100))` |
 | `fr(v)` | grid fraction | grid tracks |
 | `fill` | 100% of the parent | `w(fill)` |
 | `hug` | content-sized (auto) | `w(hug)` |
@@ -100,12 +101,24 @@ Mod max_h(Len); Mod min_h(Len);
 Mod aspect(float ratio);                   // width/height ratio (e.g. 16.0/9.0)
 ```
 
+Named shortcuts (no `Len` needed): `w_full` / `h_full` (100%), `w_half`,
+`w_frac(n, d)`, `w_screen`, `h_screen` (full mobile-safe viewport height),
+`square(px)`, `circle(px)`, `mx_auto` (centre a max-width column). Two gotchas
+have dedicated forms: **`min_h(0)` / `min_w(0)`** emit explicitly (a flex child
+must be allowed to shrink for its scroll region to work — a bare `Len{0}` reads
+as "unset"), and **`no_shrink`** (`flex:0 0 auto`) keeps an item at its size in a
+tight row.
+
 ### Corners & borders
 
 ```cpp
-Mod round(float|int|Len);                  // corner radius
+Mod round(float|int|Len);                  // corner radius (all four)
+Mod round(tl, tr, br, bl);                  // per-corner radii
 const Mod pill;                            // fully rounded (999px)
 Mod border(float width, std::uint32_t color);
+Mod border(float width, Color color);       // alpha-aware: border(1, rgba(accent, .25f))
+Mod border_color(Color|hex);                // recolor a border (hover/active accent)
+Mod border_top/bottom/left/right(w, color); // one side (dividers, rails)
 ```
 
 ```cpp
@@ -121,10 +134,12 @@ box(child)
 
 ```cpp
 Mod gap(float|Len);            // spacing between children
+Mod row_gap(px); Mod col_gap(px); // independent axis gaps (a wrapped row)
 Mod justify(Justify j);        // main-axis distribution
 Mod align(Align a);            // cross-axis alignment
 Mod grow(float = 1);           // this child takes leftover space
 Mod shrink(float = 1);         // this child may shrink
+const Mod no_shrink;           // flex:0 0 auto — keep my size
 const Mod wrap;                // children wrap to new lines
 const Mod nowrap;
 const Mod center;              // center on both axes
@@ -234,8 +249,11 @@ composes into a marketing-grade page — read it alongside this table.
 | Mod | Effect |
 |---|---|
 | `gradient(a, b, deg=90)` | Linear-gradient background. |
+| `gradient(rgbaColor, rgbaColor, deg=90)` | The alpha-aware form (glass sheens, scrims, tinted overlays). |
 | `gradient_bg(a, b, deg=135)` | Alias with a diagonal default. |
-| `radial(color, x=50, y=-10, base, size=60)` | A radial glow bloom over a base colour — the classic "spotlight" hero backdrop. |
+| `radial(color, x=50, y=-10, base, size=60)` | A soft radial glow bloom over a base — the page-scale "spotlight" hero backdrop. |
+| `orb(inner, outer, cx=50, cy=50)` | A hard radial FILL — the lit-from-a-point look for solid shapes (wheels, knobs, LED dots). |
+| `veil(alpha=.5)` | A translucent black backdrop (modal dimmers, image scrims). |
 | `mesh(a, b, base)` | A drifting multi-stop mesh gradient — an animated aurora backdrop. |
 | `glass(blur=14, tint, alpha)` | Frosted glass: blur + tint + hairline in one. |
 | `frost(blur=14, alpha=0.05)` | A lighter frosted-glass panel. |
@@ -254,13 +272,30 @@ composes into a marketing-grade page — read it alongside this table.
 | `hover_glow(color, spread=26)` | Bloom a glow on hover. |
 | `interactive()` | `pointer` + `hover_lift(2)` + `press()` in one. |
 
+#### The composable shadow family
+
+Real depth is layered — a bevel is a top highlight *plus* a bottom shade *plus*
+a rim. These mods each add ONE layer and **compose into a single `box-shadow`**,
+so `ring(…) | inset_light() | glow_under(…)` reads as three intentions and
+emits one correct declaration (no last-wins clobbering):
+
+| Mod | Layer |
+|---|---|
+| `ring(color, w=2)` | A crisp outline *outside* the box that never shifts layout (focus rings, avatar rims). |
+| `inset_ring(color, w=1)` | The same, drawn *inside* (wells, segmented displays). |
+| `inset_light(a=.25, y=1)` | The top highlight of a bevel. |
+| `inset_dark(a=.35, y=-2)` | The bottom shade of a bevel. A raised button = `inset_light() \| inset_dark()`. |
+| `inset_glow(color, blur=24)` | A soft luminous bloom *inside* (CRT panes, neon wells). |
+| `glow_under(color, blur=16, y=6)` | A coloured drop glow *beneath* (active tabs, LED bleed). |
+
 ### Text as art
 
 | Mod | Effect |
 |---|---|
 | `gradient_text(a, b, deg=90)` | Fill glyphs with a gradient. |
 | `aurora_text(a, b, c, secs=8)` | An animated three-colour aurora sweep across the text — the hero headline. |
-| `glow_text(color, blur=24)` | A neon text glow. |
+| `glow_text(color, blur=24)` | A neon text glow (two-layer bloom). |
+| `text_glow(color, blur=8)` | The precise single-layer halo — your alpha (phosphor glyphs, LED digits). |
 
 ### Ambient motion
 

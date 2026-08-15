@@ -22,34 +22,33 @@ NodeRef terminal_pane(const Model& m) {
     std::vector<NodeRef> lines;
     for (const auto& l : m.log)
         lines.push_back(text(l) | fg(line_color(l)) | font(13) | term_font | phosphor(line_color(l), 5)
-                        | detail::raw_css("white-space", "pre"));
+                        | pre);
 
     // the in-progress line + blinking cursor
     auto cursor = box()
-        | detail::raw_css("width", "8px") | detail::raw_css("height", "15px")
-        | detail::raw_css("background", hx(green)) | phosphor(green, 6)
-        | detail::raw_css("animation", "mtx-blink 1s step-end infinite")
+        | w(8) | h(15)
+        | bg(green) | phosphor(green, 6)
+        | detail::raw_css("animation", "mtx-blink 1s step-end infinite")   // custom @keyframes
         | detail::raw_css("display", "inline-block")
-        | detail::raw_css("margin-left", "2px");
+        | margin_left(2);
     auto typing_row = row(
-        text(m.typing) | fg(green) | font(13) | term_font | phosphor(green, 5) | detail::raw_css("white-space","pre"),
+        text(m.typing) | fg(green) | font(13) | term_font | phosphor(green, 5) | pre,
         cursor
     ) | items_center;
     lines.push_back(typing_row);
 
     // header bar: "traffic lights" + title
-    auto dot = [](std::uint32_t c){ return box() | detail::raw_css("width","10px")
-        | detail::raw_css("height","10px") | round(999) | detail::raw_css("background", hx(c)); };
+    auto dot = [](std::uint32_t c){ return box() | size(10) | round(999) | bg(c); };
     auto header = row(dot(red), dot(amber), dot(green), box() | grow(),
                       text("root@mainframe:~#") | fg(dim) | font(11) | term_font)
         | gap(7) | items_center | w_full | pad_x(4) | pad_y(2);
 
     return col(header,
-               box() | detail::raw_css("height","1px") | detail::raw_css("background", hx(line)) | w_full,
+               box() | h(1) | bg(line) | w_full,
                col_(lines) | gap(3) | w_full)
         | gap(10) | pad(16) | round(6) | w_full
-        | detail::raw_css("background", "linear-gradient(180deg, rgba(2,10,6,.97), rgba(0,0,0,.97))")
-        | detail::raw_css("border", "1px solid " + hxa(green, "3a"))
+        | gradient(rgba(0x020a06, .97f), rgba(0x000000, .97f), 180)
+        | border(1, rgba(green, .23f))
         | pane(green);
 }
 

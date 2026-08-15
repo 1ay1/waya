@@ -72,7 +72,7 @@ int main() {
 
     // ── completeness: named mods that used to require a raw css() ───────────
     check(has(css_of(box() | w_full), "width:100%"), "w_full");
-    check(has(css_of(box() | h_screen), "100vh"), "h_screen");
+    check(has(css_of(box() | h_screen), "100dvh"), "h_screen (mobile-safe dvh)");
     check(has(css_of(box() | w_frac(1,3)), "33.") , "w_frac(1,3) is 33.3%");
     check(has(css_of(box() | square(48)), "width:48") && has(css_of(box() | square(48)), "height:48"), "square");
     check(has(css_of(box() | circle(40)), "border-radius"), "circle rounds fully");
@@ -84,6 +84,44 @@ int main() {
     check(has(css_of(image("/x") | brightness(120)), "brightness(120%)"), "brightness");
     check(has(css_of(image("/x") | fit("contain")), "object-fit:contain"), "fit");
     check(has(css_of(box() | break_word), "overflow-wrap"), "break_word");
+
+    // ── the raw_css-eliminating vocabulary (this round) ───────────────────
+    // mobile-safe viewport units
+    check(has(css_of(box() | h(dvh(100))), "100dvh"), "dvh unit emits");
+    check(has(css_of(box() | w(dvw(80))),  "80dvw"),  "dvw unit emits");
+    // min_h(0) must EMIT (Len{0,px} would read as unset)
+    check(has(css_of(box() | min_h(0)), "min-height:0"), "min_h(0) emits explicitly");
+    check(has(css_of(box() | min_w(0)), "min-width:0"),  "min_w(0) emits explicitly");
+    // composable shadow family — one comma-joined box-shadow
+    { auto css = css_of(box() | ring(0x00ff41, 2) | inset_light(.25f) | glow_under(0xff2d4b, 16, 6));
+      check(has(css, "box-shadow:"), "shadow family emits box-shadow");
+      // ONE box-shadow declaration holding all three layers (three known
+      // fragments present in one property, not three separate declarations)
+      int decls = 0; std::size_t p = 0;
+      while ((p = css.find("box-shadow:", p)) != std::string::npos) { ++decls; p += 11; }
+      check(decls == 1, "three shadow layers compose into ONE box-shadow");
+      check(has(css, "0 0 0 2px") && has(css, "inset 0 1px 0") && has(css, "0 6px 16px"),
+            "all three layers present"); }
+    check(has(css_of(box() | inset_ring(0xffffff, 1)), "inset 0 0 0 1px"), "inset_ring");
+    check(has(css_of(box() | inset_glow(0x00ff41, 24)), "inset 0 0 24px"), "inset_glow");
+    // backgrounds
+    check(has(css_of(box() | orb(0x6b7288, 0x2a2e3c, 40, 40)), "radial-gradient(circle at 40% 40%"), "orb radial fill");
+    check(has(css_of(box() | veil(.55f)), "rgba(0,0,0,0.55"), "veil");
+    check(has(css_of(box() | gradient(rgba(0x00ff41,.9f), rgba(0,.2f), 180)), "linear-gradient(180deg"), "gradient(Color,Color)");
+    // borders
+    check(has(css_of(box() | border(1, rgba(0x00ff41, .25f))), "1px solid rgba(0,255,65,0.25"), "translucent border(w,Color)");
+    check(has(css_of(box() | border_color(0xff0000)), "border-color:"), "border_color");
+    // layout niceties
+    check(has(css_of(box() | mx_auto), "margin-left:auto") && has(css_of(box() | mx_auto), "margin-right:auto"), "mx_auto");
+    check(has(css_of(box() | no_shrink), "flex:0 0 auto"), "no_shrink");
+    check(has(css_of(box() | round(10,4,4,10)), "border-radius:10px 4px 4px 10px"), "per-corner round");
+    check(has(css_of(box() | margin_left(2)), "margin-left:2px"), "margin_left");
+    check(has(css_of(box() | clickable), "pointer-events:auto"), "clickable");
+    check(has(css_of(text("x") | pre), "white-space:pre"), "pre");
+    check(has(css_of(box() | pad_safe(14)), "env(safe-area-inset-top"), "pad_safe honours safe area");
+    check(has(css_of(text("x") | text_glow(rgba(0x00ff41,.8f), 6)), "text-shadow:0 0 6px"), "text_glow single-layer");
+    // colour vocabulary reachable via `using namespace waya::surface` alone
+    check(has(css_of(box() | bg(rgba(0x00ff41, .5f))), "rgba(0,255,65,0.5"), "rgba() in surface namespace");
 
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;

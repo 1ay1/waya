@@ -64,7 +64,8 @@ private:
         switch(l.unit){ case Unit::px:o+=n(l.value);o+="px";break; case Unit::pct:o+=n(l.value);o+="%";break;
             case Unit::rem:o+=n(l.value);o+="rem";break; case Unit::em:o+=n(l.value);o+="em";break;
             case Unit::vw:o+=n(l.value);o+="vw";break; case Unit::vh:o+=n(l.value);o+="vh";break;
-            case Unit::fr:o+=n(l.value);o+="fr";break; case Unit::fill:o+="100%";break; case Unit::hug:o+="auto";break; } }
+            case Unit::fr:o+=n(l.value);o+="fr";break; case Unit::fill:o+="100%";break; case Unit::hug:o+="auto";break;
+            case Unit::dvh:o+=n(l.value);o+="dvh";break; case Unit::dvw:o+=n(l.value);o+="dvw";break; } }
 
     static const char* just(Justify j){ switch(j){ case Justify::start:return "flex-start"; case Justify::center:return "center";
         case Justify::end:return "flex-end"; case Justify::between:return "space-between"; case Justify::around:return "space-around";

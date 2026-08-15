@@ -72,19 +72,18 @@ struct Matrix {
 
         auto overlay = col(title, stage)
             | gap(20)
-            | detail::raw_css("position", "relative")
-            | detail::raw_css("z-index", "3")     // above rain + scanlines
-            | detail::raw_css("max-width", "1200px")
-            | detail::raw_css("margin", "0 auto")
+            | relative
+            | z(3)                                // above rain + scanlines
+            | max_w(1200) | mx_auto
             | pad_fluid(20, 44)
-            | detail::raw_css("min-height", "100vh");
+            | h_screen;
 
         // stack the rain (z0) under the overlay (z3), with fx() supplying scanlines (z2).
         return box(fx(), rain_canvas(m), overlay)
-            | detail::raw_css("position", "relative")
-            | detail::raw_css("min-height", "100vh")
-            | detail::raw_css("background", "#000")
-            | detail::raw_css("overflow", "hidden")
+            | relative
+            | h_screen
+            | bg(black)
+            | clip
             | as_main;
     }
 

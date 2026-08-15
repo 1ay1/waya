@@ -44,6 +44,13 @@
 
 namespace waya::surface {
 
+// The colour vocabulary belongs to the surface language: one `using namespace
+// waya::surface` brings `rgb`/`rgba`/`hsl`/`Color` along — no second import.
+using waya::Color;
+using waya::rgb;
+using waya::rgba;
+using waya::hsl;
+
 // ── Enums for the common layout/typography choices ──────────────────────────
 enum class Flow    : std::uint8_t { none, row, col, stack, grid };
 enum class Justify : std::uint8_t { none, start, center, end, between, around, evenly };
@@ -54,7 +61,9 @@ enum class Weight  : std::uint8_t { none, thin, light, normal, medium, semibold,
 enum class Cursor  : std::uint8_t { none, pointer, text, move, not_allowed };
 
 /// A length with a unit — so `w(50, Pct)` or `w(200)` (px default) both read well.
-enum class Unit : std::uint8_t { px, pct, rem, em, vw, vh, fr, fill /*100%*/, hug /*auto*/ };
+/// `dvh`/`dvw` are the MOBILE-SAFE viewport units: `100_vh` overshoots on phones
+/// (the URL bar), `100_dvh` is what "full screen" almost always means.
+enum class Unit : std::uint8_t { px, pct, rem, em, vw, vh, fr, fill /*100%*/, hug /*auto*/, dvh, dvw };
 struct Len {
     float value = 0; Unit unit = Unit::px;
     bool operator==(const Len&) const = default;
@@ -65,6 +74,8 @@ inline Len pct(float v){ return {v, Unit::pct}; }
 inline Len rem(float v){ return {v, Unit::rem}; }
 inline Len vw(float v){ return {v, Unit::vw}; }
 inline Len vh(float v){ return {v, Unit::vh}; }
+inline Len dvh(float v){ return {v, Unit::dvh}; }
+inline Len dvw(float v){ return {v, Unit::dvw}; }
 
 /// Length literals — `12_px`, `1.5_rem`, `50_pct`, `100_vh`. Reads like maya's
 /// typed units and keeps a size self-documenting at the call site.
@@ -80,6 +91,10 @@ inline Len operator""_vw (long double v){ return {(float)v, Unit::vw}; }
 inline Len operator""_vw (unsigned long long v){ return {(float)v, Unit::vw}; }
 inline Len operator""_vh (long double v){ return {(float)v, Unit::vh}; }
 inline Len operator""_vh (unsigned long long v){ return {(float)v, Unit::vh}; }
+inline Len operator""_dvh(long double v){ return {(float)v, Unit::dvh}; }
+inline Len operator""_dvh(unsigned long long v){ return {(float)v, Unit::dvh}; }
+inline Len operator""_dvw(long double v){ return {(float)v, Unit::dvw}; }
+inline Len operator""_dvw(unsigned long long v){ return {(float)v, Unit::dvw}; }
 inline Len operator""_fr (unsigned long long v){ return {(float)v, Unit::fr}; }
 } // namespace literals
 inline Len fr(float v){ return {v, Unit::fr}; }
@@ -267,7 +282,8 @@ inline std::string lenstr(Len l){
     switch(l.unit){ case Unit::px:return n(l.value)+"px"; case Unit::pct:return n(l.value)+"%";
         case Unit::rem:return n(l.value)+"rem"; case Unit::em:return n(l.value)+"em";
         case Unit::vw:return n(l.value)+"vw"; case Unit::vh:return n(l.value)+"vh";
-        case Unit::fr:return n(l.value)+"fr"; case Unit::fill:return "100%"; case Unit::hug:return "auto"; }
+        case Unit::fr:return n(l.value)+"fr"; case Unit::fill:return "100%"; case Unit::hug:return "auto";
+        case Unit::dvh:return n(l.value)+"dvh"; case Unit::dvw:return n(l.value)+"dvw"; }
     return n(l.value)+"px"; }
 }
 template <typename... Cs> NodeRef box(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
@@ -557,27 +573,51 @@ inline Mod pad_y(Len l){ return sty([=](Style& s){ s.pad_y=l; }); }
 inline Mod pad_y(float p){ return pad_y(px(p)); }
 inline Mod margin(Len l){ return sty([=](Style& s){ s.margin=l; }); }
 inline Mod margin(float m){ return margin(px(m)); }
+/// `margin_left`/`margin_right` — single-side spacing (a spacer nudge, an
+/// icon offset). `margin_left(auto_px)` = push to the right edge in a flex row.
+inline Mod margin_left(float m){ return sty([=](Style& s){ s.extra.emplace_back("margin-left", detail::numstr(m)+"px"); }); }
+inline Mod margin_right(float m){ return sty([=](Style& s){ s.extra.emplace_back("margin-right", detail::numstr(m)+"px"); }); }
+/// `no_shrink` — flex:0 0 auto: this item keeps its size in a tight row (icons,
+/// fixed rails, a status LED that must not squash).
+inline const Mod no_shrink = sty([](Style& s){ s.extra.emplace_back("flex","0 0 auto"); });
 inline Mod w(Len l){ return sty([=](Style& s){ s.w=l; }); }
 inline Mod w(float v){ return w(px(v)); }
 inline Mod h(Len l){ return sty([=](Style& s){ s.h=l; }); }
 inline Mod h(float v){ return h(px(v)); }
 inline Mod size(Len side){ return sty([=](Style& s){ s.w=side; s.h=side; }); }   // square
 inline Mod size(float side){ return size(px(side)); }
-inline Mod max_w(Len l){ return sty([=](Style& s){ s.max_w=l; }); }
-inline Mod max_w(float v){ return max_w(px(v)); }
-inline Mod min_w(Len l){ return sty([=](Style& s){ s.min_w=l; }); }
-inline Mod min_w(float v){ return min_w(px(v)); }
 inline Mod max_h(Len l){ return sty([=](Style& s){ s.max_h=l; }); }
 inline Mod max_h(float v){ return max_h(px(v)); }
+inline Mod max_w(Len l){ return sty([=](Style& s){ s.max_w=l; }); }
+inline Mod max_w(float v){ return max_w(px(v)); }
 inline Mod min_h(Len l){ return sty([=](Style& s){ s.min_h=l; }); }
-inline Mod min_h(float v){ return min_h(px(v)); }
+/// `min_h(0)` is THE flexbox scroll incantation (let a flex child shrink so its
+/// scroll region works) — but Len{0,px} reads as "unset", so 0 is special-cased
+/// to emit explicitly rather than silently doing nothing.
+inline Mod min_h(float v){ return v==0 ? sty([](Style& s){ s.extra.emplace_back("min-height","0"); }) : min_h(px(v)); }
+inline Mod min_w(Len l){ return sty([=](Style& s){ s.min_w=l; }); }
+inline Mod min_w(float v){ return v==0 ? sty([](Style& s){ s.extra.emplace_back("min-width","0"); }) : min_w(px(v)); }
 inline Mod round(Len l){ return sty([=](Style& s){ s.radius=l; }); }
 inline Mod round(float r){ return round(px(r)); }
+/// `round(tl, tr, br, bl)` — per-corner radii (asymmetric pills, tabs,
+/// speech bubbles: `round(10, 4, 4, 10)`).
+inline Mod round(float tl, float tr, float br, float bl){
+    return sty([=](Style& s){ s.extra.emplace_back("border-radius",
+        detail::numstr(tl)+"px "+detail::numstr(tr)+"px "+detail::numstr(br)+"px "+detail::numstr(bl)+"px"); }); }
 /// int overload so `round(10)` is never ambiguous with std::round (from <cmath>,
 /// which an app may pull in). Corner radius in px.
 inline Mod round(int r){ return round(px((float)r)); }
 inline const Mod pill = sty([](Style& s){ s.radius=px(9999); });
 inline Mod border(float width_, std::uint32_t color){ return sty([=](Style& s){ s.has_border=true; s.border_w=px(width_); s.border_c=color; }); }
+/// `border(1, rgba(accent, .25f))` — a translucent border (the hairline-with-
+/// alpha look every dark panel uses). Alpha-free Colors take the fast path.
+inline Mod border(float width_, Color c){ return c.has_alpha()
+    ? sty([w_=width_, v=c.css()](Style& s){ s.extra.emplace_back("border", detail::numstr(w_)+"px solid "+v); })
+    : border(width_, c.opaque()); }
+/// `border_color(c)` — recolor an existing border without restating its width
+/// (the hover/active accent-shift pattern).
+inline Mod border_color(Color c){ return sty([v=c.css()](Style& s){ s.extra.emplace_back("border-color", v); }); }
+inline Mod border_color(std::uint32_t c){ return border_color(rgb(c)); }
 /// directional borders — the common "divider under a header" / "left rail" cases.
 inline Mod border_bottom(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-bottom", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
 inline Mod border_top(float w_, std::uint32_t c){ return sty([=](Style& s){ s.extra.emplace_back("border-top", std::to_string((int)w_)+"px solid "+detail::hexstr(c)); }); }
@@ -592,6 +632,16 @@ inline Mod justify(Justify j){ return sty([=](Style& s){ s.justify=j; }); }
 inline Mod align(Align a){ return sty([=](Style& s){ s.align=a; }); }
 inline Mod gap(Len l){ return sty([=](Style& s){ s.gap=l; }); }
 inline Mod gap(float g){ return gap(px(g)); }
+// (row_gap/col_gap live in complete.hpp with the rest of the axis-gap family.)
+/// `pad_safe(min_px)` — padding that RESPECTS the device safe area (notches,
+/// home bars): each side is max(min_px, env(safe-area-inset-…)). The full-bleed
+/// app-frame primitive; box-sizing is pinned so 100dvh math stays exact.
+inline Mod pad_safe(float min_px=14){
+    return sty([=](Style& s){ auto m = detail::numstr(min_px)+"px";
+        s.extra.emplace_back("padding",
+            "max("+m+", env(safe-area-inset-top)) max("+m+", env(safe-area-inset-right)) "
+            "max("+m+", env(safe-area-inset-bottom)) max("+m+", env(safe-area-inset-left))");
+        s.extra.emplace_back("box-sizing","border-box"); }); }
 inline Mod grow(float g=1){ return sty([=](Style& s){ s.has_grow=true; s.grow=g; }); }
 inline Mod shrink(float g=1){ return sty([=](Style& s){ s.has_shrink=true; s.shrink=g; }); }
 /// `center` — centre children both axes; the single most common layout, one word.
@@ -778,10 +828,46 @@ inline Mod move_xy(float x, float y=0){
     return animate_style("transform", b);
 }
 
-// ── effects ──────────────────────────────────────────────────────────────
+// ── effects ────────────────────────────────────────────────────────
 inline Mod shadow(std::string spec=""){ return sty([=](Style& s){ s.has_shadow=true; s.shadow_spec=spec; }); }
+
+namespace detail {
+/// Append one layer to the node's box-shadow, COMPOSABLY: `ring(…) | inset_light()
+/// | glow_under(…)` builds a single comma-joined box-shadow, exactly how depth
+/// is really drawn (every polished bevel/knob is 2–3 layered shadows).
+inline void add_shadow_layer(Style& s, std::string layer){
+    for (auto& [k,v] : s.extra) if (k=="box-shadow"){ v += ", " + layer; return; }
+    s.extra.emplace_back("box-shadow", std::move(layer));
+}
+}
+
+/// `ring(color, w)` — a crisp outline drawn OUTSIDE the border-box that never
+/// shifts layout (focus rings, selection states, avatar rims).
+inline Mod ring(Color c, float w_=2){ return sty([=](Style& s){ detail::add_shadow_layer(s, "0 0 0 "+detail::numstr(w_)+"px "+c.css()); }); }
+inline Mod ring(std::uint32_t c, float w_=2){ return ring(rgb(c), w_); }
+/// `inset_ring(color, w)` — the same ring drawn INSIDE the box (segmented
+/// displays, wells, pressed states).
+inline Mod inset_ring(Color c, float w_=1){ return sty([=](Style& s){ detail::add_shadow_layer(s, "inset 0 0 0 "+detail::numstr(w_)+"px "+c.css()); }); }
+inline Mod inset_ring(std::uint32_t c, float w_=1){ return inset_ring(rgb(c), w_); }
+/// `inset_light(strength)` / `inset_dark(strength)` — the top-highlight and
+/// bottom-shade of a bevel. `button-like` = `inset_light() | inset_dark()`.
+inline Mod inset_light(float a=.25f, float y_=1){ return sty([=](Style& s){ detail::add_shadow_layer(s, "inset 0 "+detail::numstr(y_)+"px 0 rgba(255,255,255,"+detail::numstr(a)+")"); }); }
+inline Mod inset_dark(float a=.35f, float y_=-2){ return sty([=](Style& s){ detail::add_shadow_layer(s, "inset 0 "+detail::numstr(y_)+"px 4px rgba(0,0,0,"+detail::numstr(a)+")"); }); }
+/// `inset_glow(color, blur)` — a soft luminous bloom INSIDE the box (CRT
+/// panes, neon wells, focus pools). Composes with rings and outer glows.
+inline Mod inset_glow(Color c, float blur_=24){ return sty([=](Style& s){ detail::add_shadow_layer(s, "inset 0 0 "+detail::numstr(blur_)+"px "+c.css()); }); }
+inline Mod inset_glow(std::uint32_t c, float blur_=24){ return inset_glow(rgb(c), blur_); }
+/// `glow_under(color, blur, y)` — a coloured drop glow beneath (active tabs,
+/// hot buttons, LED bleed). Composes with rings/insets on the same node.
+inline Mod glow_under(Color c, float blur_=16, float y_=6){ return sty([=](Style& s){ detail::add_shadow_layer(s, "0 "+detail::numstr(y_)+"px "+detail::numstr(blur_)+"px "+detail::numstr(-blur_/4)+"px "+c.css()); }); }
+inline Mod glow_under(std::uint32_t c, float blur_=16, float y_=6){ return glow_under(rgb(c), blur_, y_); }
+
 inline Mod opacity(float o){ return sty([=](Style& s){ s.has_opacity=true; s.opacity=o; }); }
 inline const Mod pointer = sty([](Style& s){ s.cursor=Cursor::pointer; });
+/// `clickable` — re-enable pointer events on a child inside a `no_pointer`
+/// layer (a live control inside a decorative overlay).
+inline const Mod clickable  = sty([](Style& s){ s.extra.emplace_back("pointer-events","auto"); });
+// (inline_block lives in complete.hpp with the browser-parity display mods.)
 inline Mod cursor(Cursor c){ return sty([=](Style& s){ s.cursor=c; }); }
 inline Mod transition(std::string spec="all .15s ease"){ return sty([=](Style& s){ s.has_transition=true; s.transition_spec=spec; }); }
 inline Mod blur(float px_){ return sty([=](Style& s){ s.extra.emplace_back("filter","blur("+std::to_string((int)px_)+"px)"); }); }
@@ -905,8 +991,13 @@ inline const Mod w_full = sty([](Style& s){ s.w={100,Unit::pct}; });
 inline const Mod h_full = sty([](Style& s){ s.h={100,Unit::pct}; });
 inline const Mod w_half = sty([](Style& s){ s.w={50,Unit::pct}; });
 inline const Mod w_screen = sty([](Style& s){ s.extra.emplace_back("width","100%"); });
-inline const Mod h_screen = sty([](Style& s){ s.extra.emplace_back("min-height","100vh"); });
+/// Full-viewport height, mobile-correct: `100dvh` is what "full screen" means
+/// on a phone (the `vh` unit overshoots behind the URL bar).
+inline const Mod h_screen = sty([](Style& s){ s.extra.emplace_back("min-height","100dvh"); });
 inline Mod w_frac(int num, int den){ return sty([=](Style& s){ s.w={100.f*num/den, Unit::pct}; }); }
+/// `mx_auto` — centre a fixed/max-width block horizontally (the classic page
+/// column: `col(…) | max_w(1200) | mx_auto | w_full`).
+inline const Mod mx_auto = sty([](Style& s){ s.extra.emplace_back("margin-left","auto"); s.extra.emplace_back("margin-right","auto"); });
 /// `square(px)` / `circle(px)` — equal-sided box; circle also rounds fully.
 inline Mod square(float px_){ return sty([=](Style& s){ s.w={px_,Unit::px}; s.h={px_,Unit::px}; }); }
 inline Mod circle(float px_){ return sty([=](Style& s){ s.w={px_,Unit::px}; s.h={px_,Unit::px}; s.radius={9999,Unit::px}; }); }
@@ -914,6 +1005,9 @@ inline Mod circle(float px_){ return sty([=](Style& s){ s.w={px_,Unit::px}; s.h=
 inline const Mod line_through = sty([](Style& s){ s.extra.emplace_back("text-decoration","line-through"); });
 inline const Mod no_underline = sty([](Style& s){ s.extra.emplace_back("text-decoration","none"); });
 inline const Mod pre_wrap      = sty([](Style& s){ s.extra.emplace_back("white-space","pre-wrap"); });
+/// `pre` — preserve whitespace and newlines exactly, no wrapping (ASCII art,
+/// terminal output, code). The stricter sibling of `pre_wrap`.
+inline const Mod pre           = sty([](Style& s){ s.extra.emplace_back("white-space","pre"); });
 inline const Mod break_word    = sty([](Style& s){ s.extra.emplace_back("overflow-wrap","anywhere"); });
 /// overflow control, named.
 inline const Mod clip_content = sty([](Style& s){ s.extra.emplace_back("overflow","hidden"); });
@@ -936,6 +1030,22 @@ inline Mod font_family(std::string stack){ return sty([=](Style& s){ s.extra.emp
 inline Mod gradient(std::uint32_t a, std::uint32_t b, int deg=90){
     return sty([=](Style& s){ s.extra.emplace_back("background",
         "linear-gradient("+std::to_string(deg)+"deg,"+detail::hexstr(a)+","+detail::hexstr(b)+")"); }); }
+/// `gradient(rgba(…), rgba(…), deg)` — the alpha-aware form (glass sheens,
+/// scrims, tinted overlays).
+inline Mod gradient(Color a, Color b, int deg=90){
+    return sty([av=a.css(), bv=b.css(), deg](Style& s){ s.extra.emplace_back("background",
+        "linear-gradient("+std::to_string(deg)+"deg,"+av+","+bv+")"); }); }
+/// `orb(inner, outer, cx, cy)` — a hard radial-gradient FILL: the lit-from-a-
+/// point look for solid shapes (wheels, knobs, LED dots, vignetted panels).
+/// `cx`/`cy` place the highlight as percentages (40,35 = upper-left light).
+/// (Contrast `radial(color, x, y)` below: a soft page-scale glow backdrop.)
+inline Mod orb(Color inner, Color outer, int cx=50, int cy=50){
+    return sty([i=inner.css(), o=outer.css(), cx, cy](Style& s){ s.extra.emplace_back("background",
+        "radial-gradient(circle at "+std::to_string(cx)+"% "+std::to_string(cy)+"%, "+i+", "+o+")"); }); }
+inline Mod orb(std::uint32_t inner, std::uint32_t outer, int cx=50, int cy=50){ return orb(rgb(inner), rgb(outer), cx, cy); }
+/// `veil(opacity)` — a translucent black backdrop (modal dimmers, image
+/// scrims). `veil(.55)` ≡ background: rgba(0,0,0,.55).
+inline Mod veil(float a=.5f){ return sty([=](Style& s){ s.extra.emplace_back("background", "rgba(0,0,0,"+detail::numstr(a)+")"); }); }
 /// gradient text: paint the gradient and clip it to the glyphs.
 inline Mod gradient_text(std::uint32_t a, std::uint32_t b, int deg=90){
     return sty([=](Style& s){
@@ -990,6 +1100,11 @@ inline Mod aurora_text(std::uint32_t a, std::uint32_t b, std::uint32_t c, int se
 inline Mod glow_text(std::uint32_t color, int blur=24){
     return sty([=](Style& s){ s.extra.emplace_back("text-shadow",
         "0 0 "+std::to_string(blur)+"px "+detail::rgba_hex(color,0.6f)+", 0 0 "+std::to_string(blur*2)+"px "+detail::rgba_hex(color,0.3f)); }); }
+/// `text_glow(color, blur)` — the precise single-layer form: one halo, your
+/// alpha (`text_glow(rgba(green, .8f), 6)` = phosphor glyphs, LED digits).
+inline Mod text_glow(Color c, float blur_=8){
+    return sty([v=c.css(), blur_](Style& s){ s.extra.emplace_back("text-shadow", "0 0 "+detail::numstr(blur_)+"px "+v); }); }
+inline Mod text_glow(std::uint32_t c, float blur_=8){ return text_glow(rgba(c, .8f), blur_); }
 /// `float_()` — the node gently bobs up and down (hero art, badges).
 inline Mod float_(int secs=4){ return sty([=](Style& s){ s.extra.emplace_back("animation","wa-float "+std::to_string(secs)+"s ease-in-out infinite"); }); }
 /// `breathe()` — a slow opacity+scale breath (ambient glows, live dots).

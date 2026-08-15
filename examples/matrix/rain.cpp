@@ -69,11 +69,10 @@ waya::surface::NodeRef rain_canvas(const Model& m) {
     // The rain sits BEHIND everything at reduced opacity so the terminal + HUD
     // read clearly on top — the rain is atmosphere, not the subject.
     return box(markup(std::move(svg)))
-        | detail::raw_css("position", "absolute")
-        | detail::raw_css("inset", "0")
-        | detail::raw_css("z-index", "0")
-        | detail::raw_css("opacity", "0.55")
-        | detail::raw_css("overflow", "hidden");
+        | absolute() | pin()
+        | z(0)
+        | opacity(.55f)
+        | clip;
 }
 
 } // namespace mtx

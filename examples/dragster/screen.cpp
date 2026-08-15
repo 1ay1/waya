@@ -41,46 +41,46 @@ NodeRef sprite(std::uint32_t hue, bool firing) {
     auto wheel = [&](float leftPct, float botPct, float dPct){
         return box(
             box() | absolute() | pin() | round(pct(50))
-                  | detail::raw_css("background","radial-gradient(circle at 38% 35%, #2b2f3d 0%, #0c0d12 62%, #05060a 100%)"),
-            box() | absolute() | pin() | round(pct(50)) | detail::raw_css("box-shadow","inset 0 0 0 2px "+rgb(rimC).css()),
+                  | orb(0x2b2f3d, 0x05060a, 38, 35),
+            box() | absolute() | pin() | round(pct(50)) | inset_ring(rgb(rimC), 2),
             box() | absolute() | left(pct(32)) | top(pct(32)) | w(pct(36)) | h(pct(36)) | round(pct(50))
-                  | detail::raw_css("background","radial-gradient(circle at 40% 40%, #6b7288, #2a2e3c)"))
+                  | orb(0x6b7288, 0x2a2e3c, 40, 40))
             | absolute() | left(pct(leftPct)) | bottom(pct(botPct)) | w(pct(dPct))
-            | detail::raw_css("aspect-ratio","1/1")
-            | detail::raw_css("filter","drop-shadow(0 3px 3px rgba(0,0,0,.4))");
+            | aspect(1.0f)
+            | detail::raw_css("filter","drop-shadow(0 3px 3px rgba(0,0,0,.4))");  // shape shadow
     };
 
     // the long chassis beam from rear axle to front wheel.
     auto beam = box()
         | absolute() | left(pct(16)) | bottom(pct(30)) | w(pct(60)) | h(pct(7)) | round(px(3))
         | gradient(H.lighten(0.1f).opaque(), H.darken(0.25f).opaque(), 180)
-        | detail::raw_css("box-shadow","inset 0 1px 0 rgba(255,255,255,.25)");
+        | inset_light(.25f);
 
     // the driver body / engine cowling behind the rear axle (the fat back end).
     auto body = box()
         | absolute() | left(pct(2)) | bottom(pct(30)) | w(pct(30)) | h(pct(26))
-        | detail::raw_css("border-radius","10px 4px 4px 10px")
+        | round(10, 4, 4, 10)
         | gradient(H.lighten(0.18f).opaque(), H.darken(0.2f).opaque(), 180)
-        | detail::raw_css("box-shadow","inset 0 2px 0 rgba(255,255,255,.3), inset 0 -3px 6px rgba(0,0,0,.35)");
+        | inset_light(.3f, 2) | inset_dark(.35f, -3);
 
     // cockpit bubble + roll hoop.
     auto cockpit = box()
         | absolute() | left(pct(30)) | bottom(pct(52)) | w(pct(16)) | h(pct(20))
-        | detail::raw_css("border-radius","8px 8px 0 0")
-        | detail::raw_css("background","linear-gradient(180deg, rgba(180,220,255,.9), rgba(90,130,180,.7))")
-        | detail::raw_css("box-shadow","inset 0 1px 0 rgba(255,255,255,.6)");
+        | round(8, 8, 0, 0)
+        | gradient(rgba(0xb4dcff, .9f), rgba(0x5a82b4, .7f), 180)
+        | inset_light(.6f);
 
     // rear wing on a mast.
     auto wing = box(
         box() | absolute() | left(pct(40)) | top(pct(0)) | w(pct(6)) | h(pct(38)) | bg(H.darken(0.2f).opaque()))
         | absolute() | left(pct(0)) | top(pct(4)) | w(pct(26)) | h(pct(12)) | round(px(3))
         | gradient(H.lighten(0.1f).opaque(), H.darken(0.3f).opaque(), 180)
-        | detail::raw_css("box-shadow","0 2px 4px rgba(0,0,0,.4)");
+        | glow_under(rgba(0x000000, .4f), 4, 2);
 
     // nose cone tapering to the front wheel.
     auto nose = box()
         | absolute() | left(pct(64)) | bottom(pct(31)) | w(pct(20)) | h(pct(9))
-        | detail::raw_css("border-radius","3px 8px 8px 3px")
+        | round(3, 8, 8, 3)
         | gradient(H.lighten(0.12f).opaque(), H.darken(0.25f).opaque(), 180);
 
     // exhaust flame off the back when firing.
@@ -88,10 +88,10 @@ NodeRef sprite(std::uint32_t hue, bool firing) {
         | absolute() | left(pct(-10)) | bottom(pct(38)) | w(pct(16)) | h(pct(10)) | round(px(6))
         | opacity(firing ? 1.0f : 0.0f)
         | detail::raw_css("background","linear-gradient(90deg, transparent, "+rgb(amber).css()+", "+rgb(warn).css()+")")
-        | detail::raw_css("filter","blur(1.5px)");
+        | blur(1.5f);
 
     return box(flame, wing, beam, wheel(4, 6, 40), body, cockpit, nose, wheel(66, 18, 22))
-        | detail::raw_css("position","relative")
+        | relative
         | w(pct(100)) | h(pct(100));
 }
 
@@ -115,7 +115,7 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
         | absolute() | bottom(pct(0)) | left(pct(0)) | right(pct(0)) | h(pct(48))
         | gradient(ground, groundLo, 180) | overflow("hidden")
         // a soft top highlight = the horizon edge catching light.
-        | detail::raw_css("box-shadow", "inset 0 4px 0 " + rgb(0xffffff).alpha(0.18f).css());
+        | inset_light(.18f, 4);
 
     // sky with scrolling distance ticks up top (finish-line markers).
     std::vector<NodeRef> ticks;
@@ -139,7 +139,7 @@ NodeRef lane(double progress, int scroll, bool moving, bool firing, std::uint32_
     auto shadow = box()
         | absolute() | bottom(pct(15)) | w(pct(20)) | h(pct(7))
         | round(pct(50)) | bg(rgb(0x000000).alpha(0.3f))
-        | detail::raw_css("filter", "blur(2px)")
+        | blur(2)
         | at_left(cx + 2);           // dynamic left -> inline
     auto car_l = box(sprite(hue, firing))
         | absolute() | bottom(pct(16)) | w(pct(26)) | h(pct(52))
@@ -212,9 +212,9 @@ NodeRef tachometer_bar(const Model& m) {
             cue
         ) | items_center | w_full,
         box(bar) | w_full | pad(px(3)) | round(px(5)) | bg(0x0a0b10)
-            | detail::raw_css("height", "22px")
-            | detail::raw_css("flex", "0 0 auto")
-            | detail::raw_css("box-shadow", "inset 0 1px 3px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.05)")
+            | h(22)
+            | no_shrink
+            | inset_dark(.7f, 1) | inset_ring(rgba(0xffffff, .05f), 1)
     ) | gap(5) | w_full;
 }
 

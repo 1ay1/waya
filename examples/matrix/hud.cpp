@@ -18,8 +18,8 @@ NodeRef hbox(std::string title, NodeRef body, std::uint32_t accent = green) {
         text(std::move(title)) | fg(dim) | font(10) | term_font | uppercase | tracking_em(0.18f),
         body
     ) | gap(9) | pad(14) | round(6) | w_full
-      | detail::raw_css("background", "rgba(2,10,6,.95)")
-      | detail::raw_css("border", "1px solid " + hx(line))
+      | bg(rgba(0x020a06, .95f))
+      | border(1, line)
       | pane(accent);
 }
 
@@ -28,10 +28,10 @@ template <class Msg>
 NodeRef ctl(std::string label, std::uint32_t c, Msg msg) {
     return box(text("[ " + label + " ]") | fg(c) | font(12) | term_font | weight(Weight::bold) | phosphor(c, 4))
         | pad_x(12) | pad_y(9) | round(4) | pointer
-        | detail::raw_css("background", hxa(c, "12"))
-        | detail::raw_css("border", "1px solid " + hxa(c, "44"))
+        | bg(rgba(c, .07f))
+        | border(1, rgba(c, .27f))
         | transition("all .14s ease")
-        | on(Hover, detail::raw_css("background", hxa(c, "22")))
+        | on(Hover, bg(rgba(c, .13f)))
         | tap(std::move(msg));
 }
 } // namespace
@@ -41,25 +41,25 @@ NodeRef hud_panel(const Model& m) {
 
     // ── alert badge ──
     auto badge = row(
-        box() | detail::raw_css("width","9px") | detail::raw_css("height","9px") | round(999)
-            | detail::raw_css("background", hx(ac)) | phosphor(ac, 8)
-            | detail::raw_css("animation", m.alert>0 ? "mtx-pulse 1s ease-in-out infinite" : "none"),
+        box() | size(9) | round(999)
+            | bg(ac) | phosphor(ac, 8)
+            | (m.alert>0 ? detail::raw_css("animation", "mtx-pulse 1s ease-in-out infinite") : Mod{}),
         text(alert_text(m.alert)) | fg(ac) | font(13) | term_font | weight(Weight::bold) | phosphor(ac, 5)
             | tracking_em(0.1f)
     ) | gap(9) | items_center | pad_x(12) | pad_y(9) | round(4) | w_full
-      | detail::raw_css("background", hxa(ac, "10")) | detail::raw_css("border","1px solid "+hxa(ac,"3a"));
+      | bg(rgba(ac, .06f)) | border(1, rgba(ac, .23f));
 
     // ── breach meter ──
     auto meter = hbox("breach progress", col(
         row(text(std::to_string(m.breach)) | fg(ac) | font(30) | term_font | weight(Weight::black) | phosphor(ac,6) | tabular_nums,
             text("%") | fg(dim) | font(16) | term_font) | gap(2) | items_baseline,
-        box(box() | detail::raw_css("height","8px") | round(2)
-                | detail::raw_css("width", std::to_string(m.breach)+"%")
-                | detail::raw_css("background", "linear-gradient(90deg,"+hx(green)+","+hx(ac)+")")
+        box(box() | h(8) | round(2)
+                | w(pct((float)m.breach))
+                | gradient(green, ac, 90)
                 | phosphor(ac, 6)
                 | transition("width .25s linear"))
-            | w_full | detail::raw_css("height","8px") | round(2)
-            | detail::raw_css("background", hx(0x061a0e)) | detail::raw_css("border","1px solid "+hx(line))
+            | w_full | h(8) | round(2)
+            | bg(0x061a0e) | border(1, line)
     ) | gap(10), ac);
 
     // ── node grid (7 nodes; lit as they're pwned) ──
@@ -67,10 +67,10 @@ NodeRef hud_panel(const Model& m) {
     for (int i = 0; i < 7; ++i) {
         bool on = i < m.nodes_pwned;
         nodes.push_back(box(text(on ? "\u25c9" : "\u25cc") | fg(on ? green : line) | font(18) | term_font
-                            | (on ? phosphor(green, 6) : detail::raw_css("opacity",".5")))
-            | detail::raw_css("width","34px") | detail::raw_css("height","34px") | round(4) | center
-            | detail::raw_css("background", on ? hxa(green,"12") : hxa(0xffffff,"03"))
-            | detail::raw_css("border","1px solid "+ (on ? hxa(green,"44") : hx(line))));
+                            | (on ? phosphor(green, 6) : opacity(.5f)))
+            | size(34) | round(4) | center
+            | bg(on ? rgba(green, .07f) : rgba(0xffffff, .012f))
+            | border(1, on ? rgba(green, .27f) : rgb(line)));
     }
     auto grid = hbox("proxy nodes", row_(nodes) | gap(6) | wrap);
 
@@ -94,7 +94,7 @@ NodeRef hud_panel(const Model& m) {
     ) | gap(10) | wrap;
 
     return col(badge, meter, grid, stats, controls) | gap(14) | w_full
-        | detail::raw_css("width","300px") | detail::raw_css("max-width","100%");
+        | w(300) | max_w(pct(100));
 }
 
 } // namespace mtx
