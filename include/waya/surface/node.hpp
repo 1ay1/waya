@@ -1788,4 +1788,39 @@ inline std::string jsonld(std::string type, std::vector<std::pair<std::string,st
     o += "}"; return o;
 }
 
+// ── message mapping — the view-side complement of Cmd::map ─────────────────
+/// `map_msg<Child>(node, f)` — lift EVERY message a subtree emits from a child
+/// widget's own Msg type to the parent's, via `f : Child -> Parent`. This is
+/// what lets a widget library be truly self-contained: the widget's `view()`
+/// wires `tap(Close{})` / `on_input(SetQuery{})` in terms of ITS OWN message
+/// type, and the app embeds it without that type having to be a top-level
+/// alternative of the app's variant — the parent just maps it in:
+///
+///   // a reusable dropdown widget (its own Msg): returns a NodeRef wired to
+///   // Dropdown::Msg { Open, Close, Pick{int} }.
+///   NodeRef dropdown_view(const Dropdown::State&);   // uses tap(Dropdown::Open{}) ...
+///
+///   // the app embeds two of them, telling them apart by lifting each into a
+///   // parent Msg that carries which instance sent it:
+///   map_msg<Dropdown::Msg>(dropdown_view(m.a), [](Dropdown::Msg d){ return AEvent{d}; })
+///   map_msg<Dropdown::Msg>(dropdown_view(m.b), [](Dropdown::Msg d){ return BEvent{d}; })
+///
+/// It walks the built subtree once and rewrites each wired handler's registry
+/// entry so, on the round-trip, the child Msg it would have produced is passed
+/// through `f` first. Mapping is idempotent-safe: a handler that doesn't hold a
+/// `Child` value is left untouched, so nested/partial maps never drop an event.
+/// Call it at the embed site, on the node the widget returned.
+template <typename Child, typename Fn>
+inline NodeRef map_msg(NodeRef n, Fn f){
+    if (!n) return n;
+    auto remap = [&f](int tok){ detail::remap_token<Child>(tok, f); };
+    std::function<void(Node&)> walk = [&](Node& nd){
+        remap(nd.on_tap); remap(nd.on_input); remap(nd.on_change);
+        for (auto& h : nd.events) remap(h.msg);
+        for (auto& k : nd.kids) if (k) walk(*k);
+    };
+    walk(*n);
+    return n;
+}
+
 } // namespace waya::surface

@@ -101,4 +101,25 @@ std::optional<Msg> resolve_msg(int token, const std::string& value) {
     return std::nullopt;
 }
 
+/// Re-wrap ONE registered handler so its produced Child Msg is lifted to a
+/// Parent Msg via `f`. This is the machinery behind `map_msg(node, f)` — the
+/// view-side complement of `Cmd::map`. The token's stored thunk is replaced by
+/// one that runs the original make (→ std::any holding the child Msg), casts it
+/// to Child, applies f, and re-wraps as Parent. If the any doesn't hold Child
+/// (a token already mapped, or a foreign type), it is passed through untouched
+/// so double-maps and mixed trees degrade safely rather than dropping events.
+template <typename Child, typename Fn>
+void remap_token(int token, const Fn& f) {
+    if (token < 0) return;
+    for (auto& e : g_msg_table.entries)
+        if (e.token == token) {
+            e.make = [inner = std::move(e.make), f](const std::string& v) -> std::any {
+                std::any a = inner(v);
+                if (auto* c = std::any_cast<Child>(&a)) return std::any{ f(*c) };
+                return a;   // not a Child value — leave it for resolve_msg to fold
+            };
+            return;
+        }
+}
+
 } // namespace waya::surface::detail

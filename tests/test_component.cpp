@@ -133,6 +133,47 @@ int main() {
         check(c.get() != a.get(), "list_versioned(): bumped version returns a fresh container");
     }
 
+    // ── map_msg: a self-contained widget's Msg is lifted into the parent's ───
+    {
+        // A reusable widget with its OWN message type (not the app's).
+        struct DropOpen {}; struct DropPick { std::string v; };
+        using DropMsg = std::variant<DropOpen, DropPick>;
+        // its view wires taps/inputs in terms of DropMsg only.
+        auto dropdown = []{
+            return col(
+                button("open") | tap(DropMsg{DropOpen{}}),
+                input("") | on_input([](std::string v){ return DropMsg{DropPick{v}}; }));
+        };
+
+        // The parent embeds it, lifting DropMsg into its own variant, tagged by
+        // which instance sent it. AppMsg carries the child msg + an instance id.
+        struct FromA { DropMsg inner; }; struct FromB { DropMsg inner; }; struct Other {};
+        using AppMsg = std::variant<FromA, FromB, Other>;
+
+        detail::begin_msg_capture();
+        auto a = map_msg<DropMsg>(dropdown(), [](DropMsg d){ return AppMsg{FromA{d}}; });
+        auto b = map_msg<DropMsg>(dropdown(), [](DropMsg d){ return AppMsg{FromB{d}}; });
+
+        // resolve instance A's tap -> should be AppMsg{FromA{DropOpen}}.
+        int tokA = a->kids[0]->on_tap;
+        auto rA = detail::resolve_msg<AppMsg>(tokA, "");
+        check(rA.has_value(), "map_msg: mapped tap still resolves");
+        check(rA && std::holds_alternative<FromA>(*rA), "map_msg: A's tap lifts into FromA");
+        check(rA && std::holds_alternative<DropOpen>(std::get<FromA>(*rA).inner),
+              "map_msg: the inner child Msg is preserved (DropOpen)");
+
+        // resolve instance B's input -> AppMsg{FromB{DropPick{"hi"}}}, with value.
+        int tokB = b->kids[1]->on_input;
+        auto rB = detail::resolve_msg<AppMsg>(tokB, "hi");
+        check(rB && std::holds_alternative<FromB>(*rB), "map_msg: B's input lifts into FromB");
+        check(rB && std::get<DropPick>(std::get<FromB>(*rB).inner).v == "hi",
+              "map_msg: the event value flows through the map (DropPick{\"hi\"})");
+
+        // two instances of the SAME widget are told apart purely by the map.
+        check(std::holds_alternative<FromA>(*rA) && std::holds_alternative<FromB>(*rB),
+              "map_msg: two instances of one widget disambiguate via the parent map");
+    }
+
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

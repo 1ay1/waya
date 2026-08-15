@@ -138,6 +138,43 @@ The client snapshots item positions before applying a frame's ops, then plays th
 delta as a transform — so a `sort` or `filter` that reorders the list animates
 automatically. No `@keyframes`, no per-item state, no timers.
 
+### `map_msg<Child>(node, f)` — embed a widget with its OWN message type
+
+The view-side complement of `Cmd::map`. A truly reusable widget wires its taps
+and inputs in terms of **its own** message type — not the consuming app's — so a
+widget library never has to know about the variants of every app that uses it.
+`map_msg` lifts every message a subtree emits from the child's type to the
+parent's, via `f : Child -> Parent`, at the embed site:
+
+```cpp
+// a reusable dropdown widget, defined in some widget library. Its view is
+// wired entirely in terms of Dropdown::Msg { Open, Close, Pick{int} }.
+namespace Dropdown {
+    struct Open{}; struct Pick{ int i; };
+    using Msg = std::variant<Open, Pick>;
+    NodeRef view(const State& s);   // uses tap(Open{}), on_input(...) -> Msg
+}
+
+// the app embeds TWO of them and tells them apart purely by the map — no shared
+// state, no widget-specific plumbing in Dropdown itself:
+struct SizeEvent { Dropdown::Msg m; };
+struct ColorEvent{ Dropdown::Msg m; };
+using AppMsg = std::variant<SizeEvent, ColorEvent, /* ... */>;
+
+col(
+    map_msg<Dropdown::Msg>(Dropdown::view(m.size),  [](Dropdown::Msg d){ return AppMsg{SizeEvent{d}};  }),
+    map_msg<Dropdown::Msg>(Dropdown::view(m.color), [](Dropdown::Msg d){ return AppMsg{ColorEvent{d}}; })
+)
+```
+
+On the round-trip, a click inside the first dropdown resolves to
+`AppMsg{SizeEvent{Dropdown::Open{}}}`; the second, `ColorEvent`. The event's
+value (a field's text, a picked index) flows through the map untouched. This is
+what makes a widget **self-contained**: its message type never has to be a
+top-level alternative of the app's variant — the parent maps it in. Mapping is
+safe to nest and idempotent-safe (a handler that isn't a `Child` value is left
+alone), so wrapping a widget that itself wrapped a sub-widget just composes.
+
 ## Putting it together
 
 The [`living` example](13-examples.md) is a todo list where rows are memoised
