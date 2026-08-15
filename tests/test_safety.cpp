@@ -179,6 +179,28 @@ int main() {
     check(verify(sanitized_html("<b>hi</b><script>x</script>")),
           "sanitized_html output passes validation");
 
+    // ── CSS-value injection via the raw css() escape hatch ────────────────
+    // A widget author passing an untrusted value into css(prop, value) must NOT
+    // be able to break out of the class rule and inject global CSS. `}` closes
+    // the rule; `<` could close an inlined <style>. Both are stripped.
+    {
+        auto css_of = [](NodeRef n){ return DomBackend{}.render(*n).css; };
+        auto evil = css_of(box(text("x")) | css("color", "red; } body { display:none; } .x{color:blue"));
+        check(evil.find("body {") == std::string::npos && evil.find("body{") == std::string::npos,
+              "css() value cannot break out of its rule (no injected global rule)");
+        check(evil.find('}') == evil.rfind('}'),   // exactly ONE closing brace (the class's own)
+              "css() value strips stray closing braces");
+        // valid CSS (gradients, calc, var, url) is preserved intact.
+        auto ok = css_of(box(text("x")) | css("background", "linear-gradient(90deg, red, blue)")
+                                          | css("width", "calc(100% - 20px)"));
+        check(has(ok, "linear-gradient(90deg, red, blue)") && has(ok, "calc(100% - 20px)"),
+              "css() preserves legitimate values (gradient / calc)");
+        // a </style> breakout attempt is neutralised too.
+        auto style_esc = css_of(box(text("x")) | css("content", "</style><script>evil"));
+        check(style_esc.find("<script>") == std::string::npos && style_esc.find("</style>") == std::string::npos,
+              "css() value cannot smuggle </style> or a tag");
+    }
+
     std::cout << "test_safety: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

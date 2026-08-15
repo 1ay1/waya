@@ -77,6 +77,16 @@ private:
         case '&':o+="&amp;";break; case '<':o+="&lt;";break; case '>':o+="&gt;";break;
         case '"':o+="&quot;";break; case '\'':o+="&#39;";break; default:o+=c; } }
 
+    // A CSS declaration VALUE from the untrusted `extra` channel. `{` `}` and
+    // `<` are never legitimately part of a single declaration value, but a `}`
+    // would close the class rule (injecting global rules) and `</style>` would
+    // break out of an inlined stylesheet. Drop those three; everything else
+    // (colors, url(), calc(), var(), gradients) passes through untouched. This
+    // is what makes css(prop, userValue) safe by construction for widget authors.
+    static void css_val(std::string& o, const std::string& v){
+        for(char c : v) if(c!='{' && c!='}' && c!='<') o+=c;
+    }
+
     static void len(std::string& o, const Len& l){
         switch(l.unit){ case Unit::px:o+=n(l.value);o+="px";break; case Unit::pct:o+=n(l.value);o+="%";break;
             case Unit::rem:o+=n(l.value);o+="rem";break; case Unit::em:o+=n(l.value);o+="em";break;
@@ -195,7 +205,7 @@ private:
                 }
                 if(!done) merged.emplace_back(k,v);
             }
-            for(auto&[k,v]:merged){ o+=k; o+=':'; o+=v; o+=';'; }
+            for(auto&[k,v]:merged){ o+=k; o+=':'; css_val(o,v); o+=';'; }
         }
         return o;
     }
