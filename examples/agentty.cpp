@@ -61,47 +61,55 @@ static NodeRef pixel_logo() {
         | detail::raw_css("margin-bottom","28px");
 }
 
-// Server-driven "matrix rain": a grid of columns, each a stack of glyphs that
-// scrolls down one row per frame. Rendered on the SERVER from the frame counter
-// — the diff ships only the glyphs that changed. This is the waya-native version
-// of the site's <canvas> rain: state + a tick, no client JS.
-static NodeRef matrix_rain(std::uint32_t frame, std::uint32_t accent) {
-    static const char* GLYPHS = "01<>{}[]#$/\\|=+*ABCDEF0123456789";
-    const int cols = 26, rows = 20, n = (int)std::string(GLYPHS).size();
-    // a cheap deterministic hash so each cell's glyph + brightness is stable per
-    // (col,row,frame) but looks random.
+// Pure-CSS "matrix rain": columns of glyphs, each translated down forever by a
+// CSS keyframe. The philosophy (same as ripple/tap_pop): decorative motion is
+// CLIENT-side — the browser paints it, the server renders the markup ONCE at
+// first paint and never again. Zero Model state, zero WebSocket traffic, zero
+// server cost per frame. A page under load pays nothing for this animation.
+static NodeRef matrix_rain(std::uint32_t accent) {
+    // register the fall keyframes ONCE in the shared stylesheet (client-cached).
+    assets().css(
+        "@keyframes agentty-fall{to{transform:translateY(50%)}}"
+        ".agentty-col{will-change:transform;animation:agentty-fall linear infinite}");
+    static const char* GLYPHS = "01<>{}[]#$/\\|=+*ABCDEF89";
+    const int cols = 26, rows = 42, n = (int)std::string(GLYPHS).size();
     auto hash = [](std::uint32_t x){ x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; };
     std::vector<NodeRef> columns;
     for (int c = 0; c < cols; ++c) {
-        std::uint32_t speed = 1 + (hash((std::uint32_t)c * 2654435761U) % 3);   // 1..3 rows/frame
-        int head = (int)((frame * speed + hash((std::uint32_t)c) % rows));
+        // each column is a tall strip (2x the viewport) of glyphs; translating it
+        // down 50% loops seamlessly because the strip repeats its own top half.
         std::vector<NodeRef> cells;
         for (int r = 0; r < rows; ++r) {
-            std::uint32_t h = hash((std::uint32_t)(c * 131 + r * 977) + frame / 4);
+            std::uint32_t h = hash((std::uint32_t)(c * 131 + r * 977));
             char ch = GLYPHS[h % (std::uint32_t)n];
-            int dist = ((head - r) % rows + rows) % rows;   // 0 = bright head
-            float op = dist == 0 ? 1.0f : dist < 6 ? (0.55f - dist * 0.08f) : 0.05f;
-            std::uint32_t col = dist == 0 ? 0xbfe0ff : accent;
+            bool head = (h % 11) == 0;
+            float op = head ? 0.9f : (0.06f + (float)(h % 40) / 130.0f);
             cells.push_back(text(std::string(1, ch)) | mono | text_size(13)
-                | fg(col) | detail::raw_css("opacity", detail::numstr(op))
-                | detail::raw_css("line-height","1.15"));
+                | fg(head ? 0xbfe0ff : accent)
+                | detail::raw_css("opacity", detail::numstr(op))
+                | detail::raw_css("line-height", "1.25"));
         }
         auto colBox = box(); colBox->kids = std::move(cells); colBox->style.flow = Flow::col; finalize(*colBox);
-        columns.push_back(colBox | items_center);
+        // per-column speed + start offset so they don't fall in lockstep.
+        float dur = 6.0f + (float)(hash((std::uint32_t)c) % 90) / 10.0f;   // 6..15s
+        float delay = -(float)(hash((std::uint32_t)c * 7u) % 100) / 10.0f; // negative = mid-cycle start
+        columns.push_back(colBox | items_center | attr("class", "agentty-col")
+            | detail::raw_css("animation-duration", detail::numstr(dur) + "s")
+            | detail::raw_css("animation-delay", detail::numstr(delay) + "s"));
     }
     auto grid = box(); grid->kids = std::move(columns); grid->style.flow = Flow::row; finalize(*grid);
-    return grid | detail::raw_css("gap","14px") | justify_center
-        | absolute() | detail::raw_css("inset","0") | z(0) | no_pointer
-        | detail::raw_css("overflow","hidden") | detail::raw_css("opacity","0.5")
-        | detail::raw_css("mask-image","linear-gradient(180deg,#000 0%,#000 55%,transparent 100%)")
-        | detail::raw_css("-webkit-mask-image","linear-gradient(180deg,#000 0%,#000 55%,transparent 100%)");
+    return grid | detail::raw_css("gap", "14px") | justify_center
+        | absolute() | detail::raw_css("inset", "-50% 0 0 0") | z(0) | no_pointer
+        | detail::raw_css("overflow", "hidden") | detail::raw_css("opacity", "0.5")
+        | detail::raw_css("mask-image", "linear-gradient(180deg,transparent,#000 20%,#000 60%,transparent 100%)")
+        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,transparent,#000 20%,#000 60%,transparent 100%)");
 }
 
 // The agentty-specific hero backdrop — a blueprint grid + falling digital-rain
 // streaks + a drifting brand glow + CRT scanlines. This is the APP's brand
 // aesthetic (policy), NOT the framework's — so it lives here in the example and
 // is passed to site_hero_split_bg(), keeping ui/site.hpp unopinionated.
-static NodeRef agentty_backdrop(std::uint32_t accent, std::uint32_t frame) {
+static NodeRef agentty_backdrop(std::uint32_t accent) {
     assets().keyframes("agentty-glow",
         "from{transform:translate(0,0) scale(1);opacity:.75}"
         "to{transform:translate(140px,70px) scale(1.18);opacity:1}");
@@ -113,7 +121,7 @@ static NodeRef agentty_backdrop(std::uint32_t accent, std::uint32_t frame) {
         | detail::raw_css("background-size", "44px 44px")
         | detail::raw_css("mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
         | detail::raw_css("-webkit-mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
-    auto rain = matrix_rain(frame, accent);   // the LIVE, server-driven falling code
+    auto rain = matrix_rain(accent);   // pure-CSS falling code — client-painted, zero server cost
     auto glow = box() | absolute()
         | detail::raw_css("width", "760px") | detail::raw_css("height", "760px")
         | detail::raw_css("top", "-220px") | detail::raw_css("left", "20%")
@@ -132,13 +140,9 @@ static NodeRef agentty_backdrop(std::uint32_t accent, std::uint32_t frame) {
 }
 
 struct App {
-    struct Model {
-        std::string copied;
-        std::uint32_t frame = 0;   // rain animation frame (bumped by a server tick)
-    };
+    struct Model { std::string copied; };
     struct Copy { std::string cmd; };        // a copy button was clicked
-    struct Tick {};                          // the rain clock advanced
-    using Msg = std::variant<Copy, Tick>;
+    using Msg = std::variant<Copy>;
 
     static Model init() { return {}; }
 
@@ -148,22 +152,14 @@ struct App {
                 m.copied = c.cmd;
                 return { m, Cmd<Msg>::copy(c.cmd) };   // real clipboard write
             },
-            [&](Tick) -> std::pair<Model, Cmd<Msg>> {
-                ++m.frame;                             // advance the falling code
-                return { m, Cmd<Msg>::none() };
-            },
         }, msg);
     }
 
-    // Drive the matrix rain from the SERVER: one tick every 110ms bumps the
-    // frame, the view re-renders the glyph columns shifted down, and only the
-    // changed cells stream over the WebSocket. This is how waya does a "canvas
-    // animation" — no client JS, the diff makes it cheap.
-    static Sub<Msg> subscribe(const Model&) {
-        return Sub<Msg>::every(110, Tick{});
-    }
+    // No subscribe() — the page has no live app state. The matrix rain and glow
+    // are PURE CSS (client-painted), so nothing ticks the server. A marketing
+    // page should cost the server one render, then stay silent.
 
-    static NodeRef view(const Model& m) {
+    static NodeRef view(const Model&) {
         // A GitHub-dark theme (the site toolkit's default), tweak-able in one struct.
         SiteTheme theme{};
 
@@ -181,7 +177,7 @@ struct App {
             //   app supplies its OWN logo + backdrop (the framework stays neutral).
             site_hero_lead(
                 pixel_logo(),
-                agentty_backdrop(0x58a6ff, m.frame),
+                agentty_backdrop(0x58a6ff),
                 "Blazing-fast", "coding agent", "in your terminal.",
                 "A drop-in alternative to claude-code, written in C++26. 13 MB binary, "
                 "millisecond cold start, sandboxed by default, SSH air-gap in one command, "
