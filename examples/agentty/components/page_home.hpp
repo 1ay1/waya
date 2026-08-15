@@ -41,7 +41,7 @@ inline const char* HOME_CSS =
 ".btn-ghost{background:var(--bg-elev);border-color:var(--border);color:var(--text)}"
 ".btn-ghost:hover{border-color:var(--accent);background:var(--bg-soft)}"
 // hero
-".hero{padding:64px 0 0;position:relative;overflow:hidden}.hero .wrap{position:relative;z-index:1}"
+".hero{padding:96px 0 40px;position:relative}.hero .wrap{position:relative;z-index:1}"
 ".hero-grid{display:grid;grid-template-columns:minmax(360px,1fr) minmax(0,1.05fr);gap:56px;align-items:start}"
 ".hero-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;text-align:left}"
 ".hero-logo{margin:-16px 0 22px;max-width:100%}"
