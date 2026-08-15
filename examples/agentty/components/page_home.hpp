@@ -117,7 +117,7 @@ inline const char* HOME_CSS =
 ".stat-link{display:block;color:inherit;text-decoration:none}.stat-link:hover{background:var(--bg-soft)}.stat-link:hover .num{filter:brightness(1.15)}"
 ".stat .num{display:block;font-size:32px;font-weight:800;letter-spacing:-.03em;line-height:1.1;background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums;min-height:1.05em}"
 ".stat .lbl{display:block;color:var(--text-dim);font-size:13.5px;margin-top:6px}"
-".stats-note{text-align:center;color:var(--text-faint);font-size:12.5px;margin:14px 0 0}"
+".stats-note{text-align:center;color:var(--text-faint);font-size:12.5px;margin:16px 0 56px}"
 ".stats-note a{color:var(--text-dim);text-decoration:underline;text-underline-offset:2px}"
 "@media (max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}"
 // quote
