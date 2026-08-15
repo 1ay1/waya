@@ -69,7 +69,7 @@ namespace impl {
 inline Mod button_base(){
     return pad_x(16) | pad_y(10) | round(10) | pointer | semibold
          | detail::raw_css("border","1px solid transparent")
-         | detail::raw_css("font-size","14px") | detail::raw_css("line-height","1")
+         | text_size(14) | detail::raw_css("line-height","1")
          | detail::raw_css("white-space","nowrap") | detail::raw_css("user-select","none")
          | transition("transform .08s ease, background-color .15s ease, opacity .15s ease")
          | on(Active, detail::raw_css("transform","translateY(1px)"));
@@ -84,7 +84,7 @@ inline Mod button_skin(Variant v){
         return bg_raised | fg_text | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.12))")
              | on(Hover, detail::raw_css("filter","brightness(1.12)"));
     case Variant::ghost:
-        return detail::raw_css("background","transparent") | fg_text
+        return bg_transparent() | fg_text
              | on(Hover, detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.06))"));
     case Variant::danger:
         return detail::raw_css("background","var(--wa-danger, #ef4444)") | detail::raw_css("color","#fff")
@@ -119,7 +119,7 @@ NodeRef icon_button(std::string glyph, Msg msg, Variant v = Variant::ghost){
 /// `field("Email", control)` — a labelled control: a small muted label stacked
 /// above any input node. `hint` shows a helper line below when non-empty.
 inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
-    auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
+    auto lab = text(std::move(label)) | fg_muted | text_size(12.5f) | semibold
              | detail::raw_css("letter-spacing",".02em");
     // Wrap the label + control in a <label> element: clicking the label text
     // focuses the control (implicit association), and screen readers announce
@@ -127,7 +127,7 @@ inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
     auto col_ = col(std::move(lab), std::move(control)) | gap(6) | as("label")
               | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
     if (!hint.empty())
-        col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | detail::raw_css("font-size","12px")) | gap(6);
+        col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | text_size(12)) | gap(6);
     return col_;
 }
 
@@ -137,7 +137,7 @@ inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
 /// wrapped so it reads as invalid. Drive it from your Model — a validation error
 /// is just state — so `f.error.empty() ? field(…) : field_invalid(…, f.error)`.
 inline NodeRef field_invalid(std::string label, NodeRef control, std::string error){
-    auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
+    auto lab = text(std::move(label)) | fg_muted | text_size(12.5f) | semibold
              | detail::raw_css("letter-spacing",".02em");
     // a red focus ring / border on the control so the invalid field stands out.
     control = std::move(control)
@@ -145,7 +145,7 @@ inline NodeRef field_invalid(std::string label, NodeRef control, std::string err
         | detail::raw_css("box-shadow", "0 0 0 3px rgba(239,68,68,.18)")
         | attr("aria-invalid", "true");
     auto msg = text(std::move(error)) | detail::raw_css("color","#ef4444")
-             | detail::raw_css("font-size","12px") | role("alert");
+             | text_size(12) | role("alert");
     return col(std::move(lab), std::move(control), std::move(msg)) | gap(6) | as("label")
          | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
 }
@@ -156,7 +156,7 @@ inline Mod input_skin(){
     return pad_x(12) | pad_y(10) | round(10) | fg_text
          | detail::raw_css("background","var(--wa-bg, rgba(0,0,0,.25))")
          | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.14))")
-         | detail::raw_css("font-size","14px") | detail::raw_css("width","100%") | detail::raw_css("outline","none")
+         | text_size(14) | detail::raw_css("width","100%") | detail::raw_css("outline","none")
          | transition("border-color .15s ease, box-shadow .15s ease")
          | on(Focus, detail::raw_css("border-color","var(--wa-primary, #6366f1)"))
          | on(Focus, detail::raw_css("box-shadow","0 0 0 3px color-mix(in srgb, var(--wa-primary, #6366f1) 30%, transparent)"));
@@ -183,7 +183,7 @@ inline NodeRef badge(std::string label, Tone tone = Tone::neutral){
     auto [bgc, fgc] = impl::tone_colors(tone);
     return text(std::move(label)) | pad_x(9) | pad_y(3) | round(999)
          | detail::raw_css("background", bgc) | detail::raw_css("color", fgc)
-         | detail::raw_css("font-size","12px") | semibold | detail::raw_css("white-space","nowrap")
+         | text_size(12) | semibold | detail::raw_css("white-space","nowrap")
          | detail::raw_css("line-height","1.4");
 }
 
@@ -246,7 +246,7 @@ NodeRef tabs(int active, std::vector<std::pair<int,std::string>> items, ToMsg to
         bool on = (id == active);
         tab_nodes.push_back(
             text(label) | pad_x(14) | pad_y(10) | pointer | semibold
-              | detail::raw_css("font-size","14px")
+              | text_size(14)
               | (on ? fg_text : fg_muted)
               | detail::raw_css("border-bottom", on ? "2px solid var(--wa-primary, #6366f1)" : "2px solid transparent")
               | transition("color .15s ease, border-color .15s ease")
@@ -277,7 +277,7 @@ inline NodeRef tooltip(NodeRef trigger, std::string tip, std::string place="top"
     assets().css(".wa-tip-wrap [data-wa-tip]{opacity:0;transition:opacity .15s ease}"
                  ".wa-tip-wrap:hover [data-wa-tip]{opacity:1}");
     auto bubble = text(std::move(tip))
-        | pad_x(9) | pad_y(6) | round(8) | detail::raw_css("font-size","12.5px")
+        | pad_x(9) | pad_y(6) | round(8) | text_size(12.5f)
         | detail::raw_css("background","var(--wa-raised, #1e293b)") | fg_text
         | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
         | detail::raw_css("box-shadow","0 8px 24px rgba(0,0,0,.4)")
@@ -315,7 +315,7 @@ inline NodeRef toast_layer(std::vector<NodeRef> toasts){
 }
 /// `toast(text, tone)` — a single toast card for the layer above.
 inline NodeRef toast(std::string message, Tone tone = Tone::neutral){
-    return row(dot(tone), text(std::move(message)) | fg_text | detail::raw_css("font-size","14px"))
+    return row(dot(tone), text(std::move(message)) | fg_text | text_size(14))
         | gap(10) | center | pad_x(16) | pad_y(12) | round(12)
         | detail::raw_css("background","var(--wa-surface, #141b2e)")
         | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
@@ -343,10 +343,10 @@ inline NodeRef panel(std::string title, std::string subtitle, NodeRef body,
         | round(2) | detail::raw_css("background", detail::hexstr(accent))
         | glow(accent, 10);
     auto titles = col(
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","14px")
+        text(std::move(title)) | fg_text | text_size(14)
             | weight(Weight::bold) | detail::raw_css("letter-spacing","-0.01em"),
         when(!subtitle.empty(), [&]{
-            return text(std::move(subtitle)) | fg_muted | detail::raw_css("font-size","11px"); })
+            return text(std::move(subtitle)) | fg_muted | text_size(11); })
     ) | gap(2);
     auto head = row(rail, titles, box() | grows,
                     when(header_extra != nullptr, [&]{ return header_extra; }))
@@ -367,12 +367,12 @@ inline NodeRef panel(std::string title, std::string subtitle, NodeRef body,
 inline NodeRef slider_row(std::string label, NodeRef control, std::string value_text = "",
                           std::uint32_t value_color = 0x22d3ee){
     return col(
-        row(text(std::move(label)) | fg_muted | detail::raw_css("font-size","12px") | medium,
+        row(text(std::move(label)) | fg_muted | text_size(12) | medium,
             box() | grows,
             when(!value_text.empty(), [&]{
                 return text(std::move(value_text))
                     | detail::raw_css("color", detail::hexstr(value_color))
-                    | detail::raw_css("font-size","12px") | weight(Weight::bold) | tabular_nums; }))
+                    | text_size(12) | weight(Weight::bold) | tabular_nums; }))
             | items_center | w_full,
         std::move(control) | w_full
     ) | gap(6) | w_full;

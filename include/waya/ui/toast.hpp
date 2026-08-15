@@ -122,7 +122,7 @@ namespace toast_detail {
 inline NodeRef card(const Toast& t, NodeRef close, NodeRef action){
     std::vector<NodeRef> parts;
     parts.push_back(dot(t.tone));
-    parts.push_back(text(t.message) | fg_text | detail::raw_css("font-size","14px"));
+    parts.push_back(text(t.message) | fg_text | text_size(14));
     parts.push_back(box() | grows);
     if (action) parts.push_back(std::move(action));
     parts.push_back(std::move(close));
@@ -138,7 +138,7 @@ inline NodeRef card(const Toast& t, NodeRef close, NodeRef action){
 }
 inline NodeRef close_btn_for(int id, int tok){
     auto c = text("\xc3\x97")                    // ×
-        | fg_muted | detail::raw_css("font-size","16px") | pointer
+        | fg_muted | text_size(16) | pointer
         | pad_x(4) | aria_label("Dismiss notification") | role("button");
     c->on_tap = tok;
     (void)id;
@@ -181,7 +181,7 @@ inline NodeRef toasts_layer(const Toasts& q, ToMsg onDismiss, OnAction onAction)
         if (t.has_action()){
             auto [accent, _] = impl::tone_colors(t.tone); (void)_;
             action = box(text(t.action_label)
-                        | detail::raw_css("font-size","13px") | semibold)
+                        | text_size(13) | semibold)
                 | detail::raw_css("color", accent) | pointer | pad_x(10) | pad_y(5) | round(7)
                 | role("button") | aria_label(t.action_label)
                 | detail::raw_css("white-space","nowrap")

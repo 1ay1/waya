@@ -126,8 +126,8 @@ inline int table_page_count(int total, const TableState& st){
 // ── view ──────────────────────────────────────────────────────────────────────
 namespace table_detail {
 inline NodeRef sort_glyph(bool active, bool desc){
-    if (!active) return text("\xe2\x86\x95") | fg_muted | detail::raw_css("font-size","11px") | detail::raw_css("opacity",".4");
-    return text(desc ? "\xe2\x86\x93" : "\xe2\x86\x91") | detail::raw_css("font-size","11px");   // ↓ / ↑
+    if (!active) return text("\xe2\x86\x95") | fg_muted | text_size(11) | detail::raw_css("opacity",".4");
+    return text(desc ? "\xe2\x86\x93" : "\xe2\x86\x91") | text_size(11);   // ↓ / ↑
 }
 }
 
@@ -148,11 +148,11 @@ inline NodeRef data_table(const std::vector<Row>& rows, const std::vector<TableC
     // header row: sortable columns are tappable and show the sort glyph.
     for (int ci = 0; ci < (int)cols.size(); ++ci){
         auto& c = cols[ci];
-        auto head = row(text(c.header) | semibold | fg_muted | detail::raw_css("font-size","12.5px"),
+        auto head = row(text(c.header) | semibold | fg_muted | text_size(12.5f),
                         box() | grows,
                         c.is_sortable() ? table_detail::sort_glyph(st.sort_col==ci, st.sort_desc) : nothing())
             | items_center | gap(6) | pad_y(10)
-            | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.12))");
+            | line_b(0.12f);
         if (c.is_sortable())
             head = head | pointer | tap(onSort(ci)) | role("button")
                         | aria("sort", st.sort_col==ci ? (st.sort_desc ? "descending" : "ascending") : "none");
@@ -163,7 +163,7 @@ inline NodeRef data_table(const std::vector<Row>& rows, const std::vector<TableC
         const Row& r = rows[order[k]];
         for (auto& c : cols)
             cells.push_back(box(c.cell(r)) | pad_y(10) | fg_text | items_center | horizontal
-                | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.06))"));
+                | line_b(0.06f));
     }
     auto grid = box(); grid->kids = std::move(cells); grid->style.flow = Flow::grid;
     grid->style.extra.emplace_back("grid-template-columns", "repeat(" + std::to_string(cols.size()) + ",minmax(0,auto))");
@@ -176,12 +176,12 @@ inline NodeRef data_table(const std::vector<Row>& rows, const std::vector<TableC
     // pager: Prev / "n of m" / Next
     auto prev = text("\xe2\x80\xb9 Prev") | (page>0 ? fg_text : fg_muted)   // ‹ Prev
         | (page>0 ? (pointer | tap(onPage(page-1))) : Mod{})
-        | detail::raw_css("font-size","13px") | aria_label("Previous page");
+        | text_size(13) | aria_label("Previous page");
     auto next = text("Next \xe2\x80\xba") | (page<pages-1 ? fg_text : fg_muted) // Next ›
         | (page<pages-1 ? (pointer | tap(onPage(page+1))) : Mod{})
-        | detail::raw_css("font-size","13px") | aria_label("Next page");
+        | text_size(13) | aria_label("Next page");
     auto info = text(std::to_string(page+1) + " of " + std::to_string(pages))
-        | fg_muted | detail::raw_css("font-size","13px");
+        | fg_muted | text_size(13);
     auto pager = row(prev, box() | grows, info, box() | grows, next)
         | items_center | w_full | pad_y(10);
     return col(table, pager) | w_full | gap(4);

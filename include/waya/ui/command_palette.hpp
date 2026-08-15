@@ -118,7 +118,7 @@ inline NodeRef command_palette(const Keymap<Msg>& km, const std::string& query, 
         bool on = (i == selected);
         auto caps = keymap_detail::combo_caps(b.combo);
         rows.push_back(
-            row(text(b.label) | (on ? fg_text : fg_muted) | detail::raw_css("font-size","14px"),
+            row(text(b.label) | (on ? fg_text : fg_muted) | text_size(14),
                 box() | grows,
                 caps)
             | items_center | gap(12) | pad_x(12) | pad_y(9) | round(8) | w_full
@@ -131,8 +131,8 @@ inline NodeRef command_palette(const Keymap<Msg>& km, const std::string& query, 
     auto search = input(query)
         | placeholder("Type a command\xe2\x80\xa6")           // …
         | anchor("cmdk") | autofocus()
-        | w_full | pad_x(14) | pad_y(12) | detail::raw_css("font-size","15px")
-        | detail::raw_css("background","transparent")
+        | w_full | pad_x(14) | pad_y(12) | text_size(15)
+        | bg_transparent()
         | detail::raw_css("border","none") | detail::raw_css("outline","none")
         | fg_text | on_input(onQuery)
         | on_escape(onClose)

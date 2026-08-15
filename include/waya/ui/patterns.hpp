@@ -39,7 +39,7 @@ NodeRef page_header(std::string title, std::string subtitle = "", Actions... act
     auto titles = col(
         text(std::move(title)) | fg_text | detail::raw_css("font-size","clamp(22px,3vw,30px)")
             | weight(Weight::black) | detail::raw_css("letter-spacing","-0.02em"),
-        when(!subtitle.empty(), [&]{ return text(subtitle) | fg_muted | detail::raw_css("font-size","14px"); })
+        when(!subtitle.empty(), [&]{ return text(subtitle) | fg_muted | text_size(14); })
     ) | gap(4);
     std::vector<NodeRef> acts{ std::move(actions)... };
     return row(std::move(titles), box() | grow(),
@@ -53,7 +53,7 @@ NodeRef page_header(std::string title, std::string subtitle = "", Actions... act
 template <typename... Cs>
 NodeRef section(std::string heading, Cs... cs){
     return col(
-        row(text(std::move(heading)) | fg_muted | detail::raw_css("font-size","12px")
+        row(text(std::move(heading)) | fg_muted | text_size(12)
                 | weight(Weight::bold) | detail::raw_css("letter-spacing",".1em")
                 | detail::raw_css("text-transform","uppercase"),
             box() | grow(), divider()) | gap(14) | items_center,
@@ -73,12 +73,12 @@ NodeRef nav_bar(NodeRef brand, Items... items){
         | detail::raw_css("background","color-mix(in srgb, var(--wa-bg, #0b1020) 82%, transparent)")
         | detail::raw_css("backdrop-filter","blur(12px)")
         | detail::raw_css("-webkit-backdrop-filter","blur(12px)")
-        | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.08))");
+        | line_b(0.08f);
 }
 
 /// `nav_link("Docs")` — a nav-bar link: muted, brightens on hover. Add `tap`/`href`.
 inline NodeRef nav_link(std::string label){
-    return text(std::move(label)) | fg_muted | detail::raw_css("font-size","14px") | medium
+    return text(std::move(label)) | fg_muted | text_size(14) | medium
          | pointer | transition("color .15s ease") | on(Hover, fg_text);
 }
 
@@ -90,9 +90,9 @@ inline NodeRef nav_link(std::string label){
 /// an optional coloured delta chip (e.g. "+12%"). The dashboard workhorse.
 inline NodeRef stat(std::string label, std::string value, std::string delta = "", Tone delta_tone = Tone::success){
     return col(
-        row(text(std::move(label)) | fg_muted | detail::raw_css("font-size","13px") | medium,
+        row(text(std::move(label)) | fg_muted | text_size(13) | medium,
             when(!delta.empty(), [&]{ return badge(delta, delta_tone); })) | items_center | gap(8),
-        text(std::move(value)) | fg_text | detail::raw_css("font-size","30px") | weight(Weight::black)
+        text(std::move(value)) | fg_text | text_size(30) | weight(Weight::black)
             | tabular_nums | detail::raw_css("letter-spacing","-0.02em")
     ) | gap(6);
 }
@@ -113,8 +113,8 @@ inline NodeRef metric_card(std::string label, std::string value, std::string del
 /// trailing add NO node (and so no phantom gap), not an empty placeholder.
 inline NodeRef list_row(NodeRef leading, std::string title, std::string subtitle = "", NodeRef trailing = nullptr){
     auto titles = col(
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","14px") | semibold,
-        when(!subtitle.empty(), [&]{ return text(subtitle) | fg_muted | detail::raw_css("font-size","13px"); })
+        text(std::move(title)) | fg_text | text_size(14) | semibold,
+        when(!subtitle.empty(), [&]{ return text(subtitle) | fg_muted | text_size(13); })
     ) | gap(2);
     std::vector<NodeRef> kids;
     if (leading) kids.push_back(std::move(leading));
@@ -128,9 +128,9 @@ inline NodeRef list_row(NodeRef leading, std::string title, std::string subtitle
 
 /// `key_value("Label", "Value")` — a label:value row (a details/definition list).
 inline NodeRef key_value(std::string k, std::string v){
-    return row(text(std::move(k)) | fg_muted | detail::raw_css("font-size","14px"),
+    return row(text(std::move(k)) | fg_muted | text_size(14),
                box() | grow(),
-               text(std::move(v)) | fg_text | detail::raw_css("font-size","14px") | medium | tabular_nums)
+               text(std::move(v)) | fg_text | text_size(14) | medium | tabular_nums)
         | items_center | gap(16) | pad_y(8);
 }
 
@@ -141,7 +141,7 @@ inline NodeRef key_value(std::string k, std::string v){
 /// `tag("design")` — a subtle outlined label chip (categories, filters). Lighter
 /// than a `badge`. Add `tap` to make it a filter.
 inline NodeRef tag(std::string label){
-    return text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | medium
+    return text(std::move(label)) | fg_muted | text_size(12.5f) | medium
          | pad_x(10) | pad_y(4) | round(8)
          | detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.04))")
          | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
@@ -150,7 +150,7 @@ inline NodeRef tag(std::string label){
 
 /// `kbd("Cmd")` — a keyboard-key cap (shortcut hints). `row(kbd("Cmd"), kbd("K"))`.
 inline NodeRef kbd(std::string key){
-    return text(std::move(key)) | fg_text | detail::raw_css("font-size","12px") | semibold
+    return text(std::move(key)) | fg_text | text_size(12) | semibold
          | pad_x(7) | pad_y(3) | round(6) | mono
          | detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.06))")
          | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.14))")
@@ -164,7 +164,7 @@ inline NodeRef banner(std::string message, Tone tone = Tone::primary){
     const char* ico = tone == Tone::danger ? "alert" : tone == Tone::warning ? "alert"
                     : tone == Tone::success ? "check" : "info";
     return row(icon(ico, 18) | detail::raw_css("color", accent),
-               text(std::move(message)) | fg_text | detail::raw_css("font-size","14px") | leading(1.5f))
+               text(std::move(message)) | fg_text | text_size(14) | leading(1.5f))
         | gap(12) | items_center | pad_x(16) | pad_y(12) | round(12) | w_full
         | detail::raw_css("background","color-mix(in srgb," + std::string(accent) + " 12%, transparent)")
         | detail::raw_css("border","1px solid color-mix(in srgb," + std::string(accent) + " 35%, transparent)");
@@ -178,8 +178,8 @@ inline NodeRef empty_state(std::string title, std::string hint = "", NodeRef act
     return col(
         box(icon(ico, 26) | fg_muted) | size(56) | center | round(999)
             | detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.04))"),
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","17px") | semibold,
-        when(!hint.empty(), [&]{ return text(hint) | fg_muted | detail::raw_css("font-size","14px")
+        text(std::move(title)) | fg_text | text_size(17) | semibold,
+        when(!hint.empty(), [&]{ return text(hint) | fg_muted | text_size(14)
                                         | leading(1.6f) | text_center | max_w(360); }),
         when(action != nullptr, [&]{ return action; })
     ) | gap(14) | items_center | pad(48) | w_full;
@@ -188,12 +188,12 @@ inline NodeRef empty_state(std::string title, std::string hint = "", NodeRef act
 /// `code_block("...", "cpp")` — a monospace code panel with a language tag.
 inline NodeRef code_block(std::string code, std::string lang = ""){
     auto bar = when(!lang.empty(), [&]{
-        return row(text(lang) | fg_muted | detail::raw_css("font-size","12px") | mono, box() | grow())
+        return row(text(lang) | fg_muted | text_size(12) | mono, box() | grow())
              | pad_x(14) | pad_y(8)
-             | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.08))");
+             | line_b(0.08f);
     });
     return col(bar,
-        text(std::move(code)) | fg_text | mono | detail::raw_css("font-size","13px")
+        text(std::move(code)) | fg_text | mono | text_size(13)
             | leading(1.6f) | pre_wrap | pad(16))
         | round(12) | detail::raw_css("overflow","hidden")
         | detail::raw_css("background","var(--wa-bg, rgba(0,0,0,.3))")
@@ -207,8 +207,8 @@ inline NodeRef feature_card(std::string ico, std::string title, std::string body
     return col(
         box(icon(ico, 20) | detail::raw_css("color", accent)) | size(46) | center | round(12)
             | detail::raw_css("background","color-mix(in srgb," + std::string(accent) + " 14%, transparent)"),
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","17px") | semibold,
-        text(std::move(body)) | fg_muted | detail::raw_css("font-size","14px") | leading(1.65f)
+        text(std::move(title)) | fg_text | text_size(17) | semibold,
+        text(std::move(body)) | fg_muted | text_size(14) | leading(1.65f)
     ) | gap(14) | pad(24) | round(16) | grow()
       | bg_surface | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.08))");
 }
@@ -300,8 +300,8 @@ NodeRef file_field(std::string label, ToMsg to_msg,
 template <typename Msg>
 NodeRef switch_field(std::string title, std::string desc, bool on, Msg msg){
     auto titles = col(
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","14px") | semibold,
-        when(!desc.empty(), [&]{ return text(desc) | fg_muted | detail::raw_css("font-size","13px"); })
+        text(std::move(title)) | fg_text | text_size(14) | semibold,
+        when(!desc.empty(), [&]{ return text(desc) | fg_muted | text_size(13); })
     ) | gap(2);
     return row(std::move(titles), box() | grow(), toggle(on, msg))
         | items_center | gap(16) | pad_y(12);
@@ -314,7 +314,7 @@ NodeRef switch_field(std::string title, std::string desc, bool on, Msg msg){
 template <typename Msg>
 NodeRef checkbox_field(std::string label, bool on, Msg msg){
     return row(checkbox(on) | on_change([msg](std::string){ return msg; }),
-               text(std::move(label)) | fg_text | detail::raw_css("font-size","14px"))
+               text(std::move(label)) | fg_text | text_size(14))
         | gap(10) | items_center | as("label") | detail::raw_css("cursor","pointer");
 }
 
@@ -355,7 +355,7 @@ template <typename Msg>
 NodeRef sidebar_item(std::string ico, std::string label, bool active, Msg msg){
     auto n = row(icon(ico, 18) | (active ? fg_text : fg_muted),
                  text(std::move(label)) | (active ? fg_text : fg_muted)
-                     | detail::raw_css("font-size","14px") | (active ? semibold : medium))
+                     | text_size(14) | (active ? semibold : medium))
         | gap(12) | items_center | pad_x(12) | pad_y(10) | round(9) | pointer
         | role("button") | tab_index(0) | tap(msg)
         | transition("background-color .15s ease, color .15s ease");
@@ -394,7 +394,7 @@ inline NodeRef sidebar_shell(NodeRef brand, std::vector<NodeRef> nav_items, Node
     ) | gap(12) | pad(14) | w_full | sticky_top(0)
         | detail::raw_css("z-index","40")
         | detail::raw_css("background","var(--wa-surface, #0c1019)")
-        | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.08))")
+        | line_b(0.08f)
         | only_phone();
 
     auto main_ = box(std::move(content)) | grow() | min_w(0)
@@ -419,8 +419,8 @@ NodeRef confirm_dialog(bool open, std::string title, std::string message,
                        std::string confirm_label, ConfirmMsg on_confirm, CancelMsg on_cancel,
                        Variant confirm_variant = Variant::primary){
     return dialog(open, on_cancel,
-        text(std::move(title)) | fg_text | detail::raw_css("font-size","18px") | weight(Weight::bold),
-        text(std::move(message)) | fg_muted | detail::raw_css("font-size","14px") | leading(1.6f),
+        text(std::move(title)) | fg_text | text_size(18) | weight(Weight::bold),
+        text(std::move(message)) | fg_muted | text_size(14) | leading(1.6f),
         row(box() | grow(),
             button("Cancel", on_cancel, Variant::secondary),
             button(std::move(confirm_label), on_confirm, confirm_variant)) | gap(10) | items_center

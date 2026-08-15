@@ -149,11 +149,11 @@ inline NodeRef data_grid(const std::vector<Row>& rows, const std::vector<GridCol
     // header row (identical to data_table).
     for (int ci = 0; ci < (int)cols.size(); ++ci){
         auto& c = cols[ci].base;
-        auto head = row(text(c.header) | semibold | fg_muted | detail::raw_css("font-size","12.5px"),
+        auto head = row(text(c.header) | semibold | fg_muted | text_size(12.5f),
                         box() | grows,
                         c.is_sortable() ? table_detail::sort_glyph(st.sort_col==ci, st.sort_desc) : nothing())
             | items_center | gap(6) | pad_y(10)
-            | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.12))");
+            | line_b(0.12f);
         if (c.is_sortable())
             head = head | pointer | tap(onSort(ci)) | role("button")
                         | aria("sort", st.sort_col==ci ? (st.sort_desc ? "descending" : "ascending") : "none");
@@ -197,7 +197,7 @@ inline NodeRef data_grid(const std::vector<Row>& rows, const std::vector<GridCol
                 inner = gc.base.cell(r);   // plain read-only cell
             }
             cells.push_back(box(std::move(inner)) | pad_y(8) | pad_x(4) | fg_text | items_center | horizontal
-                | detail::raw_css("border-bottom","1px solid var(--wa-line, rgba(255,255,255,.06))"));
+                | line_b(0.06f));
         }
     }
 
@@ -211,12 +211,12 @@ inline NodeRef data_grid(const std::vector<Row>& rows, const std::vector<GridCol
 
     auto prev = text("\xe2\x80\xb9 Prev") | (page>0 ? fg_text : fg_muted)
         | (page>0 ? (pointer | tap(onPage(page-1))) : Mod{})
-        | detail::raw_css("font-size","13px") | aria_label("Previous page");
+        | text_size(13) | aria_label("Previous page");
     auto next = text("Next \xe2\x80\xba") | (page<pages-1 ? fg_text : fg_muted)
         | (page<pages-1 ? (pointer | tap(onPage(page+1))) : Mod{})
-        | detail::raw_css("font-size","13px") | aria_label("Next page");
+        | text_size(13) | aria_label("Next page");
     auto info = text(std::to_string(page+1) + " of " + std::to_string(pages))
-        | fg_muted | detail::raw_css("font-size","13px");
+        | fg_muted | text_size(13);
     auto pager = row(prev, box() | grows, info, box() | grows, next)
         | items_center | w_full | pad_y(10);
     return col(table, pager) | w_full | gap(4);

@@ -57,7 +57,7 @@ inline NodeRef caret(bool open){
     // ▸ collapsed / ▾ expanded — rotated via a class-free inline glyph so it
     // diffs as text, not a paint.
     return text(open ? "\xe2\x96\xbe" : "\xe2\x96\xb8")
-        | fg_muted | detail::raw_css("font-size","11px")
+        | fg_muted | text_size(11)
         | detail::raw_css("width","14px") | detail::raw_css("text-align","center");
 }
 /// A caret for a branch, or a blank spacer for a leaf (so labels line up).

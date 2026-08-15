@@ -96,9 +96,9 @@ inline NodeRef spotlight(const std::vector<SpotItem>& items, const std::string& 
         if (!it.icon.empty())
             line.push_back(box(icon(it.icon, 17)) | (on ? fg_text : fg_muted) | detail::raw_css("line-height","0"));
         line.push_back(
-            col(text(it.label) | (on ? fg_text : fg_muted) | detail::raw_css("font-size","14px"),
+            col(text(it.label) | (on ? fg_text : fg_muted) | text_size(14),
                 it.category.empty() ? nothing()
-                    : (text(it.category) | fg_muted | detail::raw_css("font-size","11.5px") | detail::raw_css("opacity","0.75")))
+                    : (text(it.category) | fg_muted | text_size(11.5f) | detail::raw_css("opacity","0.75")))
             | gap(1));
         line.push_back(box() | grows);
 
@@ -114,8 +114,8 @@ inline NodeRef spotlight(const std::vector<SpotItem>& items, const std::string& 
     auto search = input(query)
         | placeholder("Search\xe2\x80\xa6")
         | anchor("spotlight") | autofocus()
-        | w_full | pad_x(14) | pad_y(12) | detail::raw_css("font-size","15px")
-        | detail::raw_css("background","transparent")
+        | w_full | pad_x(14) | pad_y(12) | text_size(15)
+        | bg_transparent()
         | detail::raw_css("border","none") | detail::raw_css("outline","none")
         | fg_text | on_input(onQuery)
         | on_escape(onClose)

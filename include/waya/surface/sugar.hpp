@@ -115,6 +115,17 @@ inline const Mod bg_accent  = bg_token("--wa-accent",  "#22d3ee");
 inline const Mod bg_page    = bg_token("--wa-bg",      "#05070d");
 /// `border_token()` — a 1px border in the theme's line colour.
 inline Mod border_token(){ return sty([](Style& s){ s.extra.emplace_back("border", "1px solid var(--wa-line, rgba(255,255,255,.10))"); }); }
+/// `line_b()` — a 1px bottom hairline in the theme line colour (rows, list
+/// items, table cells, nav bars). The single most-common border on a real page;
+/// (divider() is a node; this is the mod). Naming it kills the `css("border-bottom", "1px solid var(--wa-line…)")` reflex.
+/// `divider(alpha)` tunes the line opacity; `border_top_token()` is the top edge.
+inline Mod line_b(float alpha = 0.10f){ return sty([=](Style& s){
+    s.extra.emplace_back("border-bottom", "1px solid var(--wa-line, rgba(255,255,255," + detail::numstr(alpha) + "))"); }); }
+inline Mod border_top_token(float alpha = 0.10f){ return sty([=](Style& s){
+    s.extra.emplace_back("border-top", "1px solid var(--wa-line, rgba(255,255,255," + detail::numstr(alpha) + "))"); }); }
+/// `bg_transparent()` — an explicit transparent background (unstyle a control,
+/// reset a themed surface). Common enough to name.
+inline Mod bg_transparent(){ return sty([](Style& s){ s.extra.emplace_back("background", "transparent"); }); }
 
 // ── expressive building blocks ─ the things every real UI needs, one call ────
 /// `push()` — a flexible gap that shoves siblings apart. `row(logo, push(), menu)`
