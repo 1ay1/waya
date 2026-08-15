@@ -38,6 +38,7 @@
 #include "ui/wizard.hpp"
 #include "ui/infinite_scroll.hpp"
 #include "ui/tree.hpp"
+#include "ui/file_tree.hpp"
 #include "ui/markdown.hpp"
 #include "ui/presence.hpp"
 #include "ui/split_pane.hpp"

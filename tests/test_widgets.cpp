@@ -794,6 +794,55 @@ int main() {
         check(has(bc, "role=\"navigation\""), "breadcrumb is a nav landmark");
     }
 
+    // ── file_tree: an explorer with ext icons + selection ──────────────
+    {
+        struct Toggle { std::string id; }; struct Select { std::string path; };
+        detail::begin_msg_capture();
+
+        FileNode root = folder("project", {
+            folder("src", { file("main.cpp"), file("util.hpp") }),
+            file("README.md"), file("logo.png"),
+        });
+
+        // model helpers are pure values.
+        check((file("a.txt") == file("a.txt")), "FileNode has value equality");
+        check(!file("a.txt").dir && folder("d").dir, "file()/folder() set the dir flag");
+        auto stats = file_stats(root);
+        check(stats.folders == 1 && stats.files == 4, "file_stats counts recursively");
+
+        // collapsed: only the root row is visible (children hidden).
+        TreeState open;
+        auto collapsed = html_of(file_tree(root, open, "",
+            [](std::string id){ return Toggle{id}; }, [](std::string p){ return Select{p}; }));
+        check(has(collapsed, "project"), "root folder renders");
+        check(!has(collapsed, "main.cpp"), "collapsed root hides its children");
+        check(has(collapsed, "role=\"tree\""), "file_tree is a tree");
+
+        // expand root + src: files appear with their extension icons.
+        detail::begin_msg_capture();
+        open.expand("project"); open.expand("project/src");
+        auto ex = html_of(file_tree(root, open, "project/src/main.cpp",
+            [](std::string id){ return Toggle{id}; }, [](std::string p){ return Select{p}; }));
+        check(has(ex, "main.cpp") && has(ex, "util.hpp"), "expanded folders reveal their files");
+        check(has(ex, "README.md") && has(ex, "logo.png"), "root-level files render");
+        check(has(ex, "aria-expanded=\"true\""), "open folder is aria-expanded");
+        check(has(ex, "aria-selected=\"true\""), "the selected file is aria-selected");
+
+        // extension drives the icon: code file gets file-code, image gets file-image.
+        check(file_detail::ext_of("main.cpp") == "cpp", "ext_of lowercases the extension");
+        check(file_detail::ext_of("NOEXT") == "", "ext_of returns empty when there's no dot");
+        check(std::string(file_detail::icon_for("a.png").name) == "file-image", "images get the image icon");
+        check(std::string(file_detail::icon_for("a.rs").name) == "file-code", "code files get the code icon");
+
+        // a filename with HTML in it is escaped (svg icon is trusted, name is not).
+        detail::begin_msg_capture();
+        FileNode evil = folder("r", { file("<b>x</b>.txt") });
+        TreeState o2; o2.expand("r");
+        auto ev = html_of(file_tree(evil, o2, "",
+            [](std::string id){ return Toggle{id}; }, [](std::string p){ return Select{p}; }));
+        check(!has(ev, "<b>x</b>") && has(ev, "&lt;b&gt;"), "filenames are escaped (no injection)");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

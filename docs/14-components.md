@@ -579,6 +579,43 @@ The caret shows only for nodes with children; clicking a branch toggles it.
 Rendering is a pure walk of `(data + open set)`, with `role="tree"`/`treeitem`
 and `aria-expanded` for free.
 
+### File explorer — `file_tree`
+
+`tree_view` is the generic recursion engine. **`file_tree`** is the concrete,
+batteries-included file browser built on it — a repo sidebar, an asset library,
+a project pane — without hand-wiring the accessors each time. It ships its own
+model and picks a file icon from each name's extension.
+
+```cpp
+FileNode root = folder("project", {
+    folder("src", { file("main.cpp"), file("util.hpp") }),
+    file("README.md"), file("logo.png"),
+});
+struct Model { FileNode tree; TreeState open; std::string sel; };
+struct Toggle { std::string id; }; struct Select { std::string path; };
+
+// update:
+[&](Toggle t){ m.open.toggle(t.id); return {m, Cmd::none()}; }
+[&](Select s){ m.sel = s.path;        return {m, Cmd::none()}; }
+
+// view:
+file_tree(m.tree, m.open, m.sel,
+    [](std::string id){ return Toggle{id}; },      // a folder was clicked
+    [](std::string path){ return Select{path}; })  // a file was clicked
+```
+
+`file(name)` / `folder(name, {children…})` build the tree (a plain value with
+`==`). Folders expand/collapse (`onToggle` carries the folder's path); files
+select and highlight (`onSelect` carries the file's path). **Ids are the
+slash-joined path from the root** — stable and unique, so they double as the
+selection key. The icon + tint come from the extension (`.cpp/.rs/.py` → blue
+code glyph, `.png/.svg` → violet image glyph, `.json/.yml` → amber, `.css` →
+pink, archives → orange); an open folder shows the open-folder glyph. Filenames
+go through waya's escaping, so a `<b>` in a name renders as literal text — the
+explorer is injection-safe even over an untrusted directory listing.
+`file_stats(root)` returns `{files, folders}` counted recursively, for a header
+like "12 files, 3 folders".
+
 ### Markdown — `markdown(src)`
 
 Render Markdown to a **node tree**, not raw HTML — so there's no injection
