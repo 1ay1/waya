@@ -66,6 +66,8 @@ struct Session {
     void push_route(std::string path);
     /// Push a display self-report (value = "w|h|dark|tz") from an @env frame.
     void push_env(std::string report);
+    /// Push a restored localStorage value on connect (value = "key|val").
+    void push_storage(std::string kv);
     /// Push a "tab visible again" sync request (repaint if frames were skipped).
     void push_sync();
     /// Deliver a topic broadcast: the owner loop resolves the on_topic handler.

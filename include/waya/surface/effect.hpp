@@ -62,6 +62,7 @@ struct Deliver {
     bool is_route = false;      // this is a route change (value = path)
     bool is_env = false;        // display report (value = "w|h|dark|tz")
     bool is_sync = false;       // tab became visible again: repaint if dirty
+    bool is_storage = false;    // persisted value restored on connect (value = "key|val")
     bool has_msg() const { return msg.has_value(); }
 };
 
@@ -167,10 +168,14 @@ public:
     /// Offer `data` (raw bytes) as a browser file download named `filename`
     /// (export CSV/JSON/reports straight from the Model).
     struct Download { std::string filename; std::string mime; std::string data; };
+    /// Persist `value` under `key` in the browser's localStorage (survives a
+    /// reload / tab close). Empty value with `clear=true` removes the key.
+    /// Read it back on connect via `Sub::on_storage`.
+    struct Store { std::string key; std::string value; bool clear = false; };
 
     using Alt = std::variant<None, Quit, Batch, After, Emit, Task,
                              Navigate, PushUrl, Fetch, Broadcast,
-                             SetTitle, ScrollTo, Focus, Copy, Download>;
+                             SetTitle, ScrollTo, Focus, Copy, Download, Store>;
 
     Cmd() : alt_(std::make_shared<Alt>(None{})) {}
     explicit Cmd(Alt a) : alt_(std::make_shared<Alt>(std::move(a))) {}
@@ -244,6 +249,15 @@ public:
                         std::string mime = "application/octet-stream") {
         return Cmd(Alt{Download{std::move(filename), std::move(mime), std::move(data)}});
     }
+    /// `store("theme", "dark")` — persist a value in localStorage across reloads.
+    /// Read it back on connect with `Sub::on_storage`.
+    static Cmd store(std::string key, std::string value) {
+        return Cmd(Alt{Store{std::move(key), std::move(value), false}});
+    }
+    /// `store_clear("theme")` — remove a persisted key.
+    static Cmd store_clear(std::string key) {
+        return Cmd(Alt{Store{std::move(key), {}, true}});
+    }
 
     /// Combine multiple Cmds. Flattens nested batches and strips Nones — so a
     /// `batch` of one real effect is that effect, and a `batch` of nothing is
@@ -290,6 +304,7 @@ public:
             [](const Focus& fo) -> Cmd<B> { return fo.off ? Cmd<B>::blur() : Cmd<B>::focus(fo.target); },
             [](const Copy& c) -> Cmd<B> { return Cmd<B>::copy(c.text); },
             [](const Download& d) -> Cmd<B> { return Cmd<B>::download(d.filename, d.data, d.mime); },
+            [](const Store& st) -> Cmd<B> { return st.clear ? Cmd<B>::store_clear(st.key) : Cmd<B>::store(st.key, st.value); },
             [&](const Batch& b) -> Cmd<B> {
                 std::vector<Cmd<B>> mapped; mapped.reserve(b.cmds.size());
                 for (auto& c : b.cmds) mapped.push_back(c.map(f));
@@ -341,6 +356,7 @@ public:
             else if constexpr (std::is_same_v<A, Focus>)    return a.target == b.target && a.off == b.off;
             else if constexpr (std::is_same_v<A, Copy>)     return a.text == b.text;
             else if constexpr (std::is_same_v<A, Download>) return a.filename == b.filename && a.mime == b.mime && a.data == b.data;
+            else if constexpr (std::is_same_v<A, Store>)    return a.key == b.key && a.value == b.value && a.clear == b.clear;
             else if constexpr (std::is_same_v<A, Batch>) {
                 if (a.cmds.size() != b.cmds.size()) return false;
                 for (std::size_t i = 0; i < a.cmds.size(); ++i)
@@ -377,12 +393,16 @@ public:
     /// live in the Model — collapse a sidebar into a drawer, page a table by
     /// what fits, pick a chart's point density.
     struct OnViewport { std::function<Msg(Viewport)> on; };
+    /// Restore a persisted value on connect: for each `waya:`-key the browser has
+    /// in localStorage, `on(key, value)` becomes a Msg. Pair with `Cmd::store` to
+    /// round-trip state across reloads (theme, collapsed panels, a draft).
+    struct OnStorage { std::function<Msg(std::string, std::string)> on; };
     /// Join a pub/sub `topic`; each broadcast `payload` becomes a Msg via `on`.
     /// The runtime registers/unregisters this session as the subscription set
     /// changes, so joining or leaving a room is just a model-driven Sub.
     struct OnTopic { std::string topic; std::function<Msg(std::string)> on; };
 
-    using Alt = std::variant<None, Batch, Every, OnRoute, OnViewport, OnTopic>;
+    using Alt = std::variant<None, Batch, Every, OnRoute, OnViewport, OnStorage, OnTopic>;
 
     Sub() : alt_(std::make_shared<Alt>(None{})) {}
     explicit Sub(Alt a) : alt_(std::make_shared<Alt>(std::move(a))) {}
@@ -392,6 +412,7 @@ public:
     static Sub every(long ms, Msg msg) { return every(std::chrono::milliseconds{ms}, std::move(msg)); }
     static Sub on_route(std::function<Msg(std::string)> f) { return Sub(Alt{OnRoute{std::move(f)}}); }
     static Sub on_viewport(std::function<Msg(Viewport)> f) { return Sub(Alt{OnViewport{std::move(f)}}); }
+    static Sub on_storage(std::function<Msg(std::string, std::string)> f) { return Sub(Alt{OnStorage{std::move(f)}}); }
     static Sub on_topic(std::string topic, std::function<Msg(std::string)> on) {
         return Sub(Alt{OnTopic{std::move(topic), std::move(on)}});
     }
@@ -433,6 +454,10 @@ public:
     [[nodiscard]] const OnViewport* viewport() const {
         const OnViewport* v = nullptr; collect_viewport(v); return v;
     }
+    /// The storage-restore handler, if any (last one wins in a batch).
+    [[nodiscard]] const OnStorage* storage() const {
+        const OnStorage* s = nullptr; collect_storage(s); return s;
+    }
     /// Every topic subscription this Sub declares (flattening batches). The
     /// runtime reconciles these against the topics the session is joined to.
     [[nodiscard]] std::vector<const OnTopic*> topics() const {
@@ -453,6 +478,11 @@ public:
             [&](const OnViewport& v) -> Sub<B> {
                 return Sub<B>::on_viewport([on = v.on, mapper = std::forward<F>(f)](Viewport vp) -> B {
                     return mapper(on(std::move(vp)));
+                });
+            },
+            [&](const OnStorage& s) -> Sub<B> {
+                return Sub<B>::on_storage([on = s.on, mapper = std::forward<F>(f)](std::string k, std::string v) -> B {
+                    return mapper(on(std::move(k), std::move(v)));
                 });
             },
             [&](const OnTopic& t) -> Sub<B> {
@@ -487,6 +517,13 @@ private:
         std::visit(overload{
             [&](const OnViewport& o) { v = &o; },
             [&](const Batch& b) { for (auto& s : b.subs) s.collect_viewport(v); },
+            [](const auto&) {},
+        }, *alt_);
+    }
+    void collect_storage(const OnStorage*& s) const {
+        std::visit(overload{
+            [&](const OnStorage& o) { s = &o; },
+            [&](const Batch& b) { for (auto& sub : b.subs) sub.collect_storage(s); },
             [](const auto&) {},
         }, *alt_);
     }

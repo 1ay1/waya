@@ -160,7 +160,7 @@ inline std::string client(int port) {
     "var _wshost=location.host||(location.hostname+':"+std::to_string(port)+"');"
     "ws=new WebSocket(_wsproto+_wshost+'/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
     "ws.binaryType='arraybuffer';"
-    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';_css={};}started=true;_envLast='';envReport();hideOff();route();};"
+    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';_css={};}started=true;_envLast='';envReport();storageReport();hideOff();route();};"
     // Text frames are runtime control messages (navigation, dev hot-reload);
     // binary frames are paints. This keeps one socket doing input, output, effects.
     "ws.onmessage=function(ev){if(typeof ev.data==='string'){ctl(ev.data);return;}paint(readFrame(ev.data));};"
@@ -205,7 +205,11 @@ inline std::string client(int port) {
     "var u8=new Uint8Array(bs.length);for(var i=0;i<bs.length;i++)u8[i]=bs.charCodeAt(i);"
     "var url=URL.createObjectURL(new Blob([u8],{type:mi||'application/octet-stream'}));"
     "var a=document.createElement('a');a.href=url;a.download=fn||'download';document.body.appendChild(a);a.click();a.remove();"
-    "setTimeout(function(){URL.revokeObjectURL(url);},4000);}}"
+    "setTimeout(function(){URL.revokeObjectURL(url);},4000);}"
+    // localStorage persistence. @store writes 'waya:'+key (namespaced so we can
+    // report exactly our own keys on connect); @storeclear removes it.
+    "else if(k==='@store'){var b2=v.indexOf('|');if(b2>=0){try{localStorage.setItem('waya:'+v.slice(0,b2),v.slice(b2+1));}catch(_){}}}"
+    "else if(k==='@storeclear'){try{localStorage.removeItem('waya:'+v);}catch(_){}}}"
     // Clipboard fallback for non-secure contexts (http:// LAN dev servers).
     "function fbCopy(v){var t=document.createElement('textarea');t.value=v;t.style.position='fixed';t.style.opacity='0';"
     "document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(_){ }t.remove();}"
@@ -220,6 +224,10 @@ inline std::string client(int port) {
     "var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(_){}"
     "var r=innerWidth+'|'+innerHeight+'|'+d+'|'+tz;"
     "if(r!==_envLast){_envLast=r;ws.send('@env|'+r);}}"
+    // localStorage report: on connect, replay every persisted 'waya:'-key up as
+    // "@storage|key|value" so the app can restore state via Sub::on_storage.
+    "function storageReport(){if(!ws||ws.readyState!==1)return;try{for(var i=0;i<localStorage.length;i++){"
+    "var kk=localStorage.key(i);if(kk&&kk.indexOf('waya:')===0)ws.send('@storage|'+kk.slice(5)+'|'+localStorage.getItem(kk));}}catch(_){}}"
     "var _envT=0;window.addEventListener('resize',function(){clearTimeout(_envT);_envT=setTimeout(envReport,200);});"
     "if(window.matchMedia){try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',envReport);}catch(_){}}"
     // ── visibility: don't paint a screen nobody is watching ───────────────

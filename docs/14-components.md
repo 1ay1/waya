@@ -279,6 +279,38 @@ sparkline(cpu_history) | stroke(0x22d3ee, 2) | w(120) | h(32)
 bars({4, 9, 2, 7}) | fg(0x8b5cf6)
 ```
 
+For a REAL chart — value axis with gridlines and labels, a category axis, named
+series, and a legend — use `chart()`. It's built on the `scene` vector vocabulary,
+so it renders to one diffable, XSS-safe `<svg>` (no markup strings), and the
+axis auto-scales to a "nice" rounded maximum.
+
+```cpp
+chart(560, 300,
+    { series("Revenue", {10, 25, 18, 40, 32}, 0x22d3ee),
+      series("Cost",    { 8, 12, 14, 20, 22}, 0xf59e0b) },
+    { .x_labels = {"Jan","Feb","Mar","Apr","May"}, .kind = ChartKind::line })
+| w_full | h(300)
+```
+
+`ChartKind::line` / `area` / `bar` pick the plot; each `series` carries its own
+colour; the legend names them. It's a pure function of the data — change a value
+and the whole chart redraws (and diffs minimally).
+
+### Code view — `code_view(src, lang)`
+
+Syntax-highlighted code as a **node tree**, not raw HTML — so user- or
+LLM-supplied code is safe: a `<script>` in the source renders as literal,
+coloured text, never executes.
+
+```cpp
+code_view(m.snippet, "cpp") | max_w(720)
+```
+
+The built-in lexer is C-family-ish (keywords, strings, numbers, `//` `/* */` `#`
+comments, punctuation); pass your own keyword set to specialise. It's a
+highlighter for legibility, not a parser — dependency-free and injection-proof by
+construction, the safe counterpart to dropping code into `markup()`.
+
 ### Keyboard shortcuts — `Keymap`
 
 `on_shortcut("mod+k", Open{})` wires one shortcut on one node — but scatter them

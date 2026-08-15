@@ -595,6 +595,35 @@ int main() {
         check(has(vsp, "data-wa-split=\"v\""), "vertical=true makes a stacked split");
     }
 
+    // ── chart: axes + gridlines + labels + legend, on the scene vocabulary ──
+    {
+        detail::begin_msg_capture();
+        auto c = html_of(chart(560, 300,
+            { series("Revenue", {10,25,18,40,32}, 0x22d3ee), series("Cost", {8,12,14,20,22}, 0xf59e0b) },
+            { .x_labels = {"Jan","Feb","Mar","Apr","May"}, .kind = ChartKind::line }));
+        check(has(c, "<svg"), "chart renders one svg scene");
+        check(has(c, "<line"), "chart draws gridlines + axes");
+        check(has(c, "<polyline"), "line chart plots a polyline series");
+        check(has(c, "Revenue") && has(c, "Cost"), "legend names each series");
+        check(has(c, "Jan") && has(c, "May"), "category axis labels the x points");
+        // bar variant renders rects; area variant a filled polygon
+        auto bar = html_of(chart(400, 200, { series("A", {5,10,7}, 0x6366f1) }, { .kind = ChartKind::bar }));
+        check(has(bar, "<rect"), "bar chart renders rectangles");
+        auto area = html_of(chart(400, 200, { series("A", {5,10,7}, 0x6366f1) }, { .kind = ChartKind::area }));
+        check(has(area, "<polygon"), "area chart fills under the line");
+    }
+
+    // ── code_view: syntax-highlighted code, SAFE (no raw HTML) ────────────
+    {
+        auto cv = html_of(code_view("int main(){ return 0; } // hi\nauto s = \"str\";", "cpp"));
+        check(has(cv, "int") && has(cv, "return"), "code is rendered");
+        check(has(cv, "// hi"), "comments preserved");
+        check(has(css_of(code_view("int x;")), "color:"), "tokens are coloured");
+        // THE point: a <script> in the source is escaped, never executable.
+        auto evil = html_of(code_view("x = <script>alert(1)</script>", "js"));
+        check(!has(evil, "<script>") && has(evil, "&lt;"), "code_view escapes HTML (no injection)");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

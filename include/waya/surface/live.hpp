@@ -212,6 +212,15 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
             for (char& ch : mi) if (ch=='|') ch = '_';
             s->send_text("@dl|" + fn + "|" + mi + "|" + ws::detail::base64(d.data));
         },
+        [&](const typename Cmd<Msg>::Store& st) {
+            if (st.clear) s->send_text("@storeclear|" + st.key);
+            else {
+                // key can't contain '|' (it's the field separator); the value
+                // may, and everything after the first '|' is the value.
+                std::string k = st.key; for (char& ch : k) if (ch=='|') ch='_';
+                s->send_text("@store|" + k + "|" + st.value);
+            }
+        },
         [&](const typename Cmd<Msg>::Broadcast& b) {
             // Fan out to every session on the topic (this one included). Each
             // receiver maps the payload through its own Sub::on_topic.
@@ -496,6 +505,10 @@ void run_ws_session(int conn, std::string req_str, int port,
                         // Display self-report "w|h|dark|tz" — the SIGWINCH path.
                         std::string rep = raw.substr(5);
                         if (rep.size() <= 256) s->push_env(std::move(rep));
+                    } else if (raw.rfind("@storage|", 0) == 0) {
+                        // A persisted localStorage value replayed on connect.
+                        std::string kv = raw.substr(9);
+                        if (kv.size() <= kMaxValue) s->push_storage(std::move(kv));
                     } else if (raw == "@hide") {
                         s->visible = false;         // stop shipping deltas
                     } else if (raw == "@show") {
@@ -562,6 +575,15 @@ void run_ws_session(int conn, std::string req_str, int port,
                 }
                 if (vp.width <= 0 || vp.height <= 0) continue;   // malformed: drop
                 r = detail::safe_dispatch<P>(std::move(model), vh->on(vp), d->value, ok);
+            } else if (d->is_storage) {
+                // A persisted "key|value" restored on connect → Sub::on_storage.
+                auto sub = detail::subs_of<P, Model, Msg>(model);
+                auto* sh = sub.storage();
+                if (!sh) continue;                       // app doesn't restore: drop
+                auto bar = d->value.find('|');
+                if (bar == std::string::npos) continue;
+                std::string key = d->value.substr(0, bar), val = d->value.substr(bar + 1);
+                r = detail::safe_dispatch<P>(std::move(model), sh->on(key, val), val, ok);
             } else if (d->is_route) {
                 // Route change: on_route maps the path to a Msg; the path also
                 // rides as the update value (3-arg update).

@@ -46,6 +46,7 @@ When you have nothing to do, return `Cmd<Msg>::none()`.
 | `Cmd<Msg>::focus(target)` / `Cmd<Msg>::blur()` | Move keyboard focus to a named control / release it. |
 | `Cmd<Msg>::copy(text)` | Put `text` on the user's clipboard. |
 | `Cmd<Msg>::download(name, data, mime)` | Offer `data` as a browser file download. |
+| `Cmd<Msg>::store(key, value)` / `store_clear(key)` | Persist a value in localStorage across reloads. |
 | `Cmd<Msg>::batch(cmds…)` | Run several commands (variadic or a `vector`). |
 
 ### `after` — a one-shot timer
@@ -218,6 +219,7 @@ static Sub<Msg> subscribe(const Model& m) {
 | `Sub<Msg>::every(ms, msg)` | Deliver `msg` on a repeating interval (a clock). |
 | `Sub<Msg>::on_route(fn)` | On route change, call `fn(path)` → `Msg`. |
 | `Sub<Msg>::on_viewport(fn)` | On connect / resize / scheme flip, call `fn(Viewport)` → `Msg`. |
+| `Sub<Msg>::on_storage(fn)` | On connect, call `fn(key, value)` → `Msg` for each persisted value. |
 | `Sub<Msg>::on_topic(topic, fn)` | On a broadcast to `topic`, call `fn(payload)` → `Msg`. |
 | `Sub<Msg>::batch(subs…)` | Combine several subscriptions. |
 
@@ -270,6 +272,31 @@ the server **suppresses deltas** (the model stays live; one full frame resyncs
 the display on return — don't write to a screen nobody is watching), and after
 a sustained disconnect (>1.5s) the client shows a small **"reconnecting"** pill
 until the socket returns.
+
+### `store` / `on_storage` — persist across reloads
+
+The model resets on a fresh page load (a new session). For the few bits that
+should survive — a chosen theme, a collapsed sidebar, a draft — persist them in
+the browser's localStorage: `Cmd::store` writes, and `Sub::on_storage` replays
+them back on the next connect.
+
+```cpp
+// update: persist a preference the moment it changes
+[&](SetTheme t){ m.theme = t.name;
+                 return { m, Cmd<Msg>::store("theme", t.name) }; }
+// and restore it on connect
+[&](Restored r){ if (r.key == "theme") m.theme = r.value; return { m, Cmd::none() }; }
+
+static Sub<Msg> subscribe(const Model&){
+    return Sub<Msg>::on_storage([](std::string key, std::string value){
+        return Restored{ key, value };
+    });
+}
+```
+
+Each persisted key fires `on_storage(key, value)` once on connect. `store_clear
+(key)` removes one. It's for small preferences, not a database — for real data,
+fetch it (localStorage is per-browser, size-limited, and client-trusted).
 
 ## Broadcast — multiplayer
 

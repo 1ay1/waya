@@ -39,6 +39,10 @@ int main() {
     CHECK((Cmd<int>::download("r.csv", "a,b\n", "text/csv")
         == Cmd<int>::download("r.csv", "a,b\n", "text/csv")));
     CHECK(!(Cmd<int>::download("r.csv", "a") == Cmd<int>::download("r.csv", "b")));
+    // localStorage persistence is a Cmd; restore is a Sub — both plain data.
+    CHECK((Cmd<int>::store("theme", "dark") == Cmd<int>::store("theme", "dark")));
+    CHECK(!(Cmd<int>::store("theme", "dark") == Cmd<int>::store("theme", "light")));
+    CHECK(!(Cmd<int>::store("k", "v") == Cmd<int>::store_clear("k")));
     // map() carries browser effects through unchanged (they hold no Msg)
     {
         auto up = [](int m){ return (long)m * 2; };
@@ -115,6 +119,18 @@ int main() {
         // Sub::map lifts the emitted Msg
         auto lifted = Sub<int>::every(20ms, 5).map([](int m){ return m * 10; });
         CHECK(lifted.timers()[0].msg == 50);
+    }
+    {
+        // on_storage is discoverable (from a batch) and maps (key,value)->Msg;
+        // it restores persisted state on connect.
+        auto s = Sub<int>::batch({Sub<int>::every(1000ms, Tick),
+                                  Sub<int>::on_storage([](std::string k, std::string v){ return (int)(k.size() + v.size()); })});
+        auto* st = s.storage();
+        CHECK(st != nullptr);
+        CHECK(st->on("theme", "dark") == 9);           // 5 + 4
+        auto lifted = s.map([](int m){ return m + 100; });
+        CHECK(lifted.storage()->on("k", "v") == 102);   // (1+1)+100
+        CHECK(Sub<int>::every(16, Tick).storage() == nullptr);
     }
 
     // ── dispatch / init helpers pick the right update shape ───────────────────

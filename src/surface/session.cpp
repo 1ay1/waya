@@ -46,6 +46,10 @@ void Session::push_env(std::string report) {
     { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_env=true; d.value=std::move(report); queue.push_back(std::move(d)); }
     qcv.notify_one();
 }
+void Session::push_storage(std::string kv) {
+    { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_storage=true; d.value=std::move(kv); queue.push_back(std::move(d)); }
+    qcv.notify_one();
+}
 void Session::push_sync() {
     { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_sync=true; queue.push_back(std::move(d)); }
     qcv.notify_one();
