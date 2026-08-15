@@ -24,6 +24,11 @@ Runtime knobs are environment variables (no config file):
 | `WAYA_NO_OPEN` | Don't try to open a browser (set this in production) |
 | `WAYA_WORKERS` | Size of the effect thread pool (default: CPU count) |
 | `WAYA_LOG` | Set to enable one-line access logs (method, path, status) to stderr |
+| `WAYA_ALLOWED_ORIGINS` | Comma-separated allowlist of `Origin`s permitted to open a WebSocket. Unset = allow all (dev). **Set this in production** to block cross-site WS hijacking. |
+| `WAYA_CONN_RATE` | Per-IP new-connection rate, conns/sec (default 20). `0` disables (behind a trusted LB that already limits). |
+| `WAYA_CONN_BURST` | Per-IP connection burst allowance (default 40). |
+| `WAYA_MAX_CONN` | Global live-connection ceiling (default 10000); excess gets a fast `503`. |
+| `WAYA_METRICS` | Set to expose `GET /metrics` (Prometheus). Off by default (leaks traffic shape). |
 
 ## HTTP hardening
 
@@ -68,6 +73,37 @@ middleware to add:
 The runtime serves **`GET /healthz`** → `200 ok` without rendering the app — wire
 it to your load balancer / orchestrator liveness probe. On `SIGTERM` (what Docker
 and systemd send to stop) the process shuts down cleanly.
+
+## Metrics
+
+Set **`WAYA_METRICS=1`** (or add `static bool expose_metrics(){ return true; }`
+to your Program) to expose **`GET /metrics`** in Prometheus exposition format:
+
+```
+waya_http_requests_total   counter   every HTTP response
+waya_http_errors_total     counter   responses with status >= 500
+waya_ws_sessions_total     counter   WebSocket sessions ever opened
+waya_ws_sessions_live      gauge     currently-open sessions
+waya_rate_limited_total    counter   per-IP limiter rejections
+waya_uptime_seconds        gauge
+```
+
+It's **off by default** — metrics leak traffic shape, so scrape it on an internal
+network or behind auth (a proxy `location /metrics` allowlist, or expose it only
+on a private interface).
+
+## Security
+
+- **WebSocket Origin allowlist** — WebSockets are exempt from CORS, so by default
+  any origin can open a socket and drive your app as the logged-in user. Set
+  `WAYA_ALLOWED_ORIGINS=https://app.example.com` (comma-separated for several)
+  and a handshake from any other origin gets a `403`. **Do this in production.**
+- **Per-IP connection rate limiting** — a single source can't flood the accept
+  path (each connection costs an SSR render). `WAYA_CONN_RATE` conns/sec per IP
+  (default 20), burst `WAYA_CONN_BURST` (40); excess gets a fast `429`. Set rate
+  to `0` if a trusted LB already rate-limits.
+- **Security headers** on every response: CSP, HSTS, `X-Frame-Options`,
+  `nosniff`, referrer policy (see *HTTP hardening* above).
 
 ## Docker
 
@@ -117,10 +153,19 @@ check to `/healthz`, done.
   by cookie at the proxy (a session's state lives in its owning process).
 - **Bounded effect pool**: `Cmd::fetch`/`task` run on a fixed worker pool
   (`WAYA_WORKERS`), so a burst of async work can't exhaust threads.
-- **Rate limiting**: each connection is capped (~120 msgs/sec, burst 60) so one
-  client can't pin a core.
+- **Rate limiting**: each WebSocket connection is capped (~120 msgs/sec, burst
+  60) so one client can't pin a core; and new connections are rate-limited
+  **per IP** at accept (`WAYA_CONN_RATE`/`WAYA_CONN_BURST`) so one source can't
+  flood the SSR path.
 - **Connection ceiling + backpressure**: past `WAYA_MAX_CONN` (default 10000) new
-  connections get a fast `503 Retry-After: 2` instead of the server falling over.
+  connections get a fast `503` instead of the server falling over; a slow
+  WebSocket reader that stalls its socket is dropped (bounded send timeout) so it
+  can't pin a render thread.
+- **Error boundary**: a throwing `view()`/`update()` renders an error card for
+  that one session instead of taking down the process or other sessions.
+- **Timed effects on a shared scheduler**: `Cmd::after` and subscription timers
+  run on a single min-heap scheduler thread, not one OS thread each, so many
+  timers across many sessions stay cheap.
 
 !!! note "The concurrency model"
     The runtime is an **epoll gate + bounded worker pool**. Idle and
