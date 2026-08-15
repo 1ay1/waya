@@ -342,7 +342,7 @@ inline std::uint64_t mix(std::uint64_t h, float f){ std::uint32_t b; std::memcpy
 inline std::uint64_t mix(std::uint64_t h, const Len& l){ return mix(mix(h,l.value),l.unit); }
 
 inline std::uint64_t hash_style(std::uint64_t h, const Style& s){
-    // Hash the trivially-copyable POD prefix (~280 bytes of Len/bool/enum/uint/
+    // Hash the trivially-copyable POD prefix (~256 bytes of Len/bool/enum/uint/
     // float) 8 bytes at a time — one multiply per 64-bit word, not per byte and
     // not per field. This is the fast path that dominated per-node hashing.
     const unsigned char* base = reinterpret_cast<const unsigned char*>(&s);
