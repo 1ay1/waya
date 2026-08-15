@@ -137,6 +137,35 @@ keeps a large waya app feeling instant.
     dashboard. Copy its structure to profile a specific screen: build `prev`
     once, then time `view()` + `diff` + `encode_delta` in a loop.
 
+## The engine underneath
+
+The numbers above are `list_versioned` *avoiding* work. But even the naive path
+— rebuild the whole tree, diff it, ship the delta — is fast, because the core is
+tuned for exactly that cycle:
+
+- **The diff is O(1)-skip.** Every node carries a content hash of its whole
+  subtree; `diff` compares hashes and returns immediately on a match, so an
+  unchanged subtree costs one integer compare no matter how deep. `diff+encode`
+  is ~1 µs per frame regardless of app size.
+- **Node storage is pooled.** A node is ~350 bytes and `view()` rebuilds the
+  whole tree each frame. The blocks are recycled through a thread-local pool —
+  frame N's nodes are freed as frame N+1's are built, feeding a free-list — so
+  steady-state rendering makes **zero `malloc` calls for node storage**.
+- **Hashing is word-wise.** A node's style is hashed 8 bytes at a time over its
+  packed POD fields, not field-by-field — the single biggest per-node cost, cut
+  ~11×. Building a styled node is ~300 ns.
+- **The stylesheet interns in O(1).** Identical styles collapse to one CSS class
+  via a hash lookup, so a page with N distinct styles is O(N), not O(N²).
+- **Nothing redundant per message.** Subscriptions reconcile only when they
+  actually change (a fingerprint skips the global-lock topic sync on a
+  keystroke); the wire frame is built in one allocation; and only a non-empty
+  delta is ever sent — an identical re-render sends zero bytes.
+
+The upshot: a 2 000-row app rebuilds, diffs, and recycles its **entire tree in
+~1 ms** (>1000 fps of headroom), and only the delta — a few hundred bytes —
+crosses the wire. You get this for free; the `memo`/`list_versioned` tools above
+are for when even that whole-tree rebuild is more than you want to pay.
+
 ---
 
 ## Perceived performance: instant taps
