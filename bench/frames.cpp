@@ -121,6 +121,14 @@ int main() {
         std::printf("  build+diff+drop:               %.0f us/frame  (%.0f fps)\n", us, 1e6/us);
         std::printf("  node pool: %zu blocks recycled, %zu peak (0 malloc for node storage steady-state)\n",
                     detail::node_pool().free_list.size(), detail::node_pool().high_water);
+        // First-paint render: HTML+CSS string generation. The output buffer is
+        // reserved from the node count so a big paint doesn't realloc-churn.
+        auto full = tree(0);
+        auto tr0 = clock::now(); std::size_t bytes = 0;
+        for (int k = 0; k < 100; ++k){ DomBackend b; auto r = b.render(*full); bytes = r.html.size()+r.css.size(); }
+        auto tr1 = clock::now();
+        std::printf("  first paint render:            %.0f us  (%zu bytes, buffer pre-reserved)\n",
+                    std::chrono::duration<double,std::micro>(tr1-tr0).count()/100, bytes);
     }
 
     // ── Stylesheet interning is O(1) ─────────────────────────────────

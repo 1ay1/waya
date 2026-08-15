@@ -21,8 +21,16 @@ public:
 
     Output render(const Node& root) {
         rules_.clear(); names_.clear();
-        std::string html; emit(html, root);
-        std::string css;
+        // Reserve the HTML buffer from the subtree size so a big first paint
+        // doesn't repeatedly double-and-copy its way to hundreds of KB (~19
+        // reallocations copying ~2x the final size). ~256 bytes/node is a
+        // measured average for real dashboards; over-shooting a little is far
+        // cheaper than the realloc churn.
+        std::string html; html.reserve(count_nodes(root) * 256);
+        emit(html, root);
+        std::string css; std::size_t css_bytes = 0;
+        for (auto& r : rules_) css_bytes += r.size();
+        css.reserve(css_bytes);
         for (std::size_t i = 0; i < rules_.size(); ++i) css += rules_[i];
         return { std::move(html), std::move(css) };
     }
@@ -39,13 +47,22 @@ public:
     Output render_shallow(const Node& root) {
         rules_.clear(); names_.clear();
         std::string html; emit_shell(html, root);
-        std::string css;
+        std::string css; std::size_t css_bytes = 0;
+        for (auto& r : rules_) css_bytes += r.size();
+        css.reserve(css_bytes);
         for (std::size_t i = 0; i < rules_.size(); ++i) css += rules_[i];
         return { std::move(html), std::move(css) };
     }
 
 private:
     std::vector<std::string> rules_, names_;
+
+    // Total nodes in a subtree — used to pre-size the HTML buffer.
+    static std::size_t count_nodes(const Node& n){
+        std::size_t c = 1;
+        for (auto& k : n.kids) if (k) c += count_nodes(*k);
+        return c;
+    }
 
     static void hex(std::string& o, std::uint32_t c){ static const char* H="0123456789abcdef";
         o+='#'; for(int s=20;s>=0;s-=4) o+=H[(c>>s)&0xF]; }
