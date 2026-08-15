@@ -24,6 +24,7 @@
 #include <cerrno>
 #include <cstring>
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -227,6 +228,39 @@ int serve(const ServeConfig& cfg,
     std::unordered_map<int, std::string> conns;          // fd -> carry (gate thread only)
     std::atomic<int> conn_count{0};
 
+    // Per-IP connection rate limit — a single source can't flood the accept path
+    // (each accepted conn costs an SSR render). A token bucket per client IP,
+    // touched ONLY by the gate thread, so it needs no lock. Refill `rate`
+    // tokens/sec up to `burst`; a connection with no token gets a fast 429 and
+    // is closed before it consumes a worker or a ceiling slot. Configurable via
+    // WAYA_CONN_RATE / WAYA_CONN_BURST; 0 disables (e.g. behind a trusted LB
+    // that already rate-limits). The map is swept when it grows large so a
+    // churn of one-off IPs can't leak memory.
+    int ip_rate  = 20;   // sustained new conns/sec per IP
+    int ip_burst = 40;   // burst allowance per IP
+    if (const char* r = std::getenv("WAYA_CONN_RATE"))  ip_rate  = std::atoi(r);
+    if (const char* b = std::getenv("WAYA_CONN_BURST")) ip_burst = std::atoi(b);
+    struct Bucket { double tokens; long long last_us; };
+    std::unordered_map<std::string, Bucket> ip_buckets;
+    auto now_us = []{ return (long long)std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count(); };
+    auto ip_allow = [&](const std::string& ip) -> bool {
+        if (ip_rate <= 0 || ip.empty()) return true;              // disabled / unknown IP
+        long long t = now_us();
+        if (ip_buckets.size() > 100000) {                        // guard: sweep stale buckets
+            for (auto it = ip_buckets.begin(); it != ip_buckets.end(); )
+                it = (t - it->second.last_us > 60'000'000LL) ? ip_buckets.erase(it) : std::next(it);
+        }
+        auto& bk = ip_buckets[ip];
+        if (bk.last_us == 0) { bk.tokens = (double)ip_burst; bk.last_us = t; }
+        bk.tokens = std::min<double>((double)ip_burst,
+                                     bk.tokens + (double)(t - bk.last_us) / 1e6 * ip_rate);
+        bk.last_us = t;
+        if (bk.tokens < 1.0) return false;
+        bk.tokens -= 1.0;
+        return true;
+    };
+
     // CRITICAL fd-lifetime rule: ONLY the gate thread registers/deregisters or
     // close()s a connection fd. Workers never touch the gate or close — they
     // serve a request and push a (fd, disposition, carry) result back; the gate
@@ -286,9 +320,25 @@ int serve(const ServeConfig& cfg,
             int fd = evs[i].fd;
             if (fd == lfd) {
                 for (;;) {
-                    int c = ::accept(lfd, nullptr, nullptr);
+                    sockaddr_storage sa{}; socklen_t sl = sizeof(sa);
+                    int c = ::accept(lfd, (sockaddr*)&sa, &sl);
                     if (c < 0) { if (errno==EINTR) continue; break; }
                     if (g_draining) { ::close(c); continue; }
+                    // Extract the peer IP for the per-IP rate limiter.
+                    char ipbuf[INET6_ADDRSTRLEN] = {0};
+                    if (sa.ss_family == AF_INET)
+                        ::inet_ntop(AF_INET, &((sockaddr_in*)&sa)->sin_addr, ipbuf, sizeof(ipbuf));
+                    else if (sa.ss_family == AF_INET6)
+                        ::inet_ntop(AF_INET6, &((sockaddr_in6*)&sa)->sin6_addr, ipbuf, sizeof(ipbuf));
+                    if (!ip_allow(ipbuf)) {
+                        static const char* toomany =
+                            "HTTP/1.1 429 Too Many Requests\r\n"
+                            "Retry-After: 1\r\nConnection: close\r\nContent-Length: 18\r\n\r\n"
+                            "too many requests\n";
+                        ::send(c, toomany, std::strlen(toomany), MSG_NOSIGNAL);
+                        ::close(c);
+                        continue;
+                    }
                     if (conn_count.load(std::memory_order_relaxed) >= max_conn) {
                         static const char* busy =
                             "HTTP/1.1 503 Service Unavailable\r\n"
