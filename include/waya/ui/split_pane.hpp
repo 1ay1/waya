@@ -55,7 +55,7 @@ inline NodeRef split_pane(NodeRef a, NodeRef b, float ratio, Msg onResize, bool 
         | (vertical ? (w_full | h(6.f)) : (h_full | w(6.f)))
         | detail::raw_css("cursor", vertical ? "row-resize" : "col-resize")
         | detail::raw_css("background","var(--wa-line, rgba(255,255,255,.10))")
-        | detail::raw_css("flex","0 0 auto")
+        | no_shrink
         | detail::raw_css("touch-action","none")
         | attr("data-wa-split", vertical ? "v" : "h")
         | on_ev("splitmove", [onResize](std::string){ return onResize; })   // client sets the value

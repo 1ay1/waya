@@ -128,7 +128,7 @@ inline NodeRef typing_line(const Presence& pr, const std::string& me = ""){
     else if (who.size() == 2) txt = who[0] + " and " + who[1] + " are typing";
     else txt = std::to_string(who.size()) + " people are typing";
     txt += "\xe2\x80\xa6";   // …
-    return row(text(txt) | fg_muted | detail::raw_css("font-size","12px"))
+    return row(text(txt) | fg_muted | text_size(12))
         | items_center | gap(6) | role("status") | aria("live","polite");
 }
 

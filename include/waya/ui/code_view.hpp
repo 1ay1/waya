@@ -128,7 +128,7 @@ inline NodeRef code_view(const std::string& source, std::string lang = "",
     return box_ | mono | pre | pad(14) | round(8)
         | detail::raw_css("background", "var(--wa-bg, #0b1020)")
         | detail::raw_css("border", "1px solid var(--wa-line, rgba(255,255,255,.10))")
-        | detail::raw_css("font-size", "13px")
+        | text_size(13)
         | detail::raw_css("line-height", "1.55")
         | detail::raw_css("overflow-x", "auto")
         | detail::raw_css("white-space", "pre");

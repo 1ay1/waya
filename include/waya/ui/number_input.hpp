@@ -44,7 +44,7 @@ inline NodeRef stepper(long value, ToMsg to_msg, long min = 0, long max = 999, l
     bool at_lo = value <= min, at_hi = value >= max;
 
     auto btn = [&](const char* glyph, long target, bool off, std::string label_) {
-        auto b = box(text(glyph) | detail::raw_css("font-size", "16px") | semibold)
+        auto b = box(text(glyph) | text_size(16) | semibold)
             | w(30) | h(30) | round(8) | center | items_center
             | detail::raw_css("background", "var(--wa-raised, rgba(255,255,255,.06))")
             | detail::raw_css("user-select", "none")
@@ -90,7 +90,7 @@ inline NodeRef percent_field(std::string label, double value, ToMsg to_msg, std:
         input(detail::numstr(value)) | type("number")
             | attr("min", "0") | attr("max", "100") | attr("step", "1")
             | on_input(std::move(to_msg))
-            | detail::raw_css("background", "transparent") | detail::raw_css("border", "none")
+            | bg_transparent() | detail::raw_css("border", "none")
             | detail::raw_css("outline", "none") | fg_text | grows
             | detail::raw_css("width", "100%"),
         text("%") | fg_muted)

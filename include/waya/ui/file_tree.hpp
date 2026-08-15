@@ -122,7 +122,7 @@ inline NodeRef file_tree(const FileNode& root, const TreeState& st, const std::s
             auto rowc = row(
                     tree_detail::caret_or_space(has_kids, open),
                     box(glyph) | fg(tint) | detail::raw_css("line-height","0"),
-                    text(node.name) | fg_text | detail::raw_css("font-size","13.5px")
+                    text(node.name) | fg_text | text_size(13.5f)
                         | detail::raw_css("white-space","nowrap")
                         | detail::raw_css("overflow","hidden")
                         | detail::raw_css("text-overflow","ellipsis"))

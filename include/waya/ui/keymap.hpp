@@ -103,13 +103,13 @@ inline NodeRef shortcut_help(const Keymap<Msg>& km){
         for (auto& b : km.bindings){
             if (b.group != g) continue;
             rows.push_back(
-                row(text(b.label) | fg_text | detail::raw_css("font-size","14px"),
+                row(text(b.label) | fg_text | text_size(14),
                     box() | grows,
                     keymap_detail::combo_caps(b.combo))
                 | items_center | gap(16) | pad_y(6));
         }
         if (!g.empty())
-            sections.push_back(text(g) | fg_muted | detail::raw_css("font-size","12px")
+            sections.push_back(text(g) | fg_muted | text_size(12)
                                | uppercase | tracking_em(0.06f) | pad_y(4));
         sections.push_back(col_(std::move(rows)) | w_full);
     }

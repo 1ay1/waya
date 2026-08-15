@@ -40,7 +40,7 @@ inline NodeRef color_field(std::string label, std::string value, ToMsg to_msg, s
     auto swatch = color_input(value)
         | w(38) | h(38) | round(10)
         | detail::raw_css("padding", "0") | detail::raw_css("border", "none")
-        | detail::raw_css("cursor", "pointer") | detail::raw_css("background", "transparent")
+        | pointer | bg_transparent()
         | on_change(to_msg) | aria_label("Colour swatch");
     auto hex = input(value) | input_skin() | grows
         | placeholder("#000000") | attr("maxlength", "7")
@@ -103,7 +103,7 @@ inline NodeRef segmented(int active, std::vector<std::string> labels, ToMsg to_m
     segs.reserve(labels.size());
     for (int i = 0; i < (int)labels.size(); ++i) {
         bool on = i == active;
-        auto seg = box(text(labels[i]) | detail::raw_css("font-size", "13.5px") | medium)
+        auto seg = box(text(labels[i]) | text_size(13.5f) | medium)
             | pad_x(14) | pad_y(7) | round(8) | center | items_center
             | detail::raw_css("transition", "background .12s, color .12s")
             | pointer | tap(to_msg(i))
@@ -145,10 +145,10 @@ inline NodeRef breadcrumb(std::vector<Crumb> crumbs) {
     for (std::size_t i = 0; i < crumbs.size(); ++i) {
         if (i) parts.push_back(text("\xe2\x80\xba")   // › (U+203A)
             | fg_muted | detail::raw_css("user-select", "none")
-            | detail::raw_css("font-size", "13px") | detail::raw_css("opacity", "0.6"));
+            | text_size(13) | detail::raw_css("opacity", "0.6"));
         auto& c = crumbs[i];
         bool linked = c.msg >= 0;
-        auto node = text(c.label) | detail::raw_css("font-size", "13.5px");
+        auto node = text(c.label) | text_size(13.5f);
         if (linked) {
             node->on_tap = c.msg;
             node = node | fg_muted | pointer | role("link")

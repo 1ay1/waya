@@ -75,12 +75,12 @@ inline NodeRef wizard_steps(const Wizard& w, std::vector<std::string> labels){
         bool cur  = i == w.step;
         bool active = done || cur;
         auto dot = box(text(done ? "\xe2\x9c\x93" : std::to_string(i + 1))   // ✓ or number
-                       | (active ? fg(0xffffff) : fg_muted) | detail::raw_css("font-size","13px") | semibold)
+                       | (active ? fg(0xffffff) : fg_muted) | text_size(13) | semibold)
             | size(28) | round(999) | center
             | (active ? bg(0x6366f1) : detail::raw_css("background","var(--wa-raised, rgba(255,255,255,.08))"))
             | (cur ? ring(rgba(0x6366f1, .35f), 4) : Mod{});
         auto label = text(labels[i]) | (active ? fg_text : fg_muted)
-            | detail::raw_css("font-size","12px") | (cur ? semibold : Mod{});
+            | text_size(12) | (cur ? semibold : Mod{});
         auto cell = col(dot, label) | items_center | gap(6);
         items.push_back(cell);
         // a connector rail between steps (not after the last).

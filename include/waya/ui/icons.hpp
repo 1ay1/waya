@@ -72,7 +72,7 @@ inline NodeRef icon(std::string_view name, float d = 24) {
     // A markup node is a <div> wrapper; make it shrink to the icon and inherit
     // colour. currentColor picks up the surrounding `fg(...)`.
     return markup(std::move(svg)) | detail::raw_css("display", "inline-flex")
-         | detail::raw_css("flex", "0 0 auto") | detail::raw_css("line-height", "0");
+         | no_shrink | detail::raw_css("line-height", "0");
 }
 
 /// `icon_button_i("trash", Delete{})` — an icon inside a themed square button.

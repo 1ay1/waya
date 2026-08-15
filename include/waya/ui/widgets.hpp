@@ -106,7 +106,7 @@ NodeRef menu_item(std::string label, Msg msg, std::string_view icon_name = "") {
         : box(icon(icon_name, 16) | fg_muted, text(label));
     return row_ | horizontal | gap(10) | center
         | pad_x(12) | pad_y(9) | round(8) | pointer | fg_text
-        | detail::raw_css("font-size", "14px") | detail::raw_css("white-space", "nowrap")
+        | text_size(14) | detail::raw_css("white-space", "nowrap")
         | on(Hover, detail::raw_css("background", "var(--wa-raised, rgba(255,255,255,.06))"))
         | tap(msg);
 }
@@ -147,7 +147,7 @@ NodeRef accordion(int open_id, std::vector<std::pair<std::string, NodeRef>> pane
         auto body = open
             ? (box(panels[i].second) | pad_y(4) | pad_x(4) | detail::raw_css("padding-bottom", "14px") | fade_in(160))
             : box();
-        rows.push_back(col(header, body) | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.10))"));
+        rows.push_back(col(header, body) | line_b(0.10f));
     }
     auto acc = box(); acc->kids = std::move(rows); acc->style.flow = Flow::col; finalize(*acc);
     return acc;
@@ -173,13 +173,13 @@ NodeRef data_table(const std::vector<Row>& rows, std::vector<Column<Row>> cols) 
     // header
     for (auto& c : cols)
         cells.push_back(text(c.header) | semibold | fg_muted
-            | detail::raw_css("font-size", "12.5px") | detail::raw_css("letter-spacing", ".03em")
-            | pad_y(10) | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.12))"));
+            | text_size(12.5f) | detail::raw_css("letter-spacing", ".03em")
+            | pad_y(10) | line_b(0.12f));
     // rows
     for (auto& r : rows)
         for (auto& c : cols)
             cells.push_back(box(c.cell(r)) | pad_y(10) | fg_text
-                | detail::raw_css("border-bottom", "1px solid var(--wa-line, rgba(255,255,255,.06))")
+                | line_b(0.06f)
                 | detail::raw_css("align-items", "center") | horizontal);
     auto g = box(); g->kids = std::move(cells); g->style.flow = Flow::grid;
     g->style.extra.emplace_back("grid-template-columns",

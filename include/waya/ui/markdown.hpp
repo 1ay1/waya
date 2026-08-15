@@ -138,7 +138,7 @@ inline NodeRef markdown(const std::string& source){
             blocks.push_back(text(code) | mono | pre_wrap | w_full | pad(12) | round(8)
                 | detail::raw_css("background","var(--wa-bg, #0b1020)")
                 | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
-                | detail::raw_css("font-size","13px") | detail::raw_css("overflow-x","auto"));
+                | text_size(13) | detail::raw_css("overflow-x","auto"));
             continue;
         }
 
