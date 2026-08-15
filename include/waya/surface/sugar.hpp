@@ -96,6 +96,13 @@ inline Mod fg_token(const char* var, const char* fallback){ return sty([=](Style
     s.extra.emplace_back("color", std::string("var(")+var+","+fallback+")"); }); }
 inline Mod bg_token(const char* var, const char* fallback){ return sty([=](Style& s){
     s.extra.emplace_back("background", std::string("var(")+var+","+fallback+")"); }); }
+/// `bg_var("--brand", "#6366f1")` / `fg_var(…)` — background / text from ANY CSS
+/// custom property with a fallback, so a themed surface needs no
+/// `css("background", "var(…)")`. The public form of the named bg_* tokens below.
+inline Mod bg_var(std::string var, std::string fallback = {}){ return sty([=](Style& s){
+    s.extra.emplace_back("background", fallback.empty() ? ("var("+var+")") : ("var("+var+","+fallback+")")); }); }
+inline Mod fg_var(std::string var, std::string fallback = {}){ return sty([=](Style& s){
+    s.extra.emplace_back("color", fallback.empty() ? ("var("+var+")") : ("var("+var+","+fallback+")")); }); }
 inline const Mod fg_text    = fg_token("--wa-text",  "#e8edf7");
 inline const Mod fg_muted   = fg_token("--wa-muted", "#93a1bd");
 inline const Mod fg_primary = fg_token("--wa-primary", "#6d7cff");

@@ -102,7 +102,7 @@ struct NavLink { std::string label, href; };
 /// `nav_cta(label, href, primary=true)` — the button on the right of the nav.
 inline NodeRef nav_cta(std::string label, std::string href, bool primary = true){
     using namespace site_detail;
-    auto b = box(text(std::move(label)) | semibold | detail::raw_css("font-size","14px"))
+    auto b = box(text(std::move(label)) | semibold | text_size(14))
         | pad_x(16) | pad_y(9) | round(9) | pointer | no_underline
         | site_detail::link(std::move(href));
     if (primary) b = b | bg(T().accent) | fg(0xffffff);
@@ -120,7 +120,7 @@ inline NodeRef site_nav(std::string brand, std::string version,
     std::vector<NodeRef> link_nodes;
     for (auto& l : links)
         link_nodes.push_back(text(l.label) | fg(T().dim)
-            | detail::raw_css("font-size","14.5px") | pointer | no_underline
+            | text_size(14.5f) | pointer | no_underline
             | site_detail::link(l.href)
             | on(Hover, fg(T().text)));
     auto links_row = box(); links_row->kids = std::move(link_nodes);
@@ -128,9 +128,9 @@ inline NodeRef site_nav(std::string brand, std::string version,
     links_row = links_row | gap(22) | items_center | detail::raw_css("flex-wrap","wrap");
 
     auto brand_node = row(
-        text(std::move(brand)) | bold | fg(T().text) | detail::raw_css("font-size","16px"),
+        text(std::move(brand)) | bold | fg(T().text) | text_size(16),
         version.empty() ? nothing()
-            : (text(std::move(version)) | fg(T().faint) | detail::raw_css("font-size","12px")
+            : (text(std::move(version)) | fg(T().faint) | text_size(12)
                | pad_x(7) | pad_y(2) | round(999) | bg(rgba(T().border, 0.5f))))
         | items_center | gap(9);
 
@@ -151,7 +151,7 @@ inline NodeRef site_nav(std::string brand, std::string version,
 /// `cta_primary(label, href)` / `cta_ghost(label, href)` — the two hero buttons.
 inline NodeRef cta_primary(std::string label, std::string href){
     using namespace site_detail;
-    return box(text(std::move(label)) | semibold | detail::raw_css("font-size","15px"))
+    return box(text(std::move(label)) | semibold | text_size(15))
         | pad_x(24) | pad_y(13) | round(11) | pointer | no_underline
         | bg(T().accent) | fg(0xffffff)
         | site_detail::link(std::move(href))
@@ -162,7 +162,7 @@ inline NodeRef cta_primary(std::string label, std::string href){
 }
 inline NodeRef cta_ghost(std::string label, std::string href){
     using namespace site_detail;
-    return box(text(std::move(label)) | semibold | fg(T().text) | detail::raw_css("font-size","15px"))
+    return box(text(std::move(label)) | semibold | fg(T().text) | text_size(15))
         | pad_x(24) | pad_y(13) | round(11) | pointer | no_underline
         | border(1, rgba(T().border, 1.0f))
         | site_detail::link(std::move(href))
@@ -218,7 +218,7 @@ inline std::vector<NodeRef> section_head(std::string eyebrow, std::string title,
     std::vector<NodeRef> k;
     if (!eyebrow.empty())
         k.push_back(text(std::move(eyebrow)) | fg(T().accent) | semibold
-            | detail::raw_css("font-size","13px")
+            | text_size(13)
             | tracking_em(0.06f) | uppercase);
     if (!title.empty())
         k.push_back(text(std::move(title))
@@ -226,7 +226,7 @@ inline std::vector<NodeRef> section_head(std::string eyebrow, std::string title,
             | tracking_em(-0.02f) | detail::raw_css("margin-top","10px"));
     if (!sub.empty())
         k.push_back(text(std::move(sub)) | fg(T().dim)
-            | detail::raw_css("font-size","17px") | leading(1.6f)
+            | text_size(17) | leading(1.6f)
             | max_w(680) | detail::raw_css("margin-top","12px"));
     return k;
 }
@@ -254,8 +254,8 @@ inline NodeRef site_feature(std::string title, std::string body, std::string ico
     return col(
         icon_name.empty() ? nothing()
             : (box(icon(icon_name, 22)) | fg(T().accent) | detail::raw_css("margin-bottom","12px")),
-        text(std::move(title)) | semibold | fg(T().text) | detail::raw_css("font-size","17px"),
-        text(std::move(body)) | fg(T().dim) | detail::raw_css("font-size","14.5px")
+        text(std::move(title)) | semibold | fg(T().text) | text_size(17),
+        text(std::move(body)) | fg(T().dim) | text_size(14.5f)
             | leading(1.55f) | detail::raw_css("margin-top","8px"))
         | pad(24) | round(14) | bg(T().surface)
         | border(1, rgba(T().border, 1.0f))
@@ -284,7 +284,7 @@ inline NodeRef site_stat(std::string number, std::string label){
     return col(
         text(std::move(number)) | gradient_text(T().accent, T().accent2, 100)
             | font_fluid(30, 46) | detail::raw_css("font-weight","800") | tracking_em(-0.02f),
-        text(std::move(label)) | fg(T().dim) | detail::raw_css("font-size","14px")
+        text(std::move(label)) | fg(T().dim) | text_size(14)
             | detail::raw_css("margin-top","4px"))
         | items_center | text_center;
 }
@@ -303,13 +303,13 @@ inline NodeRef copy_line_view(std::string command){
     using namespace site_detail;
     return row(
         text("$ ") | fg(T().faint) | mono,
-        text(command) | fg(T().text) | mono | detail::raw_css("font-size","14.5px") | grow(),
-        text("copy") | fg(T().dim) | detail::raw_css("font-size","12.5px")
+        text(command) | fg(T().text) | mono | text_size(14.5f) | grow(),
+        text("copy") | fg(T().dim) | text_size(12.5f)
             | pad_x(9) | pad_y(4) | round(7) | border(1, rgba(T().border,1.0f)))
         | items_center | gap(10)
         | pad_x(18) | pad_y(14) | round(12)
         | bg(T().code_bg) | border(1, rgba(T().border, 1.0f))
-        | detail::raw_css("font-size","14.5px") | max_w(560) | mx_auto | w_full;
+        | text_size(14.5f) | max_w(560) | mx_auto | w_full;
 }
 /// The tappable form: clicking the row copies `command` to the clipboard.
 template <typename Msg>
@@ -327,7 +327,7 @@ inline NodeRef cta_band(std::string title, std::string sub, Body... body){
         | detail::raw_css("font-weight","800") | tracking_em(-0.02f) | text_center);
     if (!sub.empty())
         k.push_back(text(std::move(sub)) | fg(T().dim)
-            | detail::raw_css("font-size","17px") | text_center | max_w(560) | mx_auto
+            | text_size(17) | text_center | max_w(560) | mx_auto
             | detail::raw_css("margin-top","12px"));
     (k.push_back(std::move(body)), ...);
     auto inner = box(); inner->kids = std::move(k); inner->style.flow = Flow::col;
@@ -351,7 +351,7 @@ inline NodeRef compare_table(std::vector<std::string> headers,
     std::vector<NodeRef> cells;
     auto th = [&](std::string s, bool win){
         return box(text(std::move(s)) | semibold
-                   | fg(win ? T().accent : T().dim) | detail::raw_css("font-size","13.5px"))
+                   | fg(win ? T().accent : T().dim) | text_size(13.5f))
             | pad_x(16) | pad_y(12)
             | detail::raw_css("border-bottom","1px solid " + detail::hexstr(T().border)); };
     for (int c = 0; c < cols; ++c) cells.push_back(th(headers[(std::size_t)c], c == 1));
@@ -361,7 +361,7 @@ inline NodeRef compare_table(std::vector<std::string> headers,
             auto cell = box(text(r[(std::size_t)c])
                             | fg(c == 0 ? T().text : (win ? 0x3fb950 : T().dim))
                             | (win ? semibold : Mod{})
-                            | mono | detail::raw_css("font-size","13.5px"))
+                            | mono | text_size(13.5f))
                 | pad_x(16) | pad_y(11)
                 | detail::raw_css("border-bottom","1px solid " + detail::rgba_hex(T().border, 0.5f));
             cells.push_back(std::move(cell));
@@ -382,16 +382,16 @@ inline NodeRef site_footer(std::string brand, std::string tagline, std::vector<N
     std::vector<NodeRef> link_nodes;
     for (auto& l : links)
         link_nodes.push_back(text(l.label) | fg(T().dim)
-            | detail::raw_css("font-size","14px") | pointer | no_underline
+            | text_size(14) | pointer | no_underline
             | site_detail::link(l.href) | on(Hover, fg(T().text)));
     auto links_row = box(); links_row->kids = std::move(link_nodes);
     links_row->style.flow = Flow::row; finalize(*links_row);
     links_row = links_row | gap(20) | items_center | detail::raw_css("flex-wrap","wrap");
 
     auto left = col(
-        text(std::move(brand)) | bold | fg(T().text) | detail::raw_css("font-size","15px"),
+        text(std::move(brand)) | bold | fg(T().text) | text_size(15),
         tagline.empty() ? nothing()
-            : (text(std::move(tagline)) | fg(T().faint) | detail::raw_css("font-size","13px")
+            : (text(std::move(tagline)) | fg(T().faint) | text_size(13)
                | detail::raw_css("margin-top","4px")))
         | gap(0);
 

@@ -132,6 +132,15 @@ int main() {
     // colour vocabulary reachable via `using namespace waya::surface` alone
     check(has(css_of(box() | bg(rgba(0x00ff41, .5f))), "rgba(0,255,65,0.5"), "rgba() in surface namespace");
 
+    // ── expressive aliases that kill common raw_css ────────────────────────
+    check(has(css_of(text("x") | text_size(17)), "font-size:17px"), "text_size(px) -> font-size");
+    check(has(css_of(text("x") | text_size(rem(1.2f))), "font-size:1.2rem"), "text_size(Len) -> rem");
+    check(has(css_of(text("x") | text_size_fluid(20, 40)), "clamp("), "text_size_fluid -> clamp()");
+    check(has(css_of(text("x") | line(1.6f)), "line-height:1.6"), "line(n) -> line-height");
+    check(has(css_of(box() | bg_var("--brand", "#6366f1")), "var(--brand,#6366f1)"), "bg_var with fallback");
+    check(has(css_of(box() | bg_var("--brand")), "background:var(--brand)"), "bg_var without fallback");
+    check(has(css_of(text("x") | fg_var("--text")), "color:var(--text)"), "fg_var");
+
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

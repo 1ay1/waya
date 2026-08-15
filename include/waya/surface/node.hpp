@@ -631,6 +631,15 @@ inline Mod bg(Color c){ return c.has_alpha()
     : sty([c](Style& s){ s.has_bg=true; s.bg=c.opaque(); }); }
 inline Mod font(Len sz){ return sty([=](Style& s){ s.font_size=sz; }); }
 inline Mod font(float px_){ return font(px(px_)); }
+/// `text_size(17)` — the discoverable name for font-size (alias of `font`).
+/// This is the single most-reached-for property on a real page; naming it after
+/// what people type ("size") instead of `font` is what stops the reflex to
+/// `css("font-size", ...)`. Takes a bare px number or a `Len` (rem/pct).
+inline Mod text_size(float px_){ return font(px(px_)); }
+inline Mod text_size(Len sz){ return font(sz); }
+/// `text_size_fluid(min, max)` — responsive font-size (alias of `font_fluid`):
+/// scales with the viewport between the bounds via clamp(), no media queries.
+// (defined just below, after font_fluid.)
 /// `font_fluid(min_px, max_px)` — responsive type: the size scales with the
 /// viewport width between the two bounds, so a big heading shrinks on a phone
 /// instead of overflowing. Uses CSS clamp(); no media queries. `max` is also the
@@ -643,6 +652,11 @@ inline Mod font_fluid(float min_px, float max_px){
         "clamp(" + detail::numstr(min_px) + "px, calc(" + pref + "), " + detail::numstr(max_px) + "px)"); });
 }
 inline Mod weight(Weight w){ return sty([=](Style& s){ s.weight=w; }); }
+/// `text_size_fluid(min, max)` — the discoverable alias of `font_fluid`.
+inline Mod text_size_fluid(float min_px, float max_px){ return font_fluid(min_px, max_px); }
+/// `line(1.5f)` — line-height as a bare number (alias of `leading`). The name
+/// people expect; kills the `css("line-height", ...)` reflex.
+inline Mod line(float lh){ return sty([=](Style& s){ s.has_lh=true; s.line_height=lh; }); }
 inline const Mod bold      = sty([](Style& s){ s.weight=Weight::bold; });
 inline const Mod semibold  = sty([](Style& s){ s.weight=Weight::semibold; });
 inline const Mod medium    = sty([](Style& s){ s.weight=Weight::medium; });
