@@ -162,6 +162,41 @@ int main() {
         check(has(css_of(bad), "ef4444"), "invalid field is coloured danger");
     }
 
+    // ── motion: pure easing + a model-owned Tween (the maya anim math) ──────
+    {
+        using namespace std::chrono_literals;
+        // easing curves pin their endpoints and shape
+        check(ease::out_cubic(0)==0.0 && ease::out_cubic(1)==1.0, "out_cubic endpoints");
+        check(ease::out_cubic(0.5) > 0.5, "out_cubic decelerates (past halfway at t=.5)");
+        check(ease::in_cubic(0.5) < 0.5, "in_cubic accelerates");
+        check(ease::smoothstep(0.5)==0.5 && ease::smoothstep(0.0)==0.0, "smoothstep");
+        check(ease::out_back(0.85) > 1.0, "out_back overshoots past 1");
+        check(std::abs(eased(0, 100, 0.5, ease::linear) - 50.0) < 1e-9, "eased(linear) is a lerp");
+
+        // Tween: settled -> animating -> settled, value eases between
+        Tween x{0};
+        check(!x.animating() && x.value()==0.0, "fresh Tween is settled at its value");
+        x.to(100, 100ms);
+        check(x.animating() && x.value()==0.0, "to() starts animating from the current value");
+        x.step(50ms);
+        check(x.value() > 50.0 && x.animating(), "midway: eased past linear-half, still animating");
+        x.step(50ms);
+        check(!x.animating() && x.value()==100.0, "reaching duration settles at target");
+        // retarget mid-flight continues from the LIVE value (no visual jump)
+        Tween y{0}; y.to(100, 100ms); y.step(50ms);
+        double live = y.value(); y.to(0, 100ms);
+        check(std::abs(y.value() - live) < 1e-9, "to() mid-flight continues from the live value");
+        // snap kills motion; Tween is a value (== works, so a model stays testable)
+        Tween z{3}; z.to(9, 100ms); z.snap(7);
+        check(!z.animating() && z.value()==7.0, "snap() jumps and stops");
+        check((Tween{5} == Tween{5}) && !(Tween{5} == Tween{6}), "Tween has value equality");
+
+        // stagger: item i starts step*i later; done once the last finishes
+        check(stagger(0, 3, 40, 100)==0.0, "stagger item hasn't started yet");
+        check(stagger(1000, 0, 40, 100)==1.0, "stagger item long-done is 1");
+        check(!stagger_done(50, 5, 40, 100) && stagger_done(1000, 5, 40, 100), "stagger_done gates the clock");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

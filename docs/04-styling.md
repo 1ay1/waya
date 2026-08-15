@@ -328,6 +328,41 @@ col(
     `fade_up` + `delay` for a staggered reveal, and one accent colour throughout
     — that's the whole recipe behind `aurora`.
 
+### Model-owned motion — `Tween` + `ease` (`waya::ui`)
+
+The mods above (`spin`, `breathe`, `transition`, `fade_up`) are for motion the
+BROWSER can own — you describe the end state and CSS tweens it, for free. But
+some motion is driven by a value the SERVER owns: a game position easing toward
+a target, a gauge that springs, a progress that decelerates. Only the server
+knows the target, so it must step the value itself. `<waya/ui/motion.hpp>` is
+that math — maya's easing/interpolation vocabulary, transposed to waya's loop.
+
+```cpp
+struct Model { Tween x{0}; };                 // 0 = home
+
+// update: retarget on an event, advance on a tick
+[&](Open){ m.x.to(1.0, 300ms); return {m, Cmd::none()}; }
+[&](Tick){ m.x.step(16ms);     return {m, Cmd::none()}; }
+
+// subscribe: run the clock ONLY while something is animating
+static Sub<Msg> subscribe(const Model& m){
+    return m.x.animating() ? Sub<Msg>::every(16, Tick{}) : Sub<Msg>::none();
+}
+
+// view: read the eased value
+panel | translate(0, (1.0 - m.x.value()) * -20);   // slides down as x -> 1
+```
+
+`Tween` is a pure value (`==` works, so an animated model stays testable) that
+never touches a clock itself — `subscribe` decides when to tick, so an idle app
+costs zero frames. `to()` retargets from the LIVE value, so an interrupted
+animation continues smoothly instead of jumping. Easing curves live in
+`ease::` (`out_cubic`, `in_out_quad`, `smoothstep`, `out_back`, `out_elastic`,
+`out_bounce`, …); `lerp(a,b,t)` and `eased(a,b,t,curve)` interpolate directly;
+`stagger(elapsed, i, step, dur)` phases a list-reveal cascade.
+
+Rule of thumb: **CSS mods for visual polish, `Tween` for state you own.**
+
 ## States (`:hover`, `:focus`, `:active`, `:disabled`)
 
 Apply a bundle of mods that only take effect in a UI state:
