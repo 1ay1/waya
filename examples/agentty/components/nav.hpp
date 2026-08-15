@@ -194,7 +194,7 @@ inline NodeRef site_nav(std::string version, std::vector<NavItem> items) {
 inline NodeRef site_footer() {
     install_theme();
     assets().css(
-        "footer.foot{border-top:1px solid var(--border-soft);padding:48px 0 40px;margin-top:40px}"
+        ".foot{border-top:1px solid var(--border-soft);padding:48px 0 40px;margin-top:40px}"
         ".foot-grid{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px}"
         ".foot-grid .foot-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin:0 0 14px;font-weight:700;line-height:1.15}"
         ".foot-grid a{display:block;color:var(--text-dim);font-size:14px;padding:4px 0}"
