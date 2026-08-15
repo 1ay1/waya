@@ -116,8 +116,8 @@ inline const char* HOME_CSS =
 ".stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border-soft);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}"
 ".stat{background:var(--bg-card);padding:28px 20px;text-align:center;transition:background .2s ease}.stat:hover{background:var(--bg-soft)}"
 ".stat-link{display:block;color:inherit;text-decoration:none}.stat-link:hover{background:var(--bg-soft)}.stat-link:hover .num{filter:brightness(1.15)}"
-".stat .num{font-size:32px;font-weight:800;letter-spacing:-.03em;background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums;min-height:1.05em}"
-".stat .lbl{color:var(--text-dim);font-size:13.5px;margin-top:6px}"
+".stat .num{display:block;font-size:32px;font-weight:800;letter-spacing:-.03em;line-height:1.1;background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums;min-height:1.05em}"
+".stat .lbl{display:block;color:var(--text-dim);font-size:13.5px;margin-top:6px}"
 ".stats-note{text-align:center;color:var(--text-faint);font-size:12.5px;margin:14px 0 0}"
 ".stats-note a{color:var(--text-dim);text-decoration:underline;text-underline-offset:2px}"
 "@media (max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}"
@@ -244,21 +244,23 @@ NodeRef home(std::string install_cmd, CopyMsg copy_msg) {
         ) | add_class("wrap install-inner")
     ) | as("section") | add_class("install-band");
 
-    // ── STATS ──
-    auto stat = [](std::string num, std::string lbl) {
-        return box(text(num) | add_class("num") | count_up(), text(lbl) | add_class("lbl")) | add_class("stat");
+    // ── STATS ── (5 cells: 4 metrics + a GitHub-star link, exact to source)
+    auto stat = [](std::string num, std::string lbl, bool counts) {
+        auto n = text(num) | add_class("num");
+        if (counts) n = n | count_up();
+        return box(std::move(n), text(lbl) | add_class("lbl")) | add_class("stat") | reveal();
     };
     auto stats = box(
         box(
-            stat("13 MB", "static binary"),
-            stat("2 ms", "cold start"),
-            stat("0", "runtimes to install"),
-            stat("7", "model providers"),
-            html("stat stat-link", "<div class=\"num\">\xe2\x98\x85</div><div class=\"lbl\">Star on GitHub</div>")
-                | href("https://github.com/1ay1/agentty")
+            stat("13 MB", "Single static binary", true),
+            stat("2 ms", "Cold start", true),
+            stat("0", "Runtime dependencies", true),
+            stat("C++26", "Native, no GC", false),
+            (html("stat stat-link", "<div class=\"num\">\xe2\x98\x85&nbsp;2.4k</div><div class=\"lbl\">Stars on GitHub</div>")
+                | href("https://github.com/1ay1/agentty") | reveal())
         ) | add_class("stats"),
-        markup("<p class=\"stats-note\">Measured on the same box \xc2\xb7 "
-               "<a href=\"https://github.com/1ay1/agentty\">see the benchmarks</a></p>")
+        markup("<p class=\"stats-note\">Size &amp; cold-start are the Linux&nbsp;x86_64 build, measured on each "
+               "deploy; other platforms vary \xe2\x80\x94 <a href=\"/docs/installation\">per-platform download sizes</a>.</p>")
     ) | add_class("wrap") | detail::raw_css("padding-top", "48px");
 
     // ── SPEED ──
