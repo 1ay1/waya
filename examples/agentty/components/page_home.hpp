@@ -53,7 +53,7 @@ inline const char* HOME_CSS =
 "mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;opacity:.8}"
 ".hero h1{font-size:clamp(36px,5.4vw,56px);margin:0 0 20px;letter-spacing:-.045em;line-height:1.05}"
 ".hero h1 .grad{background:linear-gradient(110deg,var(--accent) 8%,var(--accent-2) 48%,var(--accent-hover) 90%);"
-"-webkit-background-clip:text;background-clip:text;color:transparent}"
+"-webkit-background-clip:text;background-clip:text;color:transparent;white-space:nowrap}"
 ".lede{font-size:clamp(17px,2.1vw,20px);color:var(--text-dim);max-width:600px;margin:0 0 34px;line-height:1.6}"
 ".lede strong{color:var(--text);font-weight:600}"
 ".hero-actions{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:34px}"
