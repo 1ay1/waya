@@ -220,6 +220,23 @@ int main() {
         auto h = html_of(toasts_layer(r, [](int id){ return id; }));
         check(has(h, "aria-live=\"polite\""), "toast layer is an aria-live region");
         check(has(h, "role=\"button\"") && has(h, "Dismiss notification"), "toast has a labelled close button");
+
+        // actionable toasts: push_action adds a labelled button, wired via onAction
+        Toasts a; int uid = a.push_action("Item deleted", "Undo", Tone::warning);
+        check(a.items.back().has_action() && a.items.back().action_label == "Undo", "push_action records the action label");
+        check(a.items.back().sticky, "an actionable toast is sticky by default");
+        check(uid >= 0, "push_action returns the toast id");
+        struct Undo { int id; }; struct Close { int id; };
+        detail::begin_msg_capture();
+        auto ah = html_of(toasts_layer(a, [](int id){ return Close{id}; }, [](int id){ return Undo{id}; }));
+        check(has(ah, "Undo") && has(ah, "Item deleted"), "actionable toast renders its action button + message");
+        check(has(ah, "aria-label=\"Undo\""), "the action button is labelled");
+        // a plain toast in the 3-arg layer has no action button
+        Toasts b; b.push("Plain", Tone::success);
+        detail::begin_msg_capture();
+        auto bh = html_of(toasts_layer(b, [](int id){ return Close{id}; }, [](int id){ return Undo{id}; }));
+        check(has(bh, "Plain") && has(bh, "Dismiss notification"), "a non-actionable toast still renders + is dismissable");
+        check((Toast{} == Toast{}), "Toast has value equality with the action field");
     }
 
     // ── Optimistic<T>: show a change instantly, roll back on failure ───────

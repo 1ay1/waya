@@ -41,13 +41,20 @@ using namespace waya::surface;
 
 /// One live notification. `id` is stable for its whole life (for dismiss +
 /// keyed diffing); `remaining_ms` counts down to auto-expiry (0 = sticky).
+/// An OPTIONAL `action_label` turns the card into an actionable notification
+/// ("Undo", "View", "Retry") — the app supplies the Msg at render time via
+/// `toasts_layer`'s `onAction`, so the token stays valid inside the render's
+/// msg-capture scope (it can't be registered here in update()).
 struct Toast {
     int id = 0;
     std::string message;
     Tone tone = Tone::neutral;
     double remaining_ms = 0;    // time left until auto-expiry
     bool sticky = false;        // true => never auto-dismisses (dismiss-only)
+    std::string action_label;   // "" => no action button; else the button's text
     bool operator==(const Toast&) const = default;
+
+    [[nodiscard]] bool has_action() const { return !action_label.empty(); }
 };
 
 /// The notification queue — a plain value in your model.
@@ -62,7 +69,19 @@ struct Toasts {
              std::chrono::milliseconds ttl = std::chrono::milliseconds{4000}){
         int id = next_id++;
         bool sticky = ttl.count() <= 0;
-        items.push_back({ id, std::move(message), tone, (double)ttl.count(), sticky });
+        items.push_back({ id, std::move(message), tone, (double)ttl.count(), sticky, {} });
+        return id;
+    }
+    /// Enqueue an ACTIONABLE toast — it carries a labelled button ("Undo",
+    /// "Retry", "View") alongside the close. Actionable toasts default to
+    /// STICKY (an action the user might take shouldn't vanish mid-reach); pass
+    /// a non-zero `ttl` to auto-dismiss anyway. Wire the Msg via
+    /// `toasts_layer(..., onAction)`.
+    int push_action(std::string message, std::string action_label, Tone tone = Tone::neutral,
+                    std::chrono::milliseconds ttl = std::chrono::milliseconds{0}){
+        int id = next_id++;
+        bool sticky = ttl.count() <= 0;
+        items.push_back({ id, std::move(message), tone, (double)ttl.count(), sticky, std::move(action_label) });
         return id;
     }
     /// Sugar for the common tones.
@@ -98,31 +117,34 @@ struct Toasts {
     [[nodiscard]] std::size_t size() const { return items.size(); }
 };
 
-/// `toasts_layer(queue, onDismiss)` — render the queue as the fixed top-right
-/// stack. Each card carries a close button wired to `onDismiss(id)`. Keyed by
-/// toast id so the diff moves/removes cards precisely as the queue changes.
-template <typename ToMsg>
-inline NodeRef toasts_layer(const Toasts& q, ToMsg onDismiss){
-    std::vector<NodeRef> cards;
-    cards.reserve(q.items.size());
-    for (const auto& t : q.items){
-        auto close = text("\xc3\x97")               // ×
-            | fg_muted | detail::raw_css("font-size","16px") | pointer
-            | pad_x(4) | aria_label("Dismiss notification")
-            | role("button") | tap(onDismiss(t.id));
-        cards.push_back(
-            row(dot(t.tone),
-                text(t.message) | fg_text | detail::raw_css("font-size","14px"),
-                box() | grows,
-                close)
-            | gap(10) | items_center | pad_x(16) | pad_y(12) | round(12)
-            | detail::raw_css("background","var(--wa-surface, #141b2e)")
-            | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
-            | detail::raw_css("box-shadow","0 10px 30px rgba(0,0,0,.4)")
-            | detail::raw_css("pointer-events","auto") | slide_in(220)
-            | key("toast-" + std::to_string(t.id))
-            | role("status") | aria("live", "polite"));
-    }
+namespace toast_detail {
+/// Build one toast card. `action` is an already-built button node (or nullptr).
+inline NodeRef card(const Toast& t, NodeRef close, NodeRef action){
+    std::vector<NodeRef> parts;
+    parts.push_back(dot(t.tone));
+    parts.push_back(text(t.message) | fg_text | detail::raw_css("font-size","14px"));
+    parts.push_back(box() | grows);
+    if (action) parts.push_back(std::move(action));
+    parts.push_back(std::move(close));
+    auto rowc = box(); rowc->kids = std::move(parts); rowc->style.flow = Flow::row; finalize(*rowc);
+    return rowc
+        | gap(10) | items_center | pad_x(16) | pad_y(12) | round(12)
+        | detail::raw_css("background","var(--wa-surface, #141b2e)")
+        | detail::raw_css("border","1px solid var(--wa-line, rgba(255,255,255,.10))")
+        | detail::raw_css("box-shadow","0 10px 30px rgba(0,0,0,.4)")
+        | detail::raw_css("pointer-events","auto") | slide_in(220)
+        | key("toast-" + std::to_string(t.id))
+        | role("status") | aria("live", "polite");
+}
+inline NodeRef close_btn_for(int id, int tok){
+    auto c = text("\xc3\x97")                    // ×
+        | fg_muted | detail::raw_css("font-size","16px") | pointer
+        | pad_x(4) | aria_label("Dismiss notification") | role("button");
+    c->on_tap = tok;
+    (void)id;
+    return c;
+}
+inline NodeRef stack(std::vector<NodeRef> cards){
     auto n = box(); n->kids = std::move(cards); n->style.flow = Flow::col;
     auto& s = n->style;
     s.pos = Pos::fixed;
@@ -131,6 +153,46 @@ inline NodeRef toasts_layer(const Toasts& q, ToMsg onDismiss){
     s.extra.emplace_back("pointer-events", "none");
     finalize(*n);
     return n | aria("live", "polite");
+}
+} // namespace toast_detail
+
+/// `toasts_layer(queue, onDismiss)` — render the queue as the fixed top-right
+/// stack. Each card carries a close button wired to `onDismiss(id)`. Keyed by
+/// toast id so the diff moves/removes cards precisely as the queue changes.
+template <typename ToMsg>
+inline NodeRef toasts_layer(const Toasts& q, ToMsg onDismiss){
+    std::vector<NodeRef> cards;
+    cards.reserve(q.items.size());
+    for (const auto& t : q.items)
+        cards.push_back(toast_detail::card(t,
+            toast_detail::close_btn_for(t.id, detail::register_msg(onDismiss(t.id))), nullptr));
+    return toast_detail::stack(std::move(cards));
+}
+
+/// `toasts_layer(queue, onDismiss, onAction)` — same stack, but an actionable
+/// toast (pushed via `push_action`) also renders a labelled button wired to
+/// `onAction(id)`. Non-actionable toasts render exactly as the two-arg form.
+template <typename ToMsg, typename OnAction>
+inline NodeRef toasts_layer(const Toasts& q, ToMsg onDismiss, OnAction onAction){
+    std::vector<NodeRef> cards;
+    cards.reserve(q.items.size());
+    for (const auto& t : q.items){
+        NodeRef action = nullptr;
+        if (t.has_action()){
+            auto [accent, _] = impl::tone_colors(t.tone); (void)_;
+            action = box(text(t.action_label)
+                        | detail::raw_css("font-size","13px") | semibold)
+                | detail::raw_css("color", accent) | pointer | pad_x(10) | pad_y(5) | round(7)
+                | role("button") | aria_label(t.action_label)
+                | detail::raw_css("white-space","nowrap")
+                | hover_bg(0xffffff, 0.08f);
+            action->on_tap = detail::register_msg(onAction(t.id));
+        }
+        cards.push_back(toast_detail::card(t,
+            toast_detail::close_btn_for(t.id, detail::register_msg(onDismiss(t.id))),
+            std::move(action)));
+    }
+    return toast_detail::stack(std::move(cards));
 }
 
 } // namespace waya::ui

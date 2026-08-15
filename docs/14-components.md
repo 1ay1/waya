@@ -201,6 +201,28 @@ A `ttl` of `0ms` makes a toast sticky (dismiss-only). Every card is keyed by id
 so the diff moves/removes them precisely, carries an aria-labelled close button,
 and the layer is an `aria-live` region so screen readers announce new messages.
 
+**Actionable toasts.** `push_action(msg, label, tone, ttl)` adds a labelled
+button to the card ("Undo", "Retry", "View") — the pattern behind
+"Message deleted — Undo". Actionable toasts default to **sticky** (an offered
+action shouldn't vanish mid-reach). Wire the button with the three-arg
+`toasts_layer(queue, onDismiss, onAction)`; `onAction(id)` fires when it's
+tapped. The Msg is registered at *render* time (not at push time), so its wire
+token is valid — which is why the action is a label on the toast, not a Msg
+baked into the queue. Plain toasts in the three-arg layer render exactly as
+before, with no action button.
+
+```cpp
+[&](Delete d){ backup = m.items[d.i]; erase(m.items, d.i);
+               m.notes.push_action("Item deleted", "Undo", Tone::warning);
+               return {m, Cmd::none()}; }
+[&](Undo)    { m.items.push_back(backup); m.notes.clear();
+               return {m, Cmd::none()}; }
+
+overlay(main_ui, toasts_layer(m.notes,
+    [](int id){ return Close{id}; },
+    [](int id){ return Undo{}; }))
+```
+
 ### Optimistic updates — `Optimistic<T>`
 
 For an instant-feeling UI you apply a change LOCALLY before the server confirms
