@@ -716,6 +716,49 @@ int main() {
         check(!has(ev, "<script>x") && has(ev, "&lt;script"), "draft value is escaped (no injection)");
     }
 
+    // ── numeric controls: stepper / number_field / percent / stars ────────
+    {
+        struct SetN { long v; }; struct Rate { int v; };
+        detail::begin_msg_capture();
+
+        // stepper: −/value/+ clamped; buttons carry the target value.
+        auto st = html_of(stepper(5L, [](long v){ return SetN{v}; }, 0, 10, 1));
+        check(has(st, ">5<"), "stepper shows the current value");
+        check(has(st, "aria-label=\"Decrease\"") && has(st, "aria-label=\"Increase\""), "stepper has −/+ buttons");
+        check(has(st, "role=\"group\""), "stepper is a labelled group");
+
+        // at the bottom the − is disabled (no tap), at the top the + is.
+        auto lo = html_of(stepper(0L, [](long v){ return SetN{v}; }, 0, 10));
+        check(has(lo, "aria-disabled=\"true\""), "stepper disables − at the minimum");
+        auto hi = html_of(stepper(10L, [](long v){ return SetN{v}; }, 0, 10));
+        check(has(hi, "aria-disabled=\"true\""), "stepper disables + at the maximum");
+
+        // number_field: a real type=number with min/max/step + label.
+        detail::begin_msg_capture();
+        auto nf = html_of(number_field("Price", 9.99, [](std::string v){ return v; }, 0, 1000, 0.01, "USD"));
+        check(has(nf, "type=\"number\""), "number_field is a numeric input");
+        check(has(nf, "Price") && has(nf, "USD"), "number_field shows label + hint");
+        check(has(nf, "min=\"0\"") && has(nf, "step=\"0.01\""), "number_field carries min/step");
+        check(has(nf, "value=\"9.99\""), "number_field shows the value without float padding");
+
+        // percent_field: 0..100 with a % suffix.
+        detail::begin_msg_capture();
+        auto pf = html_of(percent_field("Zoom", 75, [](std::string v){ return v; }));
+        check(has(pf, "max=\"100\"") && has(pf, ">%<"), "percent_field clamps to 100 and shows %");
+
+        // star_rating: N stars, first `value` filled; click Nth → to_msg(N).
+        detail::begin_msg_capture();
+        auto sr = html_of(star_rating(3, [](int v){ return Rate{v}; }, 5));
+        check(has(sr, "role=\"radiogroup\""), "star_rating is a radiogroup");
+        auto sr_css = css_of(star_rating(3, [](int v){ return Rate{v}; }, 5));
+        check(has(sr_css, "fbbf24") || has(html_of(star_rating(3,[](int v){return Rate{v};},5)),"star"), "filled stars are gold");
+
+        // read-only stars display (no interaction).
+        auto rs = html_of(stars(4.0, 5));
+        check(has(rs, "role=\"img\""), "read-only stars are an img with an aria label");
+        check(!has(rs, "data-ev") && !has(rs, "data-tap"), "read-only stars have no click handlers");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

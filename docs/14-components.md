@@ -72,6 +72,27 @@ surface), `ghost` (text-only until hover), `danger` (destructive).
   focus-ringed) to a raw `input()`/`textarea()`/`select()`, so all your fields
   match.
 
+### Numeric controls
+
+Batteries over the bare `input | type("number")`. Each is a pure function of a
+number; the value clamps where it makes sense, and you parse + store in `update`.
+
+- `stepper(value, to_msg, min = 0, max = 999, step = 1)` — a compact
+  `−`/value/`+` spinner. The buttons deliver `to_msg(clamped(value ∓ step))`, so
+  the value never leaves the range; the `−`/`+` disables at the ends. `to_msg`
+  is a `long → Msg` (it already knows the target value).
+- `number_field(label, value, to_msg, min, max, step, hint = "")` — a labelled
+  numeric text field (`type=number`, browser-enforced min/max/step). `to_msg`
+  maps the live value string to a `Msg` (parse it in `update`). Takes int or
+  floating `value`; renders without libc++'s six-decimal float padding.
+- `percent_field(label, value, to_msg, hint = "")` — a `number_field` pinned to
+  0..100 with a trailing `%`.
+- `star_rating(value, to_msg, out_of = 5, size = 22)` — clickable stars; the
+  first `value` are gold, clicking the Nth delivers `to_msg(N)`, and clicking
+  the currently-set star again clears it (`to_msg(0)`). A `radiogroup`.
+- `stars(value, out_of = 5, size = 18)` — a **read-only** star display (an
+  `img` with an aria label) for showing an average score. No handlers.
+
 ### Status & identity
 
 `Tone` = `neutral | primary | success | warning | danger`.

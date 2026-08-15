@@ -18,6 +18,7 @@
 #include "ui/components.hpp"
 #include "ui/icons.hpp"
 #include "ui/widgets.hpp"
+#include "ui/number_input.hpp"
 #include "ui/charts.hpp"
 #include "ui/chart.hpp"
 #include "ui/scene.hpp"
