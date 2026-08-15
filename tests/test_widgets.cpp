@@ -860,6 +860,55 @@ int main() {
         check(!has(ev, "<b>x</b>") && has(ev, "&lt;b&gt;"), "filenames are escaped (no injection)");
     }
 
+    // ── kanban: a drag-and-drop board of columns ──────────────────────
+    {
+        struct KCard { std::string id, title; bool operator==(const KCard&) const = default; };
+        struct Moved { int fc, fi, tc; };
+        detail::begin_msg_capture();
+
+        std::vector<KanbanColumn<KCard>> board{
+            kcolumn<KCard>("To do", { {"1","Design"}, {"2","Spec"} }, 0xf59e0b),
+            kcolumn<KCard>("Doing", { {"3","Build"} }),
+            kcolumn<KCard>("Done",  {}),
+        };
+
+        // model helpers are pure values.
+        check((kcolumn<KCard>("a") == kcolumn<KCard>("a")), "KanbanColumn has value equality");
+
+        // the pure move: card (0,1) -> column 2 (append to Done).
+        auto b2 = board;
+        apply_kanban_move(b2, 0, 1, 2);
+        check(b2[0].cards.size() == 1 && b2[2].cards.size() == 1, "apply_kanban_move splices across columns");
+        check(b2[2].cards.back().title == "Spec", "the moved card lands at the target column's end");
+        // out-of-range is a no-op.
+        auto b3 = board; apply_kanban_move(b3, 9, 0, 1);
+        check(b3 == board, "apply_kanban_move ignores out-of-range indices");
+
+        // the drop payload parser: "srcCol.srcIdx:destCol".
+        auto mv = kanban_detail::parse_move("0.1:2");
+        check(mv.fromCol==0 && mv.fromIdx==1 && mv.toCol==2, "parse_move reads col.idx:dest");
+        auto bad = kanban_detail::parse_move("garbage");
+        check(bad.fromCol==-1, "parse_move rejects malformed payloads");
+
+        // the view: columns, card counts, draggables, drop zones.
+        auto kb = html_of(kanban(board,
+            [](const KCard& c){ return card(text(c.title)); },
+            [](int fc, int fi, int tc){ return Moved{fc, fi, tc}; }));
+        check(has(kb, "To do") && has(kb, "Doing") && has(kb, "Done"), "kanban renders every column title");
+        check(has(kb, "Design") && has(kb, "Build"), "kanban renders the cards");
+        check(has(kb, "draggable=\"true\""), "cards are draggable");
+        check(has(kb, "data-drop-arg"), "columns are drop targets");
+        check(has(kb, ">2<"), "the column header shows its card count");
+
+        // card titles are escaped (no injection through a card).
+        detail::begin_msg_capture();
+        std::vector<KanbanColumn<KCard>> evil{ kcolumn<KCard>("c", { {"x","<img src=x>"} }) };
+        auto ek = html_of(kanban(evil,
+            [](const KCard& c){ return card(text(c.title)); },
+            [](int fc, int fi, int tc){ return Moved{fc, fi, tc}; }));
+        check(!has(ek, "<img src=x>") && has(ek, "&lt;img"), "card content is escaped (no injection)");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

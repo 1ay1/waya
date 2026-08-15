@@ -380,6 +380,38 @@ for (int i = 0; i < (int)m.tasks.size(); ++i)
 no-op) you can unit-test; a malformed drop payload safely resolves to indices
 that no-op.
 
+### Kanban board — `kanban`
+
+`reorderable` reorders ONE list. **`kanban`** is the 2-D generalisation: N
+columns, each an ordered stack of cards, with cards dragged **between** columns
+(To-do → Doing → Done) as well as within one — the board behind a task tracker,
+a pipeline, a triage queue.
+
+```cpp
+struct Card { std::string id, title; };
+struct Board { std::vector<KanbanColumn<Card>> columns; };
+struct Moved { int fromCol, fromIdx, toCol; };
+
+// update:
+[&](Moved mv){ apply_kanban_move(m.board.columns, mv.fromCol, mv.fromIdx, mv.toCol);
+               return {m, Cmd::none()}; }
+
+// view:
+kanban(m.board.columns,
+    [](const Card& c){ return card(text(c.title)); },       // render one card
+    [](int fc, int fi, int tc){ return Moved{fc, fi, tc}; }) // a card was dropped
+```
+
+`kcolumn(title, {cards…}, accent)` builds a column (a plain value with `==`).
+Each card is made `draggable` with the payload `"col.index"`; each column body
+is a `drop_target` tagged with its column index. On drop the client delivers
+`"srcCol.srcIdx:destCol"`, which `kanban` parses and hands to `onMove(fromCol,
+fromIdx, toCol)` — feed that straight to `apply_kanban_move`, a pure splice
+(dropping onto a column appends to its end; out-of-range or malformed drops
+no-op). The header shows each column's live card count, columns lay out as
+equal-width tracks that scroll horizontally when the board overflows, and card
+content rides waya's escaping so an `<img>` in a card title is inert text.
+
 ### Icons
 
 `icon("name", size = 24)` returns an inline SVG that tints with `fg(…)` (it uses
