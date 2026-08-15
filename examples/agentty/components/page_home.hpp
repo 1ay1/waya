@@ -394,8 +394,7 @@ NodeRef home(std::string install_cmd, CopyMsg copy_msg) {
         ) | add_class("wrap")
     ) | as("section") | add_class("cta");
 
-    return box(hero, install, stats, speed, features, providers, compare, tools, quote, opensource, cta)
-        | as("main") | attr("id", "main");
+    return box(hero, install, stats, speed, features, providers, compare, tools, quote, opensource, cta);
 }
 
 } // namespace agentty
