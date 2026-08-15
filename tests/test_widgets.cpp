@@ -624,6 +624,98 @@ int main() {
         check(!has(evil, "<script>") && has(evil, "&lt;"), "code_view escapes HTML (no injection)");
     }
 
+    // ── data_grid: editable cells over the table pipeline ─────────────────
+    {
+        struct GRow { std::string id, name, role; int age; };
+        struct Sb2{int c;}; struct Gp2{int p;};
+        struct Begin{std::string r,c;}; struct Typed{std::string v;}; struct Done{}; struct Cancel{};
+
+        std::vector<GRow> people{
+            {"a","Ada","eng",36}, {"b","Linus","eng",54}, {"c","Grace","lead",41} };
+
+        auto cols = std::vector{
+            gcol<GRow>("Name", [](const GRow& p){ return text(p.name); })
+                .sortable([](const GRow& a, const GRow& b){ return a.name < b.name; })
+                .searchable([](const GRow& p){ return p.name; })
+                .edits_text([](const GRow& p){ return p.name; }),
+            gcol<GRow>("Role", [](const GRow& p){ return text(p.role); })
+                .edits_select({option("eng"),option("lead"),option("design")},
+                              [](const GRow& p){ return p.role; }),
+            gcol<GRow>("Age", [](const GRow& p){ return text(std::to_string(p.age)); })
+                .edits_number([](const GRow& p){ return std::to_string(p.age); }),
+        };
+
+        // GridEdit is a value with equality + the editing() predicate.
+        GridEdit ed;
+        check(!ed.active(), "fresh GridEdit is inactive");
+        ed.begin("a", "Name", "Ada");
+        check(ed.active() && ed.editing("a","Name"), "begin() enters edit mode on that cell");
+        check(!ed.editing("a","Role"), "editing() is cell-precise (right row, wrong col)");
+        ed.type("Adah");
+        check(ed.draft == "Adah", "type() streams the live draft");
+        { GridEdit e2; e2.begin("a","Name","Adah"); e2.type("Adah");
+          check(ed == e2, "GridEdit has value equality"); }
+        ed.stop();
+        check(!ed.active() && ed.draft.empty(), "stop() clears the edit");
+
+        auto rid = [](const GRow& p){ return p.id; };
+        auto sort = [](int c){ return Sb2{c}; };
+        auto page = [](int p){ return Gp2{p}; };
+        auto onEdit = [](std::string r, std::string c){ return Begin{r,c}; };
+        auto onType = [](std::string v){ return Typed{v}; };
+        auto onDone = []{ return Done{}; };
+        auto onCancel = []{ return Cancel{}; };
+
+        // read-only render: editable cells advertise "Click to edit", no inputs yet.
+        detail::begin_msg_capture();
+        TableState st;
+        auto ro = html_of(data_grid(people, cols, st, GridEdit{}, rid,
+                                    sort, page, onEdit, onType, onDone, onCancel));
+        check(has(ro, "Ada") && has(ro, "Grace"), "grid renders all rows");
+        check(has(ro, "Click to edit"), "editable cell shows an affordance");
+        check(!has(ro, "<input") && !has(ro, "<select"), "no controls when nothing is being edited");
+        check(has(ro, "role=\"button\""), "sortable header is a button");
+
+        // active text editor swaps the cell for a focused input carrying the draft.
+        detail::begin_msg_capture();
+        GridEdit e3; e3.begin("a", "Name", "Adah");
+        auto te = html_of(data_grid(people, cols, st, e3, rid,
+                                    sort, page, onEdit, onType, onDone, onCancel));
+        check(has(te, "<input"), "editing a text cell renders a real input");
+        check(has(te, "value=\"Adah\""), "input carries the live draft, not the row value");
+        check(has(te, "autofocus"), "the editor autofocuses");
+
+        // active number editor is type=number.
+        detail::begin_msg_capture();
+        GridEdit e4; e4.begin("b", "Age", "55");
+        auto ne = html_of(data_grid(people, cols, st, e4, rid,
+                                    sort, page, onEdit, onType, onDone, onCancel));
+        check(has(ne, "type=\"number\""), "number cell edits as type=number");
+        check(has(ne, "value=\"55\""), "number editor shows the draft");
+
+        // active select editor is a dropdown over the column's options.
+        detail::begin_msg_capture();
+        GridEdit e5; e5.begin("a", "Role", "lead");
+        auto se = html_of(data_grid(people, cols, st, e5, rid,
+                                    sort, page, onEdit, onType, onDone, onCancel));
+        check(has(se, "<select"), "editing a select cell renders a dropdown");
+        check(has(se, "design"), "dropdown lists the column's options");
+
+        // the sort/filter/paginate pipeline is the very same table_order.
+        std::vector<TableColumn<GRow>> tcols; for (auto& c : cols) tcols.push_back(c.base);
+        st.sort_by(0);
+        check(people[table_order(people, tcols, st).front()].name == "Ada", "grid sorts via table_order (ascending)");
+        TableState f; f.set_filter("lin");
+        check(table_order(people, tcols, f).size() == 1, "grid filter reuses the searchable columns");
+
+        // a value typed into a cell is HTML-escaped, never executable.
+        detail::begin_msg_capture();
+        GridEdit evil; evil.begin("a", "Name", "<script>x</script>");
+        auto ev = html_of(data_grid(people, cols, st, evil, rid,
+                                    sort, page, onEdit, onType, onDone, onCancel));
+        check(!has(ev, "<script>x") && has(ev, "&lt;script"), "draft value is escaped (no injection)");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

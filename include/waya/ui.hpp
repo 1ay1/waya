@@ -31,6 +31,7 @@
 #include "ui/history.hpp"
 #include "ui/routes.hpp"
 #include "ui/table.hpp"
+#include "ui/data_grid.hpp"
 #include "ui/reorderable.hpp"
 #include "ui/i18n.hpp"
 #include "ui/wizard.hpp"

@@ -233,6 +233,68 @@ second descending); filtering searches every `.searchable()` column
 (case-insensitive); a pager renders when `page_size > 0`. `table_order(rows,
 cols, state)` is the pure filter→sort→page pipeline — test it on plain data.
 
+### Editable data grid — `data_grid`
+
+A `data_table` is read-only. A **`data_grid`** is the same table — same
+sort/filter/paginate pipeline, same `table_order` — that you can *type into*.
+It adds exactly one piece of UI state, `GridEdit` (which cell is under edit +
+the live draft), and per column an optional editor: `.edits_text()`,
+`.edits_number()`, or `.edits_select({opts…})`. Columns are built with
+`gcol<Row>` (a superset of `col<Row>` — `.sortable`/`.searchable` still chain).
+
+```cpp
+struct Person { std::string id, name, role; int age; };
+struct Model { std::vector<Person> people; TableState ts; GridEdit edit; };
+struct Begin { std::string row, col; };
+struct Typed { std::string v; }; struct Done {}; struct Cancel {};
+
+auto cols = std::vector{
+    gcol<Person>("Name", [](const Person& p){ return text(p.name); })
+        .sortable([](const Person& a, const Person& b){ return a.name < b.name; })
+        .searchable([](const Person& p){ return p.name; })
+        .edits_text([](const Person& p){ return p.name; }),
+    gcol<Person>("Role", [](const Person& p){ return text(p.role); })
+        .edits_select({option("eng"), option("design"), option("lead")},
+                      [](const Person& p){ return p.role; }),
+    gcol<Person>("Age", [](const Person& p){ return text(std::to_string(p.age)); })
+        .edits_number([](const Person& p){ return std::to_string(p.age); }),
+};
+
+// view:
+data_grid(m.people, cols, m.ts, m.edit,
+    /*rowId*/  [](const Person& p){ return p.id; },
+    /*onSort*/ [](int c){ return SortBy{c}; },
+    /*onPage*/ [](int p){ return GoPage{p}; },
+    /*onEdit*/ [](std::string r, std::string c){ return Begin{r, c}; },
+    /*onType*/ [](std::string v){ return Typed{v}; },
+    /*onDone*/ []{ return Done{}; },
+    /*onCancel*/ []{ return Cancel{}; })
+```
+
+The callback split is deliberate. `onType` streams **every keystroke** into the
+draft, so the model always holds the live value; `onDone` is the discrete
+"commit that draft to the row" signal (fired on **Enter**, on **blur**, or when a
+select closes); `onCancel` (Escape) abandons the edit. You own the writes:
+
+```cpp
+[&](Begin b){ auto* p = find(m.people, b.row);
+              std::string cur = current_value(*p, b.col);
+              m.edit.begin(b.row, b.col, cur); return {m, Cmd::none()}; }
+[&](Typed t){ m.edit.type(t.v);                return {m, Cmd::none()}; }
+[&](Done)   { commit(m.people, m.edit);         // copy draft into the matching cell
+              m.edit.stop();                    return {m, Cmd::none()}; }
+[&](Cancel) { m.edit.stop();                    return {m, Cmd::none()}; }
+```
+
+The grid **never mutates your data** — it only shows an editor and reports the
+new string; parsing (e.g. `std::stoi` for a number column) is yours. An editable
+cell advertises "click to edit" and, when active, swaps its text for a focused,
+`input_skin`-themed control. Because the draft rides through the same escaped
+`input`/`select` controls as every other field, a `<script>` typed into a cell
+renders as inert text — injection-safe by construction. `GridEdit` is a plain
+value with `==` and an `editing(row, col)` predicate, so the whole grid stays a
+pure function of state and unit-tests cleanly.
+
 ### Drag to reorder — `reorderable`
 
 Drag & drop primitives (`draggable`/`on_drop`) exist; `reorderable` turns them
