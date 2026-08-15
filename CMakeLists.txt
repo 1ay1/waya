@@ -223,10 +223,14 @@ if(WAYA_BUILD_EXAMPLES)
     # keyboard controls via global hotkeys + a server game-loop tick.
     file(GLOB WAYA_AUTORACE_SRCS CONFIGURE_DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/examples/autorace/*.cpp")
-    if(WAYA_AUTORACE_SRCS)
+    # Guard: the sources include local headers (store/theme/board/console.hpp)
+    # that must be present, or every configure of the tree breaks on one demo.
+    if(WAYA_AUTORACE_SRCS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/autorace/store.hpp")
         add_executable(autorace ${WAYA_AUTORACE_SRCS})
         target_link_libraries(autorace PRIVATE waya::waya waya_dev_flags)
         list(APPEND WAYA_EXAMPLE_TARGETS autorace)
+    elseif(WAYA_AUTORACE_SRCS)
+        message(WARNING "examples/autorace: skipped — store.hpp/theme.hpp/board.hpp/console.hpp are missing (incomplete commit?)")
     endif()
 
     # Multi-file example: examples/dragster/ — a playable homage to Activision's

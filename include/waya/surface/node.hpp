@@ -1335,7 +1335,9 @@ inline Mod accept(std::string a){ return {[a=std::move(a)](Node& n){ n.attrs.emp
 /// `multiple()` — let the picker select several files (each delivers a Msg).
 inline Mod multiple(){ return {[](Node& n){ n.attrs.emplace_back("multiple", ""); }}; }
 /// `file_input(on_file(…))` — a real file picker wired to your update.
-template <typename... M> NodeRef file_input(M... mods){
+/// (An unwired positional overload `file_input(bool, accept)` lives in forms.hpp.)
+template <typename... M> requires (std::is_same_v<std::remove_cvref_t<M>, Mod> && ...)
+NodeRef file_input(M... mods){
     auto n = std::make_shared<Node>(); n->kind=Kind::input; n->input_type="file";
     (mods.apply(*n), ...); finalize(*n); return n;
 }

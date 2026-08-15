@@ -6,8 +6,13 @@
 #include "waya/surface/http_util.hpp"   // detail::g_fd, on_sigint, lan_ip
 
 #include <sys/socket.h>
-#include <sys/epoll.h>
-#include <sys/eventfd.h>
+#if defined(__linux__)
+#  include <sys/epoll.h>
+#  include <sys/eventfd.h>
+#else
+#  include <sys/event.h>   // kqueue — macOS & the BSDs
+#  include <sys/time.h>
+#endif
 #include <netinet/in.h>
 #include <netinet/tcp.h>   // TCP_NODELAY
 #include <arpa/inet.h>
@@ -113,14 +118,16 @@ int serve(const ServeConfig& cfg,
 #endif
     }
 
-    // ── Scale model: epoll gate + bounded worker pool + connection ceiling ───
+    // ── Scale model: event gate + bounded worker pool + connection ceiling ───
     //
-    // Idle & between-request keep-alive connections are PARKED in epoll (a slot,
-    // not a thread). Only a connection with request bytes READY is handed to a
-    // bounded worker pool, which serves exactly what's available and hands the
-    // fd back: KeepAlive => re-park in epoll, Owned => a WS session took its own
-    // thread (gate forgets it), Close => drop. So N idle keep-alive sockets cost
-    // O(N) memory + O(workers) threads, not O(N) threads — the epoll scaling win
+    // Idle & between-request keep-alive connections are PARKED in the kernel
+    // event queue (a slot, not a thread) — epoll on Linux, kqueue on macOS/BSD;
+    // same semantics (oneshot arm, re-arm on keep-alive), one small Gate seam.
+    // Only a connection with request bytes READY is handed to a bounded worker
+    // pool, which serves exactly what's available and hands the fd back:
+    // KeepAlive => re-park, Owned => a WS session took its own thread (gate
+    // forgets it), Close => drop. So N idle keep-alive sockets cost O(N) memory
+    // + O(workers) threads, not O(N) threads — the event-queue scaling win
     // without rewriting the stateful session model. A ceiling sheds excess with
     // a fast 503.
 
@@ -132,15 +139,83 @@ int serve(const ServeConfig& cfg,
     if (const char* m = std::getenv("WAYA_MAX_CONN")) max_conn = std::atoi(m);
     if (max_conn <= 0) max_conn = 10000;
 
-    int ep = ::epoll_create1(EPOLL_CLOEXEC);
-    if (ep < 0) { std::perror("waya: epoll_create1"); return 1; }
-    epoll_event lev{}; lev.events = EPOLLIN; lev.data.fd = lfd;
-    ::epoll_ctl(ep, EPOLL_CTL_ADD, lfd, &lev);
+    // The Gate: a thin platform seam over epoll/kqueue with identical semantics.
+    //   add_listener  level-triggered read interest, persistent
+    //   arm(fd)       ONESHOT read interest (first add and re-arm are the same op)
+    //   forget(fd)    drop interest (safe if the oneshot already auto-dropped)
+    //   wake()        thread-safe user wakeup (workers → gate thread)
+    //   wait(evs,ms)  → {fd, hup, is_wake} triples
+    struct Gate {
+        struct Ev { int fd; bool hup; bool is_wake; };
+        int q = -1;
+#if defined(__linux__)
+        int wakefd = -1;
+        bool init() {
+            q = ::epoll_create1(EPOLL_CLOEXEC);
+            if (q < 0) return false;
+            wakefd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+            if (wakefd >= 0) { epoll_event we{}; we.events = EPOLLIN; we.data.fd = wakefd; ::epoll_ctl(q, EPOLL_CTL_ADD, wakefd, &we); }
+            return true;
+        }
+        void add_listener(int lfd) { epoll_event lev{}; lev.events = EPOLLIN; lev.data.fd = lfd; ::epoll_ctl(q, EPOLL_CTL_ADD, lfd, &lev); }
+        bool arm(int fd, bool first) {
+            epoll_event ce{}; ce.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT; ce.data.fd = fd;
+            return ::epoll_ctl(q, first ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, fd, &ce) == 0;
+        }
+        void forget(int fd) { ::epoll_ctl(q, EPOLL_CTL_DEL, fd, nullptr); }
+        void wake() { if (wakefd >= 0) { std::uint64_t one = 1; (void)::write(wakefd, &one, sizeof(one)); } }
+        int wait(std::vector<Ev>& out, int ms) {
+            epoll_event evs[256];
+            int n = ::epoll_wait(q, evs, 256, ms);
+            if (n <= 0) return n;
+            out.clear();
+            for (int i = 0; i < n; ++i) {
+                int fd = evs[i].data.fd;
+                if (fd == wakefd) { std::uint64_t v; while (::read(wakefd, &v, sizeof(v)) > 0) {} out.push_back({fd, false, true}); continue; }
+                out.push_back({fd, (evs[i].events & (EPOLLHUP | EPOLLERR)) != 0, false});
+            }
+            return (int)out.size();
+        }
+        void shut() { if (wakefd >= 0) ::close(wakefd); if (q >= 0) ::close(q); }
+#else
+        // kqueue: EV_ONESHOT auto-deletes after delivery, so arm() is the same
+        // EV_ADD for first-park and re-park. Peer hangup surfaces as EV_EOF on
+        // the read filter — only a hup when no readable bytes remain (data==0),
+        // matching epoll's "EPOLLRDHUP still goes to a worker" behaviour.
+        bool init() {
+            q = ::kqueue();
+            if (q < 0) return false;
+            struct kevent we; EV_SET(&we, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, nullptr);
+            ::kevent(q, &we, 1, nullptr, 0, nullptr);
+            return true;
+        }
+        void add_listener(int lfd) { struct kevent lev; EV_SET(&lev, lfd, EVFILT_READ, EV_ADD, 0, 0, nullptr); ::kevent(q, &lev, 1, nullptr, 0, nullptr); }
+        bool arm(int fd, bool /*first*/) {
+            struct kevent ce; EV_SET(&ce, fd, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0, nullptr);
+            return ::kevent(q, &ce, 1, nullptr, 0, nullptr) == 0;
+        }
+        void forget(int fd) { struct kevent de; EV_SET(&de, fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr); ::kevent(q, &de, 1, nullptr, 0, nullptr); }
+        void wake() { struct kevent tr; EV_SET(&tr, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, nullptr); ::kevent(q, &tr, 1, nullptr, 0, nullptr); }
+        int wait(std::vector<Ev>& out, int ms) {
+            struct kevent evs[256];
+            timespec ts{ ms / 1000, (long)(ms % 1000) * 1000000L };
+            int n = ::kevent(q, nullptr, 0, evs, 256, &ts);
+            if (n <= 0) return n;
+            out.clear();
+            for (int i = 0; i < n; ++i) {
+                if (evs[i].filter == EVFILT_USER) { out.push_back({-1, false, true}); continue; }
+                bool hup = (evs[i].flags & EV_EOF) && evs[i].data == 0;
+                out.push_back({(int)evs[i].ident, hup, false});
+            }
+            return (int)out.size();
+        }
+        void shut() { if (q >= 0) ::close(q); }
+#endif
+    };
 
-    // An eventfd workers write to so the epoll thread wakes to process results.
-    int wake = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-    if (wake >= 0) { epoll_event we{}; we.events = EPOLLIN; we.data.fd = wake; ::epoll_ctl(ep, EPOLL_CTL_ADD, wake, &we); }
-    const int wake_w = wake;
+    Gate gate;
+    if (!gate.init()) { std::perror("waya: event gate"); return 1; }
+    gate.add_listener(lfd);
 
     auto set_nonblock = [](int fd){ int f=::fcntl(fd,F_GETFL,0); if(f>=0) ::fcntl(fd,F_SETFL,f|O_NONBLOCK); };
     auto clr_nonblock = [](int fd){ int f=::fcntl(fd,F_GETFL,0); if(f>=0) ::fcntl(fd,F_SETFL,f&~O_NONBLOCK); };
@@ -148,14 +223,14 @@ int serve(const ServeConfig& cfg,
     // Per-connection state that must survive across re-parks: the carry buffer
     // of bytes already read past the previous request. `conn_count` is the live
     // connection total (parked + in-flight) for the ceiling. Both are touched
-    // ONLY by the epoll thread.
-    std::unordered_map<int, std::string> conns;          // fd -> carry (epoll thread only)
+    // ONLY by the gate thread.
+    std::unordered_map<int, std::string> conns;          // fd -> carry (gate thread only)
     std::atomic<int> conn_count{0};
 
-    // CRITICAL fd-lifetime rule: ONLY the epoll thread calls epoll_ctl()/close()
-    // on a connection fd. Workers never touch epoll or close — they serve a
-    // request and push a (fd, disposition, carry) result back; the epoll thread
-    // applies it. This removes the classic close()-vs-epoll_ctl race on a
+    // CRITICAL fd-lifetime rule: ONLY the gate thread registers/deregisters or
+    // close()s a connection fd. Workers never touch the gate or close — they
+    // serve a request and push a (fd, disposition, carry) result back; the gate
+    // thread applies it. This removes the classic close()-vs-rearm race on a
     // possibly-recycled fd.
     struct Done { int fd; Disposition disp; std::string carry; };
     std::mutex qm; std::condition_variable qcv; std::deque<int> ready; bool stop = false;
@@ -175,19 +250,18 @@ int serve(const ServeConfig& cfg,
               if (it != pending_carry.end()) { carry = std::move(it->second); pending_carry.erase(it); } }
             Disposition d = on_ready(fd, carry);   // blocking recv/send happens here
             { std::lock_guard<std::mutex> l(dm); done.push_back(Done{fd, d, std::move(carry)}); }
-            if (wake_w >= 0) { std::uint64_t one = 1; (void)::write(wake_w, &one, sizeof(one)); }
+            gate.wake();
         }
     };
     std::vector<std::thread> pool; pool.reserve(workers);
     for (int i = 0; i < workers; ++i) pool.emplace_back(worker_fn);
 
-    // Apply a finished worker's decision (epoll thread only).
+    // Apply a finished worker's decision (gate thread only).
     auto apply_done = [&](Done& r){
         if (r.disp == Disposition::KeepAlive) {
             conns[r.fd] = std::move(r.carry);
             set_nonblock(r.fd);
-            epoll_event ce{}; ce.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT; ce.data.fd = r.fd;
-            if (::epoll_ctl(ep, EPOLL_CTL_MOD, r.fd, &ce) < 0) {
+            if (!gate.arm(r.fd, false)) {
                 ::close(r.fd); conns.erase(r.fd); conn_count.fetch_sub(1, std::memory_order_relaxed);
             }
         } else if (r.disp == Disposition::Owned) {
@@ -198,18 +272,18 @@ int serve(const ServeConfig& cfg,
         }
     };
 
-    std::vector<epoll_event> evs(256);
+    std::vector<Gate::Ev> evs; evs.reserve(256);
     for (;;) {
         if (g_draining) break;
-        int n = ::epoll_wait(ep, evs.data(), (int)evs.size(), 500);
+        int n = gate.wait(evs, 500);
         if (n < 0) { if (errno == EINTR) continue; if (g_fd < 0 || g_draining) break; continue; }
-        // Drain finished-worker results first (all epoll/close happen here).
+        // Drain finished-worker results first (all registration/close happen here).
         { std::deque<Done> batch;
           { std::lock_guard<std::mutex> l(dm); batch.swap(done); }
           for (auto& r : batch) apply_done(r); }
         for (int i = 0; i < n; ++i) {
-            int fd = evs[i].data.fd;
-            if (fd == wake) { std::uint64_t v; while (::read(wake, &v, sizeof(v)) > 0) {} continue; }
+            if (evs[i].is_wake) continue;
+            int fd = evs[i].fd;
             if (fd == lfd) {
                 for (;;) {
                     int c = ::accept(lfd, nullptr, nullptr);
@@ -228,16 +302,15 @@ int serve(const ServeConfig& cfg,
                     set_nonblock(c);
                     conn_count.fetch_add(1, std::memory_order_relaxed);
                     conns[c] = std::string{};   // empty carry
-                    epoll_event ce{}; ce.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT; ce.data.fd = c;
-                    if (::epoll_ctl(ep, EPOLL_CTL_ADD, c, &ce) < 0) {
+                    if (!gate.arm(c, true)) {
                         ::close(c); conns.erase(c); conn_count.fetch_sub(1, std::memory_order_relaxed);
                     }
                 }
                 continue;
             }
-            // A parked connection is ready (EPOLLONESHOT: now disarmed) or hung up.
-            if (evs[i].events & (EPOLLHUP | EPOLLERR)) {
-                ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
+            // A parked connection is ready (oneshot: now disarmed) or hung up.
+            if (evs[i].hup) {
+                gate.forget(fd);
                 ::close(fd); conns.erase(fd); conn_count.fetch_sub(1, std::memory_order_relaxed);
                 continue;
             }
@@ -256,8 +329,7 @@ int serve(const ServeConfig& cfg,
     for (auto& t : pool) if (t.joinable()) t.join();
     { std::deque<Done> batch; { std::lock_guard<std::mutex> l(dm); batch.swap(done); } for (auto& r : batch) if (r.disp != Disposition::Owned) ::close(r.fd); }
     for (auto& [fd, _] : conns) ::close(fd);
-    if (wake >= 0) ::close(wake);
-    if (ep >= 0) ::close(ep);
+    gate.shut();
     return 0;
 }
 
