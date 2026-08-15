@@ -32,56 +32,30 @@ using namespace waya::ui;
 
 namespace logo_detail {
 
-// agentty-logo.css, verbatim (with --font-mono fallbacks inlined). Registered once.
+// agentty-logo.css, adapted: the wordmark is drawn as a GRID of filled square
+// pixels (one <i> per lit pixel) rather than half-block font glyphs. A real
+// bitmap is solid squares, so this is pixel-crisp and font-INDEPENDENT (the
+// half-block approach drifts when JetBrains Mono isn't the resolved monospace).
+// The three animation layers are byte-for-byte the source's.
 inline const char* LOGO_CSS =
-".agentty-logo{--logo-mag:#e29be0;font-family:var(--font-mono,'JetBrains Mono',ui-monospace,monospace);"
-"line-height:1;letter-spacing:0;display:inline-flex;flex-direction:row;align-items:flex-start;"
-"color:var(--logo-mag);user-select:none;text-shadow:0 0 22px rgba(226,155,224,.35);"
+".agentty-logo{--logo-mag:#e29be0;--px:3px;display:inline-flex;flex-direction:row;align-items:flex-start;"
+"color:var(--logo-mag);user-select:none;filter:drop-shadow(0 0 22px rgba(226,155,224,.35));"
 "animation:logo-pulse 5.76s linear 2.16s infinite}"
-".logo-letter{display:inline-flex;flex-direction:column;margin-right:1ch;will-change:transform;"
+".agentty-logo.lg{--px:9px}.agentty-logo.md{--px:6px}.agentty-logo.sm{--px:4px}"
+"@media (max-width:720px){.agentty-logo.lg{--px:clamp(4px,1.1vw,9px)}}"
+".logo-letter{display:grid;grid-template-columns:repeat(6,var(--px));grid-auto-rows:var(--px);"
+"gap:0;margin-right:var(--px);will-change:transform;"
 "animation:logo-drop .9s cubic-bezier(.215,.61,.355,1) both var(--delay),"
 "logo-bob 4s ease-in-out infinite var(--bob-delay)}"
 ".logo-letter:last-child{margin-right:0}"
-".logo-row{display:flex;white-space:pre;height:1em}"
-".agentty-logo .px{display:inline-block;width:1ch;text-align:center;font-size:inherit;color:inherit}"
-".agentty-logo .px.off{visibility:hidden}.agentty-logo .px.on{color:inherit}"
-".agentty-logo.lg{font-size:22px}.agentty-logo.md{font-size:15px}.agentty-logo.sm{font-size:11px}"
-"@media (max-width:720px){.agentty-logo.lg{font-size:clamp(9px,2.7vw,22px)}}"
+".logo-letter i{display:block;width:var(--px);height:var(--px);background:currentColor;border-radius:1px}"
+".logo-letter i.off{background:transparent}"
 "@keyframes logo-drop{from{transform:translateY(-1em);opacity:0}to{transform:translateY(0);opacity:1}}"
-"@keyframes logo-bob{0%{transform:translateY(0)}25%{transform:translateY(-0.16em)}50%{transform:translateY(0)}"
-"75%{transform:translateY(0.16em)}100%{transform:translateY(0)}}"
-"@keyframes logo-pulse{0%,94%,100%{color:var(--logo-mag);text-shadow:0 0 22px rgba(226,155,224,.35)}"
-"96%,97%{color:#fff;text-shadow:0 0 26px rgba(255,255,255,.5)}}"
+"@keyframes logo-bob{0%{transform:translateY(0)}25%{transform:translateY(-2px)}50%{transform:translateY(0)}"
+"75%{transform:translateY(2px)}100%{transform:translateY(0)}}"
+"@keyframes logo-pulse{0%,94%,100%{color:var(--logo-mag);filter:drop-shadow(0 0 22px rgba(226,155,224,.35))}"
+"96%,97%{color:#fff;filter:drop-shadow(0 0 26px rgba(255,255,255,.5))}}"
 "@media (prefers-reduced-motion:reduce){.agentty-logo,.logo-letter{animation:none}}";
-
-// FONT_W=6, FONT_H=7, PAD_TOP=1, PAD_BOTTOM=2 → 10 pixel rows → 5 cell rows.
-constexpr int FONT_W = 6, FONT_H = 7, PAD_TOP = 1, PAD_BOTTOM = 2;
-constexpr int PH = FONT_H + PAD_TOP + PAD_BOTTOM;   // 10 pixel rows
-constexpr int CH = (PH + 1) / 2;                    // 5 cell rows (2 px per cell)
-
-// buildLetter(): 6×7 '#' bitmap → CH×FONT_W half-block cells.
-// Each cell = top pixel + bottom pixel → '█'(both) '▀'(top) '▄'(bottom) ' '(none).
-inline std::vector<std::vector<const char*>> build_letter(const std::array<const char*, 7>* g) {
-    std::array<int, PH * FONT_W> lit{};
-    if (g) for (int row = 0; row < FONT_H; ++row)
-        for (int col = 0; col < FONT_W; ++col)
-            if ((*g)[(std::size_t)row][(std::size_t)col] == '#')
-                lit[(std::size_t)((PAD_TOP + row) * FONT_W + col)] = 1;
-    std::vector<std::vector<const char*>> cells;
-    for (int cy = 0; cy < CH; ++cy) {
-        std::vector<const char*> line;
-        for (int x = 0; x < FONT_W; ++x) {
-            bool top = lit[(std::size_t)(cy * 2 * FONT_W + x)] == 1;
-            bool bot = (cy * 2 + 1 < PH) && lit[(std::size_t)((cy * 2 + 1) * FONT_W + x)] == 1;
-            line.push_back(top && bot ? "\xe2\x96\x88"     // █
-                         : top        ? "\xe2\x96\x80"     // ▀
-                         : bot        ? "\xe2\x96\x84"     // ▄
-                                      : " ");
-        }
-        cells.push_back(std::move(line));
-    }
-    return cells;
-}
 
 } // namespace logo_detail
 
@@ -107,22 +81,16 @@ inline NodeRef logo(const char* size = "lg") {
     for (char ch : txt) {
         const std::array<const char*, 7>* g = nullptr;
         for (auto& [k, bmp] : GLYPHS) if (k == ch) { g = &bmp; break; }
-        auto cells = build_letter(g);
 
-        // each letter = a column of .logo-row's, each row a run of .px cells
-        std::vector<NodeRef> rows;
-        for (auto& line : cells) {
-            std::vector<NodeRef> pxs;
-            for (const char* c : line) {
-                bool on = c[0] != ' ';
-                // space cells render \u00a0 (nbsp) and are visibility:hidden via .off
-                pxs.push_back(text(on ? std::string(c) : "\xc2\xa0")
-                              | add_class(on ? "px on" : "px off"));
+        // each letter = a 6-col grid of 7 rows of pixel cells; one <i> per pixel,
+        // filled (currentColor) if lit, transparent (.off) otherwise.
+        std::vector<NodeRef> pixels;
+        for (int y = 0; y < 7; ++y)
+            for (int x = 0; x < 6; ++x) {
+                bool lit = g && (*g)[(std::size_t)y][(std::size_t)x] == '#';
+                pixels.push_back(box() | as("i") | add_class(lit ? "on" : "off"));
             }
-            auto r = row(); r->kids = std::move(pxs); finalize(*r);
-            rows.push_back(r | add_class("logo-row"));
-        }
-        auto letter = col(); letter->kids = std::move(rows); finalize(*letter);
+        auto letter = box(); letter->kids = std::move(pixels); finalize(*letter);
         letter = letter | add_class("logo-letter");
         // exact source CSS vars: --delay = li*180ms, --bob-delay = li*180+900-li*446ms
         letter->style.extra.emplace_back("--delay", std::to_string(li * 180) + "ms");
