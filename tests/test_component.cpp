@@ -256,6 +256,43 @@ int main() {
         check(w.state().n == 1, "widget_harness: send() dispatches a raw Msg too");
     }
 
+    // ── map_msg composes: NESTED widgets + LISTS of widgets ────────────────
+    {
+        // (a) three levels deep: Leaf -> Mid -> Top, each its own Msg. A widget
+        //     that embeds a widget that embeds a widget must preserve the chain.
+        struct Leaf { struct Hit{}; using Msg = std::variant<Hit>; };
+        struct Mid  { struct Wrap{ Leaf::Msg m; }; using Msg = std::variant<Wrap>; };
+        struct Top  { struct Wrap{ Mid::Msg m; }; using Msg = std::variant<Wrap>; };
+
+        detail::begin_msg_capture();
+        auto leaf = button("hit") | tap(Leaf::Msg{Leaf::Hit{}});
+        auto mid  = map_msg<Leaf::Msg>(leaf.done(), [](Leaf::Msg m){ return Mid::Msg{Mid::Wrap{m}}; });
+        auto top  = map_msg<Mid::Msg>(mid,          [](Mid::Msg m){ return Top::Msg{Top::Wrap{m}}; });
+        auto rt = detail::resolve_msg<Top::Msg>(top->on_tap, "");
+        check(rt && std::holds_alternative<Top::Wrap>(*rt)
+                 && std::holds_alternative<Mid::Wrap>(std::get<Top::Wrap>(*rt).m)
+                 && std::holds_alternative<Leaf::Hit>(std::get<Mid::Wrap>(std::get<Top::Wrap>(*rt).m).m),
+              "map_msg: three nested widgets preserve the full Leaf->Mid->Top chain");
+
+        // (b) a LIST of the same widget, each tagged by index via its lifter —
+        //     the repeated-field-widget / dashboard-of-charts case.
+        struct Cell { struct Toggle{}; using Msg = std::variant<Toggle>; };
+        struct CellEvent { int i; Cell::Msg m; }; using GridMsg = std::variant<CellEvent>;
+        detail::begin_msg_capture();
+        std::vector<NodeRef> cells;
+        for (int i = 0; i < 4; ++i){
+            auto cv = button("x") | tap(Cell::Msg{Cell::Toggle{}});
+            cells.push_back(map_msg<Cell::Msg>(cv.done(), [i](Cell::Msg m){ return GridMsg{CellEvent{i, m}}; }));
+        }
+        auto grid = col_(std::move(cells));
+        int correct = 0;
+        for (int i = 0; i < 4; ++i){
+            auto r = detail::resolve_msg<GridMsg>(grid->kids[i]->on_tap, "");
+            if (r && std::get<CellEvent>(*r).i == i) ++correct;
+        }
+        check(correct == 4, "map_msg: N instances of one widget each carry their own index");
+    }
+
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
