@@ -125,7 +125,7 @@ inline NodeRef site_nav(std::string brand, std::string version,
             | on(Hover, fg(T().text)));
     auto links_row = box(); links_row->kids = std::move(link_nodes);
     links_row->style.flow = Flow::row; finalize(*links_row);
-    links_row = links_row | gap(22) | items_center | detail::raw_css("flex-wrap","wrap");
+    links_row = links_row | gap(22) | items_center | surface::wrap;
 
     auto brand_node = row(
         text(std::move(brand)) | bold | fg(T().text) | text_size(16),
@@ -174,7 +174,7 @@ inline NodeRef cta_ghost(std::string label, std::string href){
 template <typename... Btns>
 inline NodeRef cta_row(Btns... btns){
     return row(std::move(btns)...) | items_center | gap(12)
-        | justify_center | detail::raw_css("flex-wrap","wrap")
+        | justify_center | wrap
         | detail::raw_css("margin-top","28px");
 }
 
@@ -292,7 +292,7 @@ inline NodeRef site_stat(std::string number, std::string label){
 template <typename... Stats>
 inline NodeRef stats_row(Stats... stats){
     return row(std::move(stats)...) | justify_center | items_start
-        | gap(56) | detail::raw_css("flex-wrap","wrap") | w_full
+        | gap(56) | wrap | w_full
         | detail::raw_css("padding","28px 0");
 }
 
@@ -386,7 +386,7 @@ inline NodeRef site_footer(std::string brand, std::string tagline, std::vector<N
             | site_detail::link(l.href) | on(Hover, fg(T().text)));
     auto links_row = box(); links_row->kids = std::move(link_nodes);
     links_row->style.flow = Flow::row; finalize(*links_row);
-    links_row = links_row | gap(20) | items_center | detail::raw_css("flex-wrap","wrap");
+    links_row = links_row | gap(20) | items_center | surface::wrap;
 
     auto left = col(
         text(std::move(brand)) | bold | fg(T().text) | text_size(15),
@@ -396,7 +396,7 @@ inline NodeRef site_footer(std::string brand, std::string tagline, std::vector<N
         | gap(0);
 
     auto bar = row(std::move(left), box() | grow(), std::move(links_row))
-        | items_center | gap(24) | detail::raw_css("flex-wrap","wrap")
+        | items_center | gap(24) | surface::wrap
         | mx_auto | max_w((float)T().maxw) | w_full | pad_x(24) | pad_y(40);
 
     return box(std::move(bar)) | as_footer | w_full

@@ -144,6 +144,8 @@ int main() {
     check(has(css_of(box() | line_b(0.06f)), "0.06))"), "line_b(alpha) tunes opacity");
     check(has(css_of(box() | border_top_token()), "border-top:1px solid var(--wa-line"), "border_top_token()");
     check(has(css_of(box() | bg_transparent()), "background:transparent"), "bg_transparent()");
+    check(has(css_of(box() | grab), "cursor:grab"), "grab cursor");
+    check(has(css_of(box() | grabbing), "cursor:grabbing"), "grabbing cursor");
 
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;

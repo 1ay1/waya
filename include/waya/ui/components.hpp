@@ -125,7 +125,7 @@ inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
     // focuses the control (implicit association), and screen readers announce
     // them together — without needing to thread a matching id/for through.
     auto col_ = col(std::move(lab), std::move(control)) | gap(6) | as("label")
-              | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
+              | detail::raw_css("display","flex") | pointer;
     if (!hint.empty())
         col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | text_size(12)) | gap(6);
     return col_;
@@ -147,7 +147,7 @@ inline NodeRef field_invalid(std::string label, NodeRef control, std::string err
     auto msg = text(std::move(error)) | detail::raw_css("color","#ef4444")
              | text_size(12) | role("alert");
     return col(std::move(lab), std::move(control), std::move(msg)) | gap(6) | as("label")
-         | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
+         | detail::raw_css("display","flex") | pointer;
 }
 
 /// `styled_input(input_node)` — apply the library's input chrome to a raw core
@@ -190,7 +190,7 @@ inline NodeRef badge(std::string label, Tone tone = Tone::neutral){
 /// `dot(tone)` — a tiny status dot (online/away/error).
 inline NodeRef dot(Tone tone = Tone::success){
     auto [c, _] = impl::tone_colors(tone); (void)_;
-    return box() | w(8) | h(8) | round(999) | detail::raw_css("background", c) | detail::raw_css("flex","0 0 auto");
+    return box() | w(8) | h(8) | round(999) | detail::raw_css("background", c) | no_shrink;
 }
 
 /// `avatar("AB")` — a circular initials avatar. `avatar_img(url)` for a photo.
@@ -198,11 +198,11 @@ inline NodeRef avatar(std::string initials, float d = 36){
     return text(std::move(initials)) | size(d) | round(999) | center
          | bg_primary | fg_on_primary | semibold
          | detail::raw_css("font-size", std::to_string((int)(d * 0.4f)) + "px")
-         | detail::raw_css("flex","0 0 auto") | detail::raw_css("text-transform","uppercase");
+         | no_shrink | detail::raw_css("text-transform","uppercase");
 }
 inline NodeRef avatar_img(std::string url, float d = 36){
     return image(std::move(url)) | size(d) | round(999)
-         | detail::raw_css("object-fit","cover") | detail::raw_css("flex","0 0 auto");
+         | detail::raw_css("object-fit","cover") | no_shrink;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

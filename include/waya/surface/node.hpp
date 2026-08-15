@@ -1000,6 +1000,10 @@ inline Mod glow_under(std::uint32_t c, float blur_=16, float y_=6){ return glow_
 
 inline Mod opacity(float o){ return sty([=](Style& s){ s.has_opacity=true; s.opacity=o; }); }
 inline const Mod pointer = sty([](Style& s){ s.cursor=Cursor::pointer; });
+/// `grab` / `grabbing` — the drag-handle cursors (reorderable rows, kanban
+/// cards, canvas pan). `grab` at rest, `grabbing` while held.
+inline const Mod grab     = sty([](Style& s){ s.extra.emplace_back("cursor","grab"); });
+inline const Mod grabbing = sty([](Style& s){ s.extra.emplace_back("cursor","grabbing"); });
 /// `clickable` — re-enable pointer events on a child inside a `no_pointer`
 /// layer (a live control inside a decorative overlay).
 inline const Mod clickable  = sty([](Style& s){ s.extra.emplace_back("pointer-events","auto"); });

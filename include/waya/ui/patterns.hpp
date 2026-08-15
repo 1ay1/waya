@@ -289,7 +289,7 @@ template <typename ToMsg>
 NodeRef file_field(std::string label, ToMsg to_msg,
                    std::string accept_ = "", std::string hint = ""){
     auto ctrl = file_input(on_file(to_msg)) | input_skin()
-              | detail::raw_css("cursor","pointer");
+              | pointer;
     if (!accept_.empty()) ctrl = ctrl | accept(std::move(accept_));
     return field(std::move(label), std::move(ctrl), std::move(hint));
 }
@@ -315,7 +315,7 @@ template <typename Msg>
 NodeRef checkbox_field(std::string label, bool on, Msg msg){
     return row(checkbox(on) | on_change([msg](std::string){ return msg; }),
                text(std::move(label)) | fg_text | text_size(14))
-        | gap(10) | items_center | as("label") | detail::raw_css("cursor","pointer");
+        | gap(10) | items_center | as("label") | pointer;
 }
 
 /// `form_actions(buttons…)` — a right-aligned button bar for a form footer.

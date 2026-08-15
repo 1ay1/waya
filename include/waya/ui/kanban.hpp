@@ -116,7 +116,7 @@ inline NodeRef kanban(const std::vector<KanbanColumn<T>>& columns,
             cards.push_back(
                 box(renderCard(kc.cards[i]))
                     | draggable(payload)
-                    | detail::raw_css("cursor", "grab")
+                    | grab
                     | detail::raw_css("margin-bottom", "8px")
                     | key("kb-" + payload));
         }
@@ -135,10 +135,10 @@ inline NodeRef kanban(const std::vector<KanbanColumn<T>>& columns,
 
         auto header = row(
                 box() | w(8) | h(8) | round(999) | detail::raw_css("background", detail::hexstr(kc.accent)),
-                text(kc.title) | fg_text | semibold | detail::raw_css("font-size", "13.5px"),
+                text(kc.title) | fg_text | semibold | text_size(13.5f),
                 box() | grows,
                 text(std::to_string(kc.cards.size()))
-                    | fg_muted | detail::raw_css("font-size", "12px")
+                    | fg_muted | text_size(12)
                     | pad_x(7) | pad_y(2) | round(999)
                     | detail::raw_css("background", "var(--wa-raised, rgba(255,255,255,.06))"))
             | items_center | gap(8) | pad_y(4) | pad_x(2)

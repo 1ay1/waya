@@ -82,7 +82,7 @@ inline NodeRef reorder_row(int index, OnDrop onDrop, NodeRef content){
               auto [from, to] = parse_reorder(payload);
               return onDrop(from, to);            // note: from==-1 is a no-op in apply_reorder
           })
-        | detail::raw_css("cursor", "grab")
+        | grab
         | key("ro-" + std::to_string(index));
 }
 
