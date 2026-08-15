@@ -14,6 +14,52 @@
 using namespace waya::surface;
 using namespace waya::ui;
 
+// The agentty-specific hero backdrop — a blueprint grid + falling digital-rain
+// streaks + a drifting brand glow + CRT scanlines. This is the APP's brand
+// aesthetic (policy), NOT the framework's — so it lives here in the example and
+// is passed to site_hero_split_bg(), keeping ui/site.hpp unopinionated.
+static NodeRef agentty_backdrop(std::uint32_t accent) {
+    assets().keyframes("agentty-glow",
+        "from{transform:translate(0,0) scale(1);opacity:.75}"
+        "to{transform:translate(140px,70px) scale(1.18);opacity:1}");
+    assets().keyframes("agentty-rain",  "to{background-position:12% 1000px, 62% 0}");
+    assets().keyframes("agentty-rain2", "to{background-position:12% 0, 62% 1000px}");
+
+    auto grid = box() | absolute() | detail::raw_css("inset", "-2px")
+        | detail::raw_css("background-image",
+            "linear-gradient(" + detail::rgba_hex(accent, 0.05f) + " 1px, transparent 1px),"
+            "linear-gradient(90deg," + detail::rgba_hex(accent, 0.05f) + " 1px, transparent 1px)")
+        | detail::raw_css("background-size", "44px 44px")
+        | detail::raw_css("mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
+        | detail::raw_css("-webkit-mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
+    auto rain = box() | absolute() | detail::raw_css("inset", "0")
+        | detail::raw_css("background-image",
+            "linear-gradient(180deg, transparent 0%, " + detail::rgba_hex(accent, 0.55f) + " 45%, transparent 60%),"
+            "linear-gradient(180deg, transparent 0%, " + detail::rgba_hex(accent, 0.35f) + " 50%, transparent 65%)")
+        | detail::raw_css("background-size", "2px 180px, 2px 300px")
+        | detail::raw_css("background-position", "12% 0, 62% 0")
+        | detail::raw_css("background-repeat", "repeat-y, repeat-y")
+        | detail::raw_css("animation", "agentty-rain 3.2s linear infinite, agentty-rain2 5s linear infinite")
+        | detail::raw_css("opacity", "0.8")
+        | detail::raw_css("mask-image", "radial-gradient(760px 500px at 72% 0%, #000, transparent 75%)")
+        | detail::raw_css("-webkit-mask-image", "radial-gradient(760px 500px at 72% 0%, #000, transparent 75%)");
+    auto glow = box() | absolute()
+        | detail::raw_css("width", "760px") | detail::raw_css("height", "760px")
+        | detail::raw_css("top", "-220px") | detail::raw_css("left", "20%")
+        | detail::raw_css("background", "radial-gradient(circle," + detail::rgba_hex(accent, 0.20f) + ", transparent 60%)")
+        | detail::raw_css("filter", "blur(10px)")
+        | detail::raw_css("animation", "agentty-glow 12s ease-in-out infinite alternate");
+    auto scan = box() | absolute() | detail::raw_css("inset", "0")
+        | detail::raw_css("background",
+            "repeating-linear-gradient(180deg, rgba(255,255,255,.02) 0px, rgba(255,255,255,.02) 1px, transparent 1px, transparent 3px)")
+        | detail::raw_css("mix-blend-mode", "overlay");
+    return box(grid, rain, glow, scan)
+        | absolute() | detail::raw_css("inset", "0") | z(0)
+        | detail::raw_css("overflow", "hidden") | no_pointer
+        | detail::raw_css("mask-image", "linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)")
+        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)");
+}
+
 struct App {
     struct Model { std::string copied; };
     struct Copy { std::string cmd; };        // a copy button was clicked
@@ -44,8 +90,10 @@ struct App {
                 nav_cta("GitHub", "https://github.com/1ay1/agentty", false),
                 nav_cta("Get started", "/docs/quick-start")),
 
-            // ── HERO ───────────────────────────────────────────────────
-            site_hero_split(
+            // ── HERO ──────────────────────────────────────────────────
+            //   the app supplies its OWN backdrop (the framework stays neutral).
+            site_hero_split_bg(
+                agentty_backdrop(0x58a6ff),
                 "Blazing-fast", "coding agent", "in your terminal.",
                 "A drop-in alternative to claude-code, written in C++26. 13 MB binary, "
                 "millisecond cold start, sandboxed by default, SSH air-gap in one command, "

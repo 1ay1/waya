@@ -216,42 +216,17 @@ inline NodeRef site_hero(std::string title, std::string title_accent, std::strin
 /// "Blazing-fast [coding agent] in your terminal"), which the two-line
 /// `site_hero` can't express. The three parts render as one wrapping headline.
 
-// ── animated hero backdrop ──────────────────────────────────────
-/// `hero_backdrop(accent)` — the decorative, non-interactive layer that sits
-/// behind hero content: a faint blueprint grid lattice, a slowly-drifting brand
-/// glow, and CRT scanlines, all masked to fade out toward the bottom so the
-/// content below stays clean. Pure CSS (one keyframe) — no canvas, no JS.
-/// Absolutely positioned; place it as the FIRST child of a `position:relative`
-/// hero. `site_hero`/`site_hero_span` include it automatically.
-inline NodeRef hero_backdrop(std::uint32_t accent){
-    assets().keyframes("wa-hero-glow",
-        "from{transform:translate(0,0) scale(1);opacity:.8}"
-        "to{transform:translate(120px,60px) scale(1.12);opacity:1}");
-    std::string a = detail::hexstr(accent);
-    auto grid = box() | absolute()
-        | detail::raw_css("inset","-2px")
-        | detail::raw_css("background-image",
-            "linear-gradient(" + detail::rgba_hex(accent,0.045f) + " 1px, transparent 1px),"
-            "linear-gradient(90deg," + detail::rgba_hex(accent,0.045f) + " 1px, transparent 1px)")
-        | detail::raw_css("background-size","44px 44px")
-        | detail::raw_css("-webkit-mask-image","radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
-        | detail::raw_css("mask-image","radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
-    auto glow = box() | absolute()
-        | detail::raw_css("width","720px") | detail::raw_css("height","720px")
-        | detail::raw_css("top","-260px") | detail::raw_css("left","8%")
-        | detail::raw_css("background","radial-gradient(circle," + detail::rgba_hex(accent,0.16f) + ", transparent 62%)")
-        | detail::raw_css("filter","blur(8px)")
-        | detail::raw_css("animation","wa-hero-glow 14s ease-in-out infinite alternate");
-    auto scan = box() | absolute() | detail::raw_css("inset","0")
-        | detail::raw_css("background",
-            "repeating-linear-gradient(180deg, rgba(255,255,255,.015) 0px, rgba(255,255,255,.015) 1px, transparent 1px, transparent 3px)")
-        | detail::raw_css("mix-blend-mode","overlay");
-    return box(grid, glow, scan)
-        | absolute() | detail::raw_css("inset","0")
-        | detail::raw_css("overflow","hidden") | z(0)
-        | no_pointer
-        | detail::raw_css("-webkit-mask-image","linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)")
-        | detail::raw_css("mask-image","linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)");
+// ── hero backdrop hook ──────────────────────────────────────────
+/// The hero builders take an optional decorative `backdrop` node that sits
+/// behind the content (absolutely positioned, `z(0)`, `no_pointer`). The
+/// TOOLKIT stays unopinionated: the default is a plain soft radial glow. Any
+/// bespoke effect — a grid lattice, digital rain, a canvas — is the APP's own
+/// policy: build a node and pass it in. `hero_glow()` is the neutral default.
+inline NodeRef hero_glow(std::uint32_t accent){
+    return box() | absolute() | detail::raw_css("inset","0") | z(0) | no_pointer
+        | radial(accent, 50, -10, 0x000000, 90)
+        | detail::raw_css("background", "radial-gradient(1000px 520px at 50% -8%, "
+            + detail::rgba_hex(accent, 0.12f) + ", transparent 60%)");
 }
 
 // ── terminal / TUI demo window ───────────────────────────────────
@@ -315,19 +290,26 @@ inline NodeRef site_hero_span(std::string lead, std::string gradient_word, std::
     auto inner = box(); inner->kids = std::move(head); inner->style.flow = Flow::col;
     finalize(*inner);
     inner = inner | items_center | gap(0);
-    return box(hero_backdrop(T().accent), wrap(inner)) | as_section | w_full | relative
+    return box(hero_glow(T().accent), wrap(inner)) | as_section | w_full | relative
         | detail::raw_css("overflow","hidden")
-        | detail::raw_css("padding","96px 0 80px")
-        | radial(T().accent, 50, -10, T().bg, 90);
+        | detail::raw_css("padding","96px 0 80px");
 }
 
 /// `site_hero_split(lead, gradient_word, tail, lede, aside, actions…)` — the
 /// two-column hero: headline + lede + actions on the LEFT, `aside` (usually a
-/// `tui_window(…)` demo) on the RIGHT, over the animated backdrop. Collapses to
-/// one column on narrow screens. This is the agentty.org above-the-fold shape.
+/// `tui_window(…)` demo) on the RIGHT. Uses the neutral `hero_glow` backdrop;
+/// for a bespoke backdrop use `site_hero_split_bg(backdrop, …)`.
 template <typename... Actions>
 inline NodeRef site_hero_split(std::string lead, std::string gradient_word, std::string tail,
-                              std::string lede, NodeRef aside, Actions... actions){
+                              std::string lede, NodeRef aside, Actions... actions);
+
+/// `site_hero_split_bg(backdrop, lead, gradient_word, tail, lede, aside, …)` —
+/// same two-column hero, but YOU provide the decorative backdrop node (a grid,
+/// rain, canvas, whatever your app's brand wants). The toolkit places it behind
+/// the content; it stays unopinionated about what the effect is.
+template <typename... Actions>
+inline NodeRef site_hero_split_bg(NodeRef backdrop, std::string lead, std::string gradient_word,
+                                 std::string tail, std::string lede, NodeRef aside, Actions... actions){
     using namespace site_detail;
     auto piece = [](std::string s){
         return text(std::move(s)) | detail::raw_css("font-size","clamp(38px, 6vw, 66px)")
@@ -355,9 +337,17 @@ inline NodeRef site_hero_split(std::string lead, std::string gradient_word, std:
         | detail::raw_css("gap","56px") | items_center
         | relative | z(1);
 
-    return box(hero_backdrop(T().accent), wrap(grid)) | as_section | w_full | relative
+    NodeRef bg = backdrop ? backdrop : hero_glow(T().accent);
+    return box(std::move(bg), wrap(grid)) | as_section | w_full | relative
         | detail::raw_css("overflow","hidden")
         | detail::raw_css("padding","72px 0 64px");
+}
+
+template <typename... Actions>
+inline NodeRef site_hero_split(std::string lead, std::string gradient_word, std::string tail,
+                              std::string lede, NodeRef aside, Actions... actions){
+    return site_hero_split_bg(nullptr, std::move(lead), std::move(gradient_word), std::move(tail),
+                              std::move(lede), std::move(aside), std::move(actions)...);
 }
 
 // ── section (the content workhorse) ──────────────────────────────────────────

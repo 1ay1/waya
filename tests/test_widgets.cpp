@@ -979,7 +979,7 @@ int main() {
         check(has(h, "One") && has(h, "Two"), "site: feature cards render");
         check(has(h, "href=\"/docs\""), "site: nav links are real anchors");
 
-        // hero backdrop (animated) + tui demo window
+        // hero with the neutral default backdrop + the tui demo window
         detail::begin_msg_capture();
         auto heroNode = site_hero_split("Fast", "agent", "here.", "lede.",
             tui_window("demo ~/x",
@@ -988,11 +988,14 @@ int main() {
             box());
         auto hh = html_of(heroNode);
         auto hhc = css_of(heroNode);
-        check(has(hhc, "44px 44px"), "hero_backdrop: blueprint grid lattice");
-        check(has(hhc, "mix-blend-mode:overlay"), "hero_backdrop: CRT scanlines");
-        check(has(hhc, "wa-hero-glow") || has(hh, "wa-hero-glow"), "hero_backdrop: drift glow animation");
+        check(has(hhc, "radial-gradient"), "site_hero_split: neutral glow backdrop by default");
         check(has(hh, "$ agentty") && has(hh, "Ready"), "tui_window: renders the session lines");
         check(has(hhc, "ff5f56") && has(hhc, "27c93f"), "tui_window: mac traffic-light dots");
+        // a bespoke backdrop is the CALLER's to provide (framework stays neutral)
+        detail::begin_msg_capture();
+        auto customBg = box() | absolute() | detail::raw_css("background", "url(#rain)");
+        auto heroBg = site_hero_split_bg(customBg, "F", "a", "b", "", box(), box());
+        check(has(css_of(heroBg), "url(#rain)"), "site_hero_split_bg: uses the caller's backdrop");
     }
 
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
