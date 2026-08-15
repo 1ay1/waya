@@ -512,6 +512,14 @@ void run_ws_session(int conn, std::string req_str, int port,
             // which we treat as "idle", not "dead".
             { timeval tv{}; tv.tv_sec = 25; tv.tv_usec = 0;
               ::setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)); }
+            // Send backpressure: a slow/stalled reader that fills the kernel
+            // send buffer must not pin this session's render thread for the
+            // generic 60s timeout. Cap a single send at 10s; on timeout, send
+            // marks the session dead and it's reaped — so one slow client drops
+            // itself instead of stalling its own updates indefinitely. (There's
+            // no user-space send queue, so this is the only unbounded wait.)
+            { timeval tv{}; tv.tv_sec = 10; tv.tv_usec = 0;
+              ::setsockopt(conn, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)); }
             // Token-bucket rate limit: a client can't pin a core by flooding taps.
             // ~120 msgs/sec sustained, burst 60. Over-limit frames are dropped
             // (not disconnected) so a legit fast typer isn't punished.

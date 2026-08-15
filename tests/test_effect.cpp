@@ -410,36 +410,40 @@ int main() {
 
     // ── Scheduler: ONE thread services all timed effects (after + every) ────
     //    replaces the old per-Cmd::after / per-subscription-timer std::thread,
-    //    which spawned O(sessions x timers) sleeping OS threads.
+    //    which spawned O(sessions x timers) sleeping OS threads. Counters are
+    //    heap-allocated (shared_ptr) because the Scheduler dispatches callbacks
+    //    on the Pool — a just-cancelled timer can have one in-flight callback,
+    //    which must not touch a freed stack local.
     {
         using namespace std::chrono_literals;
         auto& S = detail::Scheduler::instance();
 
         // after() fires exactly once, roughly on time.
-        std::atomic<int> once{0};
-        S.after(40, [&]{ once++; });
+        auto once = std::make_shared<std::atomic<int>>(0);
+        S.after(40, [once]{ once->fetch_add(1); });
         std::this_thread::sleep_for(120ms);
-        CHECK(once.load() == 1);
+        CHECK(once->load() == 1);
 
         // every() repeats until its run flag is cleared, and STAYS stopped.
-        std::atomic<int> ticks{0};
+        auto ticks = std::make_shared<std::atomic<int>>(0);
         auto run = std::make_shared<std::atomic<bool>>(true);
-        S.every(25, [&]{ ticks++; }, run);
+        S.every(25, [ticks]{ ticks->fetch_add(1); }, run);
         std::this_thread::sleep_for(130ms);
         run->store(false);
-        int at_cancel = ticks.load();
+        int at_cancel = ticks->load();
         CHECK(at_cancel >= 3);                          // fired several times
         std::this_thread::sleep_for(90ms);
-        CHECK(ticks.load() <= at_cancel + 1);           // cancel actually stops it
+        CHECK(ticks->load() <= at_cancel + 1);          // cancel actually stops it
 
         // scale: many timers share the one scheduler thread (not N threads).
-        std::atomic<int> total{0};
+        auto total = std::make_shared<std::atomic<int>>(0);
         std::vector<std::shared_ptr<std::atomic<bool>>> runs;
         for (int i = 0; i < 500; ++i){ auto r = std::make_shared<std::atomic<bool>>(true);
-            runs.push_back(r); S.every(20, [&]{ total++; }, r); }
+            runs.push_back(r); S.every(20, [total]{ total->fetch_add(1); }, r); }
         std::this_thread::sleep_for(90ms);
         for (auto& r : runs) r->store(false);
-        CHECK(total.load() >= 500);                     // all 500 fired at least once
+        CHECK(total->load() >= 500);                    // all 500 fired at least once
+        std::this_thread::sleep_for(60ms);              // let any in-flight callbacks drain
     }
 
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");

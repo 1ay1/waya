@@ -86,6 +86,8 @@ struct Session {
 
     void send_binary(const std::string& frame);
     void send_text(const std::string& s);
+private:
+    bool write_all(const char* data, std::size_t len);   // all-or-fail frame write
 };
 
 /// The broadcast Hub: a process-global, thread-safe registry mapping a topic to

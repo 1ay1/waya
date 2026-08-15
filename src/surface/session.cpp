@@ -73,13 +73,27 @@ void Session::shutdown_io() {
 void Session::send_binary(const std::string& frame) {
     if (!alive) return;
     std::lock_guard<std::mutex> l(wm);
-    if (::send(conn, frame.data(), frame.size(), WAYA_MSG_NOSIGNAL) < 0) alive = false;
+    if (!write_all(frame.data(), frame.size())) alive = false;
 }
 void Session::send_text(const std::string& s) {
     if (!alive) return;
     auto f = ws::encode_text(s);
     std::lock_guard<std::mutex> l(wm);
-    if (::send(conn, f.data(), f.size(), WAYA_MSG_NOSIGNAL) < 0) alive = false;
+    if (!write_all(f.data(), f.size())) alive = false;
+}
+// Write a whole WS frame, looping over partial sends. A single ::send can
+// short-write (or time out under SO_SNDTIMEO) on a backpressured socket; a
+// truncated frame would desync the client, so we must send all-or-fail. A
+// timeout / hard error returns false -> the caller marks the session dead.
+bool Session::write_all(const char* data, std::size_t len) {
+    std::size_t off = 0;
+    while (off < len) {
+        ssize_t w = ::send(conn, data + off, len - off, WAYA_MSG_NOSIGNAL);
+        if (w > 0) { off += (std::size_t)w; continue; }
+        if (w < 0 && errno == EINTR) continue;
+        return false;   // EAGAIN (SO_SNDTIMEO fired) or a real error: drop the client
+    }
+    return true;
 }
 
 // ── Hub ─────────────────────────────────────────────────────────────────────
