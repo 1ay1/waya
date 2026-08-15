@@ -378,6 +378,13 @@ inline void finalize(Node& n){
 namespace detail {
 inline void push(std::vector<NodeRef>&){}
 template<typename... R> void push(std::vector<NodeRef>& v, NodeRef n, R... r){ v.push_back(std::move(n)); push(v,std::move(r)...); }
+/// Push a compile-time-known pack of children, reserving EXACTLY once. The
+/// variadic builders know the child count at the call site, so the kids vector
+/// grows in a single allocation instead of reallocating 1→2→4… as push_back
+/// walks the pack — for a 3-child box that's 1 malloc, not 3.
+template<typename... Cs> void push_all(std::vector<NodeRef>& v, Cs... cs){
+    if constexpr (sizeof...(Cs) > 0){ v.reserve(sizeof...(Cs)); push(v, std::move(cs)...); }
+}
 /// #rrggbb string from a 0xRRGGBB int — used by many colour-taking mods.
 inline std::string hexstr(std::uint32_t c){ static const char* H="0123456789abcdef"; std::string o="#"; for(int s=20;s>=0;s-=4)o+=H[(c>>s)&0xF]; return o; }
 /// Compact float→string: integral values print bare (no ".000000") and any
@@ -401,15 +408,15 @@ inline std::string lenstr(Len l){
         case Unit::dvh:return n(l.value)+"dvh"; case Unit::dvw:return n(l.value)+"dvw"; }
     return n(l.value)+"px"; }
 }
-template <typename... Cs> NodeRef box(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
-template <typename... Cs> NodeRef row(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::row; finalize(*n); return n; }
-template <typename... Cs> NodeRef col(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
-template <typename... Cs> NodeRef stack(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::stack; finalize(*n); return n; }
+template <typename... Cs> NodeRef box(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; detail::push_all(n->kids, std::move(cs)...); finalize(*n); return n; }
+template <typename... Cs> NodeRef row(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::row; detail::push_all(n->kids, std::move(cs)...); finalize(*n); return n; }
+template <typename... Cs> NodeRef col(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::col; detail::push_all(n->kids, std::move(cs)...); finalize(*n); return n; }
+template <typename... Cs> NodeRef stack(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::stack; detail::push_all(n->kids, std::move(cs)...); finalize(*n); return n; }
 /// `grid(children...)` — a real CSS grid container. Shape it with `grid_cols`,
 /// `grid_rows`, `grid_areas`, and `gap`; place children with `col_span`/
 /// `row_span`/`area`. The layout tool for dashboards, galleries, and any 2-D UI
 /// that flex can only fake. e.g. grid(a,b,c,d) | grid_cols("1fr 1fr") | gap(16).
-template <typename... Cs> NodeRef grid(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::grid; finalize(*n); return n; }
+template <typename... Cs> NodeRef grid(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::grid; detail::push_all(n->kids, std::move(cs)...); finalize(*n); return n; }
 
 inline NodeRef text(std::string s){ auto n=detail::new_node(); n->kind=Kind::text; n->text=std::move(s); finalize(*n); return n; }
 inline NodeRef text(long long v){ return text(std::to_string(v)); }
@@ -434,7 +441,7 @@ inline NodeRef button(std::string label){ auto n=detail::new_node(); n->kind=Kin
 /// `form(fields…) | on_submit(Save)` — a real <form> that groups named controls.
 /// Enter in any field, or a button inside it, fires submit; the runtime gathers
 /// every named field into the update value as "name=value&name2=value2".
-template <typename... Cs> NodeRef form(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::form; detail::push(n->kids, std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
+template <typename... Cs> NodeRef form(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::form; detail::push_all(n->kids, std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
 /// `video(url)` — a media player. `controls`/`autoplay`/`loop` via attr(); size
 /// via w()/h()/aspect() like any node.
 inline NodeRef video(std::string src){ auto n=detail::new_node(); n->kind=Kind::video; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }

@@ -223,14 +223,15 @@ std::vector<NodeRef> each_keyed(const Range& range, KeyFn key_fn, Fn view_fn){
 
 // A box/row/col that takes a vector<NodeRef> (so `each` composes directly).
 inline NodeRef box_(std::vector<NodeRef> kids){ auto n=detail::new_node(); n->kind=Kind::box; n->kids=std::move(kids); finalize(*n); return n; }
-inline NodeRef row_(std::vector<NodeRef> kids){ auto n=box_(std::move(kids)); n->style.flow=Flow::row; finalize(*n); return n; }
-inline NodeRef col_(std::vector<NodeRef> kids){ auto n=box_(std::move(kids)); n->style.flow=Flow::col; finalize(*n); return n; }
+inline NodeRef row_(std::vector<NodeRef> kids){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::row; n->kids=std::move(kids); finalize(*n); return n; }
+inline NodeRef col_(std::vector<NodeRef> kids){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::col; n->kids=std::move(kids); finalize(*n); return n; }
+inline NodeRef stack_(std::vector<NodeRef> kids){ auto n=detail::new_node(); n->kind=Kind::box; n->style.flow=Flow::stack; n->kids=std::move(kids); finalize(*n); return n; }
 
 /// `fragment(nodes)` — splice a vector of nodes into a parent without a wrapper
 /// box. A `display:contents` div: it lays out as if its children were direct
 /// children of the grandparent. Useful for `col( header, fragment(each(…)) )`.
 inline NodeRef fragment(std::vector<NodeRef> kids){
-    auto n = box_(std::move(kids));
+    auto n = detail::new_node(); n->kind=Kind::box; n->kids=std::move(kids);
     n->style.extra.emplace_back("display", "contents");
     finalize(*n);
     return n;
