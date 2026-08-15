@@ -163,12 +163,16 @@ inline NodeRef site_nav(std::string version, std::vector<NavItem> items) {
         | add_class("wrap nav-inner");
 
     // ── mobile menu ──
+    // NOTE: build as a BARE box (no col()/row() flow) so it carries NO interned
+    // display — the .mobile-menu / .mobile-menu.open CSS fully owns display, and
+    // `display:none` isn't overridden by an interned `display:flex`.
     std::vector<NodeRef> mm;
     for (auto& it : items) mm.push_back(link_to(it.title, it.href));
     mm.push_back(link_to("Discord \xe2\x86\x97", "https://discord.gg/qhb9AZ8f3c"));
     mm.push_back(link_to("GitHub \xe2\x86\x97", "https://github.com/1ay1/agentty"));
-    auto mobile = col(); mobile->kids = std::move(mm); finalize(*mobile);
-    mobile = mobile | add_class("mobile-menu");
+    auto mobile = box(); mobile->kids = std::move(mm);
+    mobile->attrs.emplace_back("class", "mobile-menu");
+    finalize(*mobile);
 
     auto header = col(inner, mobile) | add_class("nav");
     header->kind = Kind::box;
