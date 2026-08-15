@@ -333,6 +333,17 @@ inline std::string client(int port) {
     "document.addEventListener('dragstart',function(ev){var t=ev.target.closest('[draggable=true]');if(t){ev.dataTransfer.setData('text/plain',t.getAttribute('name')||'');ev.dataTransfer.effectAllowed='move';}});"
     "document.addEventListener('dragover',function(ev){if(ev.target.closest&&ev.target.closest('[data-ev-drop]'))ev.preventDefault();});"
     "document.addEventListener('drop',function(ev){var t=ev.target.closest('[data-ev-drop]');if(t){ev.preventDefault();var src=ev.dataTransfer.getData('text/plain');var arg=t.getAttribute('data-drop-arg');sendev(t.dataset.evDrop,arg!=null?src+':'+arg:src);}});"
+    // paste: an [data-ev-pastefile] node receives pasted IMAGES/FILES (a
+    // screenshot, an image copied from a page). Reads each file via FileReader
+    // and ships it as e<token>|<name>|<mime>|<base64> — the same shape on_file
+    // uses, so FileData::parse decodes it server-side. Text pastes are ignored
+    // (they flow through the input's normal on_input). 8 MB raw cap.
+    "document.addEventListener('paste',function(ev){var el=ev.target;while(el&&el!==document){var s=evattr(el,'pastefile');"
+    "if(s!=null){var items=(ev.clipboardData||{}).items||[];var any=false;"
+    "for(var i=0;i<items.length;i++){if(items[i].kind==='file'){var f=items[i].getAsFile();if(!f||f.size>8*1024*1024)continue;any=true;"
+    "(function(file){var rd=new FileReader();rd.onload=function(){var d=String(rd.result),c=d.indexOf(',');"
+    "sendev(s,(file.name||'pasted').replace(/\\|/g,'_')+'|'+(file.type||'application/octet-stream').replace(/\\|/g,'_')+'|'+d.slice(c+1));};rd.readAsDataURL(file);})(f);}}"
+    "if(any)ev.preventDefault();return;}el=el.parentElement;}},true);"
     // scroll: a [data-ev-scroll] container reports its scrollTop (px), rAF-
     // throttled so a fast scroll sends at most one frame's worth. This is the
     // virtual-list hook — the server windows its rows to the reported offset.
@@ -346,7 +357,7 @@ inline std::string client(int port) {
     // appear) we scan the tree for data-ev-* attributes and add ONE capture-
     // phase listener per never-seen type. Handled types above are skipped so we
     // don't double-fire. Value-bearing controls send their value as payload.
-    "var wired={click:1,keydown:1,input:1,change:1,submit:1,focus:1,blur:1,drop:1,dragstart:1,dragover:1,pointerdown:1,pointerenter:1,pointerleave:1,dblclick:1,shortcut:1,scroll:1};"
+    "var wired={click:1,keydown:1,input:1,change:1,submit:1,focus:1,blur:1,drop:1,dragstart:1,dragover:1,pointerdown:1,pointerenter:1,pointerleave:1,dblclick:1,shortcut:1,scroll:1,pastefile:1};"
     "function camel(s){return s.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});}"
     "function bindGeneric(){var els=document.querySelectorAll('*'),seen={};"
     "for(var i=0;i<els.length;i++){var ds=els[i].dataset;if(!ds)continue;for(var k in ds){if(k.indexOf('ev')!==0||k.length<3)continue;"

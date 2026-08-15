@@ -456,6 +456,89 @@ int main() {
         check(fr.has("save") && !fr.has("nope"), "has() sees through the fallback chain");
     }
 
+    // ── Wizard: a multi-step cursor with bounds + progress ────────────────
+    {
+        struct Nx{ bool operator==(const Nx&)const=default; };
+        Wizard w{3};
+        check(w.is_first() && !w.is_last() && w.current()==0, "wizard starts at the first step");
+        w.next(); w.next();
+        check(w.current()==2 && w.is_last(), "next() advances to the last step");
+        w.next();
+        check(w.is_complete(), "stepping past the last marks complete");
+        w.back();
+        check(w.current()==2 && !w.is_first(), "back() steps in");
+        Wizard w2{5}; w2.go(3);
+        check(w2.current()==3 && w2.progress() > 0.7f, "go() jumps; progress tracks position");
+        w2.go(99);
+        check(w2.current()==5, "go() clamps past the end");
+        detail::begin_msg_capture();
+        auto steps = html_of(wizard_steps(Wizard{3}, {"Account","Details","Review"}));
+        check(has(steps, "role=\"progressbar\"") && has(steps, "Details"), "wizard_steps renders a labelled progressbar");
+        check((Wizard{3} == Wizard{3}), "Wizard has value equality");
+    }
+
+    // ── Paged<T> + infinite_sentinel: accumulate pages, load-more on scroll ──
+    {
+        struct More{ bool operator==(const More&)const=default; };
+        Paged<int> p;
+        check(p.empty() && p.can_load() && p.next_page()==0, "fresh paged list can load its first page");
+        p.begin_load();
+        check(p.is_loading() && !p.can_load(), "begin_load blocks re-entry (no request stampede)");
+        p.append({1,2,3}, /*has_more=*/true);
+        check(p.size()==3 && p.next_page()==1 && p.can_load(), "append adds a page and re-enables loading");
+        p.begin_load(); p.append({4}, /*has_more=*/false);
+        check(p.size()==4 && p.is_exhausted() && !p.can_load(), "has_more=false exhausts the list");
+        p.fail("oops");   // (after exhaustion, still records the error path)
+        Paged<int> q; q.begin_load(); q.fail("network");
+        check(!q.is_loading() && q.error=="network", "fail() stops loading and records the error");
+        // the sentinel: appear-trigger while loadable, spinner while loading, gone when exhausted
+        detail::begin_msg_capture();
+        check(has(html_of(infinite_sentinel(Paged<int>{}, More{})), "data-ev-appear"), "fresh sentinel arms the next-page trigger");
+        Paged<int> loadingP; loadingP.begin_load();
+        check(!has(html_of(infinite_sentinel(loadingP, More{})), "data-ev-appear"), "loading sentinel is a spinner, not a trigger");
+        Paged<int> doneP; doneP.append({}, false);
+        check(html_of(infinite_sentinel(doneP, More{})).size() < 60, "exhausted sentinel renders (near-)nothing");
+    }
+
+    // ── tree_view: nested expand/collapse, expansion as state ─────────────
+    {
+        struct Tog{ std::string id; bool operator==(const Tog&)const=default; };
+        struct FN { std::string id, name; std::vector<FN> children; };
+        FN root{"root","/",{ {"a","src",{ {"a1","main.cpp",{}} }}, {"b","README",{}} }};
+        auto idf   = [](const FN& n){ return n.id; };
+        auto labf  = [](const FN& n){ return text(n.name); };
+        auto kidf  = [](const FN& n){ return n.children; };
+        auto togf  = [](std::string id){ return Tog{id}; };
+        TreeState ts;
+        // nothing open: only the root row shows, its children hidden
+        detail::begin_msg_capture();
+        auto closed = html_of(tree_view(root, ts, idf, labf, kidf, togf));
+        check(!has(closed, "src") && !has(closed, "README"), "a collapsed tree hides children");
+        ts.expand("root");
+        auto open1 = html_of(tree_view(root, ts, idf, labf, kidf, togf));
+        check(has(open1, "src") && has(open1, "README"), "expanding root reveals its children");
+        check(!has(open1, "main.cpp"), "but a grandchild stays hidden while its parent is closed");
+        ts.expand("a");
+        auto open2 = html_of(tree_view(root, ts, idf, labf, kidf, togf));
+        check(has(open2, "main.cpp"), "expanding the parent reveals the grandchild");
+        check(has(open2, "role=\"tree\"") && has(open2, "aria-expanded"), "tree has aria roles + expanded state");
+        ts.toggle("a");
+        check(!ts.is_open("a"), "toggle() closes an open node");
+    }
+
+    // ── on_paste_file: pasted images arrive as FileData (clipboard → update) ─
+    {
+        struct Pasted{ std::string name; bool operator==(const Pasted&)const=default; };
+        detail::begin_msg_capture();
+        auto zone = textarea("") | on_paste_file([](FileData f){ return Pasted{f.name}; });
+        auto h = html_of(zone);
+        check(has(h, "data-ev-pastefile"), "on_paste_file wires the clipboard-file listener");
+        // it resolves through the SAME FileData path as an upload
+        int tok = zone->events.at(0).msg;
+        auto m = detail::resolve_msg<Pasted>(tok, "shot.png|image/png|aGk=");
+        check(m && m->name=="shot.png", "a pasted file resolves to a typed Msg with its FileData");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

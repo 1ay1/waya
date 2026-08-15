@@ -375,6 +375,75 @@ A million-row table costs ~30 built nodes per frame, not a million. Rows must be
 diff reuses DOM as you scroll, and the client throttles scroll reporting to one
 frame.
 
+### Infinite scroll — `Paged<T>`
+
+Pairs an `on_appear` sentinel with paginated fetching. `Paged<T>` accumulates
+pages, tracks whether a fetch is in flight (so a fast scroll can't stampede the
+server), and knows when the list is exhausted.
+
+```cpp
+struct Model { Paged<Post> feed; };
+
+[&](LoadMore){ if (!m.feed.can_load()) return {m, Cmd::none()};
+               m.feed.begin_load();
+               return {m, fetchPage(m.feed.next_page())}; }
+[&](Loaded r){ m.feed.append(parse(r.body), has_more(r)); return {m, Cmd::none()}; }
+
+// view: items, then the sentinel that loads the next page
+col(col_(map(m.feed.items(), post_card)),
+    infinite_sentinel(m.feed, LoadMore{}))
+```
+
+`infinite_sentinel` renders an `on_appear` trigger while more pages exist, a
+spinner while loading, and nothing once exhausted — so the list simply ends.
+`can_load()` gates your fetch; `append(items, has_more)` records both.
+
+### Multi-step flows — `Wizard`
+
+A checkout, an onboarding, a multi-page form. `Wizard` is a step cursor
+(`next`/`back`/`go`, `is_first`/`is_last`/`is_complete`) you gate in your own
+update; `wizard_steps` renders the numbered progress header.
+
+```cpp
+struct Model { Wizard flow{3}; Form<> details; };
+
+[&](Next){ if (step_valid(m)) m.flow.next(); return {m, Cmd::none()}; }  // gate the advance
+[&](Back){ m.flow.back();                    return {m, Cmd::none()}; }
+
+// view:
+col(wizard_steps(m.flow, {"Account","Details","Review"}),
+    step_body(m.flow.current()),
+    row(button("Back", Back{}) | when_(m.flow.is_first(), disabled()),
+        button(m.flow.is_last() ? "Finish" : "Next", Next{})
+            | when_(!step_valid(m), disabled())))
+```
+
+The wizard stays agnostic about what "valid" means — gating lives in your update,
+next to the step's state. `progress()` gives 0..1 for a bar.
+
+### Tree view — `tree_view`
+
+A file explorer, an outline, a nested thread. Your tree DATA is any shape; the
+only UI state is which nodes are open, held in a `TreeState` (a set of ids).
+
+```cpp
+struct FileNode { std::string id, name; std::vector<FileNode> children; };
+struct Model { FileNode root; TreeState tree; };
+
+[&](Toggle t){ m.tree.toggle(t.id); return {m, Cmd::none()}; }
+
+// view: adapt your node type to the four accessors
+tree_view(m.root, m.tree,
+    [](const FileNode& n){ return n.id; },                 // stable id
+    [](const FileNode& n){ return row(icon("file"), text(n.name)); },  // row content
+    [](const FileNode& n){ return n.children; },           // child nodes
+    [](std::string id){ return Toggle{id}; })              // toggle msg
+```
+
+The caret shows only for nodes with children; clicking a branch toggles it.
+Rendering is a pure walk of `(data + open set)`, with `role="tree"`/`treeitem`
+and `aria-expanded` for free.
+
 ### Forms
 
 `field(label, control, hint)` labels any control; `input_skin()` themes a raw
@@ -522,7 +591,10 @@ card(
 - `textarea_field(…)` — a resizable multiline field.
 - `select_field(label, {options}, chosen, to_msg, hint?)` — a labelled dropdown.
 - `file_field(label, to_msg, accept?, hint?)` — a labelled file picker;
-  `to_msg` maps the picked `FileData` (name/mime/decoded bytes) to a Msg.
+  `to_msg` maps the picked `FileData` (name/mime/decoded bytes) to a Msg. The
+  same bytes-in-your-update path serves `on_paste_file(fn)` — paste a screenshot
+  or copied image onto any focusable node and it arrives as a `FileData`, no
+  dialog.
 - `switch_field(title, desc, on, msg)` — a settings row: title + description on
   the left, a toggle on the right.
 - `checkbox_field(label, on, msg)` — a checkbox + clickable inline label.

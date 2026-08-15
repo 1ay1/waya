@@ -1461,6 +1461,18 @@ template <typename Fn> Mod on_file(Fn fn){
         return f(FileData::parse(raw));
     });
 }
+/// `on_paste_file(fn)` — fn maps a PASTED image/file to a Msg. When the user
+/// pastes (Cmd/Ctrl+V) onto this node and the clipboard holds a file (a
+/// screenshot, an image copied from a page), the client reads it and delivers a
+/// FileData — the same bytes-in-your-update path as `on_file`, no upload dialog.
+/// A plain-text paste is ignored here (use `on_paste(Msg)` for text). The node
+/// must be focusable (an input/textarea, or `| focusable()` on a box).
+template <typename Fn> Mod on_paste_file(Fn fn){
+    using Msg = std::invoke_result_t<Fn, FileData>;
+    return on_ev("pastefile", [f=std::move(fn)](std::string raw) -> Msg {
+        return f(FileData::parse(raw));
+    });
+}
 /// `accept(".csv,.json")` / `accept("image/*")` — restrict the file picker.
 inline Mod accept(std::string a){ return {[a=std::move(a)](Node& n){ n.attrs.emplace_back("accept", a); }}; }
 /// `multiple()` — let the picker select several files (each delivers a Msg).
