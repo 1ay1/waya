@@ -51,7 +51,7 @@ inline const char* HOME_CSS =
 "background:linear-gradient(135deg,rgba(88,166,255,.55),rgba(210,168,255,.35),transparent 60%);"
 "-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;"
 "mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;opacity:.8}"
-".hero h1{font-size:clamp(42px,7.2vw,74px);margin:0 0 22px;letter-spacing:-.045em;line-height:1.04}"
+".hero h1{font-size:clamp(36px,5.4vw,56px);margin:0 0 20px;letter-spacing:-.045em;line-height:1.05}"
 ".hero h1 .grad{background:linear-gradient(110deg,var(--accent) 8%,var(--accent-2) 48%,var(--accent-hover) 90%);"
 "-webkit-background-clip:text;background-clip:text;color:transparent}"
 ".lede{font-size:clamp(17px,2.1vw,20px);color:var(--text-dim);max-width:600px;margin:0 0 34px;line-height:1.6}"
