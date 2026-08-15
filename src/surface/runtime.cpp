@@ -233,23 +233,23 @@ int serve(const ServeConfig& cfg,
     // thread applies it. This removes the classic close()-vs-rearm race on a
     // possibly-recycled fd.
     struct Done { int fd; Disposition disp; std::string carry; };
-    std::mutex qm; std::condition_variable qcv; std::deque<int> ready; bool stop = false;
+    struct Job  { int fd; std::string carry; };
+    std::mutex qm; std::condition_variable qcv; std::deque<Job> ready; bool stop = false;
     std::mutex dm; std::deque<Done> done;
-    std::unordered_map<int, std::string> pending_carry;  // fd -> carry handed to a worker
+    // Carry travels WITH the fd in the ready queue (not a separate fd->carry map
+    // under `dm`), so a request touches `dm` only for the finished-result push,
+    // not also for a carry handoff — half the cross-thread lock traffic per
+    // request, and one fewer hash map on the hot path.
 
     auto worker_fn = [&]{
         for (;;) {
-            int fd;
+            Job job;
             { std::unique_lock<std::mutex> l(qm);
               qcv.wait(l, [&]{ return stop || !ready.empty(); });
               if (stop && ready.empty()) return;
-              fd = ready.front(); ready.pop_front(); }
-            std::string carry;
-            { std::lock_guard<std::mutex> l(dm);
-              auto it = pending_carry.find(fd);
-              if (it != pending_carry.end()) { carry = std::move(it->second); pending_carry.erase(it); } }
-            Disposition d = on_ready(fd, carry);   // blocking recv/send happens here
-            { std::lock_guard<std::mutex> l(dm); done.push_back(Done{fd, d, std::move(carry)}); }
+              job = std::move(ready.front()); ready.pop_front(); }
+            Disposition d = on_ready(job.fd, job.carry);   // blocking recv/send happens here
+            { std::lock_guard<std::mutex> l(dm); done.push_back(Done{job.fd, d, std::move(job.carry)}); }
             gate.wake();
         }
     };
@@ -316,9 +316,10 @@ int serve(const ServeConfig& cfg,
             }
             // Hand it (with its carry) to a worker. clr_nonblock so the worker's
             // recv/send block with the SO_*TIMEO backstop.
-            { std::lock_guard<std::mutex> l(dm); auto it = conns.find(fd); pending_carry[fd] = (it!=conns.end()? it->second : std::string{}); }
+            std::string carry;
+            { auto it = conns.find(fd); if (it != conns.end()) carry = std::move(it->second); }
             clr_nonblock(fd);
-            { std::lock_guard<std::mutex> l(qm); ready.push_back(fd); }
+            { std::lock_guard<std::mutex> l(qm); ready.push_back(Job{fd, std::move(carry)}); }
             qcv.notify_one();
         }
     }
