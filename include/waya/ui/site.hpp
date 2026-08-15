@@ -211,6 +211,41 @@ inline NodeRef site_hero(std::string title, std::string title_accent, std::strin
         | radial(T().accent, 50, -10, T().bg, 90);
 }
 
+/// `site_hero_span(lead, gradient_word, tail, lede, actions…)` — a hero whose
+/// title has a gradient-highlighted word IN THE MIDDLE of the phrase (e.g.
+/// "Blazing-fast [coding agent] in your terminal"), which the two-line
+/// `site_hero` can't express. The three parts render as one wrapping headline.
+template <typename... Actions>
+inline NodeRef site_hero_span(std::string lead, std::string gradient_word, std::string tail,
+                             std::string lede, Actions... actions){
+    using namespace site_detail;
+    auto piece = [](std::string s){
+        return text(std::move(s)) | font_fluid(34, 62) | detail::raw_css("font-weight","800")
+            | tracking_em(-0.03f) | leading(1.05f); };
+    // one wrapping headline row: lead + gradient word + tail, centered.
+    auto title = row(
+        piece(std::move(lead)),
+        piece(std::move(gradient_word)) | gradient_text(T().accent, T().accent2, 100),
+        piece(std::move(tail)))
+        | justify_center | items_baseline | surface::wrap
+        | detail::raw_css("gap","0 12px") | text_center;
+
+    std::vector<NodeRef> head;
+    head.push_back(std::move(title));
+    if (!lede.empty())
+        head.push_back(text(std::move(lede)) | fg(T().dim)
+            | detail::raw_css("font-size","clamp(16px, 2.2vw, 20px)")
+            | leading(1.6f) | text_center | max_w(660) | mx_auto
+            | detail::raw_css("margin-top","20px"));
+    (head.push_back(std::move(actions)), ...);
+    auto inner = box(); inner->kids = std::move(head); inner->style.flow = Flow::col;
+    finalize(*inner);
+    inner = inner | items_center | gap(0);
+    return box(wrap(inner)) | as_section | w_full
+        | detail::raw_css("padding","96px 0 80px")
+        | radial(T().accent, 50, -10, T().bg, 90);
+}
+
 // ── section (the content workhorse) ──────────────────────────────────────────
 namespace site_detail {
 /// The eyebrow + title + sub header shared by section()/feature_section().

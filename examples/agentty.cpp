@@ -44,13 +44,13 @@ struct App {
                 nav_cta("GitHub", "https://github.com/1ay1/agentty", false),
                 nav_cta("Get started", "/docs/quick-start")),
 
-            // ── HERO ─────────────────────────────────────────────────────────
-            site_hero(
-                "Blazing-fast coding agent",
-                "in your terminal.",
-                "A drop-in alternative to claude-code, written in C++26. One static "
-                "binary, millisecond cold start, sandboxed by default, and it signs "
-                "in with your existing Claude Pro/Max.",
+            // ── HERO ──────────────────────────────────────────────────────
+            site_hero_span(
+                "Blazing-fast", "coding agent", "in your terminal.",
+                "A drop-in alternative to claude-code, written in C++26. 13 MB binary, "
+                "millisecond cold start, sandboxed by default, SSH air-gap in one command, "
+                "and runs inside Zed over ACP. Signs in with your existing Claude Pro/Max "
+                "\xe2\x80\x94 or point it at OpenAI, Groq, OpenRouter, Cerebras, or a local Ollama.",
                 cta_row(
                     cta_primary("Quick start", "/docs/quick-start"),
                     cta_ghost("Star on GitHub", "https://github.com/1ay1/agentty"),
@@ -63,7 +63,7 @@ struct App {
                 site_stat("0", "runtimes to install"),
                 site_stat("6+", "model providers")),
 
-            // ── SPEED (comparison table) ─────────────────────────────────────
+            // ── SPEED ────────────────────────────────────────────────────────
             site_section("Speed", "Native, not interpreted.",
                 "Measured on the same box, same shell, same day. No JIT warmup, no "
                 "require() graph to walk, no GC ticking while bytes stream in.",
@@ -75,45 +75,75 @@ struct App {
                       { "Install",           "curl | sh", "npm i -g + Node" },
                       { "GC pauses mid-stream", "None", "V8 GC" } })),
 
-            // ── FEATURES ─────────────────────────────────────────────────────
-            site_features("Features", "Everything you'd expect, nothing you wouldn't.", "",
-                { site_feature("Sandboxed by default",
-                      "Every tool call runs jailed — file writes and commands are "
-                      "confined to the project unless you opt out.", "check"),
-                  site_feature("Any model",
-                      "Claude Pro/Max out of the box, or point it at OpenAI, Groq, "
-                      "OpenRouter, Together, Cerebras, or a local Ollama.", "check"),
-                  site_feature("SSH air-gap",
-                      "One command runs the agent on a remote box with your local "
-                      "keys — nothing leaves the tunnel.", "check"),
-                  site_feature("Runs inside Zed",
-                      "Speaks ACP, so it drops into Zed's agent panel as a native "
-                      "pair-programmer.", "check"),
-                  site_feature("No runtime",
-                      "No Node, no Python, no Electron. One binary you curl and chmod "
-                      "— it starts before an interpreter would finish booting.", "check"),
-                  site_feature("MIT licensed",
-                      "Free and open source. Fork it, ship it, build on it.", "check") }),
+            // ── WHY AGENTTY (features) ───────────────────────────────────────
+            site_features("Why agentty",
+                "Everything the official client does \xe2\x80\x94 and the things it doesn't.", "",
+                { site_feature("Performance & footprint",
+                      "C++26, statically linked, 13 MB. Millisecond cold start \xe2\x80\x94 it's "
+                      "running before an interpreter would finish booting.", "check"),
+                  site_feature("Models & auth",
+                      "Claude by default via your Pro/Max subscription \xe2\x80\x94 or GPT, Groq, "
+                      "OpenRouter, Together, Cerebras, and local Ollama. Switch live.", "check"),
+                  site_feature("Safety & isolation",
+                      "Every shell and build call runs jailed. Filesystem tools refuse "
+                      "paths outside the launch directory unless you opt out.", "check"),
+                  site_feature("Workflow & memory",
+                      "Every conversation is a saved thread you reopen later; each turn "
+                      "in a git repo pins a worktree snapshot you can restore.", "check"),
+                  site_feature("Reach & extensibility",
+                      "Runs inside Zed over ACP, serves its tools to any MCP client, and "
+                      "one command air-gaps the agent onto a remote box over SSH.", "check"),
+                  site_feature("Minimal by design",
+                      "Lives at the bottom of your terminal, preserves scrollback, never "
+                      "takes over the screen. Diffs and todos get purpose-built widgets.", "check") }),
 
-            // ── PROVIDERS (another comparison) ───────────────────────────────
-            site_section("Providers", "Bring your own model.",
-                "One flag switches the backend — same interface, any endpoint.",
+            // ── BRING YOUR OWN MODEL (providers) ─────────────────────────────
+            site_section("Bring your own model", "Claude by default. Any model on demand.",
+                "One flag switches the backend \xe2\x80\x94 same interface, any endpoint.",
                 compare_table(
                     { "flag", "what it does" },
                     { { "--provider anthropic", "Claude Pro/Max (default)" },
                       { "--provider openai",    "GPT models via the OpenAI API" },
                       { "--provider groq",      "Fast open models on Groq" },
-                      { "--provider cerebras",  "Wafer-scale inference — very fast" },
-                      { "--provider ollama",    "Local models — no key, no cloud" },
+                      { "--provider cerebras",  "Wafer-scale inference \xe2\x80\x94 very fast" },
+                      { "--provider ollama",    "Local models \xe2\x80\x94 no key, no cloud" },
                       { "--provider host:port", "Any OpenAI-compatible endpoint" } })),
+
+            // ── HOW IT COMPARES ──────────────────────────────────────────────
+            site_section("How it compares", "The single-binary pick.", "",
+                compare_table(
+                    { "", "agentty", "claude-code", "aider" },
+                    { { "Language / runtime", "C++26 static", "TS / Node", "Python" },
+                      { "Footprint",          "13 MB", "npm + Node", "pip + Python" },
+                      { "Platforms",          "Linux/mac/Win", "Linux/mac/Win", "Linux/mac/Win" },
+                      { "Sandboxed default",  "Yes", "No", "No" },
+                      { "Runs in Zed (ACP)",  "Yes", "No", "No" } })),
+
+            // ── TOOLS ────────────────────────────────────────────────────────
+            site_features("Tools", "A purpose-built widget for everything.", "",
+                { site_feature("Diffs", "File edits render as a real diff, not a wall of text.", "check"),
+                  site_feature("Todos", "Multi-step plans get a live checklist you watch tick off.", "check"),
+                  site_feature("Shell", "Commands run in a sandbox with their exit codes surfaced.", "check"),
+                  site_feature("Search", "Grep and file finds return structured, jump-to results.", "check"),
+                  site_feature("Images", "Drop a PNG/JPEG/GIF/WebP path straight into the thread.", "check"),
+                  site_feature("Skills", "Agent Skills teach it your conventions from a folder.", "check") }),
+
+            // ── OPEN SOURCE ──────────────────────────────────────────────────
+            site_section("Open source", "Built in the open, MIT licensed.",
+                "Fork it, ship it, build on it. Star the repo and join the Discord \xe2\x80\x94 "
+                "there's an AI helper bot that answers agentty questions with the real agent.",
+                cta_row(
+                    cta_primary("Star on GitHub", "https://github.com/1ay1/agentty"),
+                    cta_ghost("Join the Discord", "https://discord.gg/qhb9AZ8f3c"))),
 
             // ── CTA / INSTALL ────────────────────────────────────────────────
             cta_band("Ready to try it?",
                 "One line. No Node, no Python, no Electron.",
                 copy_line(install, Copy{ install }),
                 cta_row(
-                    cta_primary("Read the docs", "/docs"),
-                    cta_ghost("Releases", "https://github.com/1ay1/agentty/releases"))),
+                    cta_primary("Quick start guide", "/docs/quick-start"),
+                    cta_ghost("Join the Discord", "https://discord.gg/qhb9AZ8f3c"),
+                    cta_ghost("Star on GitHub", "https://github.com/1ay1/agentty"))),
 
             // ── FOOTER ───────────────────────────────────────────────────────
             site_footer("agentty",
