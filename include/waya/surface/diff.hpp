@@ -155,12 +155,18 @@ inline constexpr Channel replace_channel(bool (*differs)(const Node&, const Node
 /// True when EVERY child on both sides carries a non-empty key AND all keys are
 /// UNIQUE within their list. Only then can we reconcile by identity; a mixed or
 /// duplicate-keyed list falls back to positional diffing. Uniqueness is
-/// essential: the keyed planner matches by `std::find`, which always returns the
-/// FIRST occurrence — so a repeated key would silently diff the wrong row and
-/// corrupt the client DOM. Falling back is always safe.
+/// essential: the keyed planner matches each key to a single old index (via an
+/// old-key→index map), so a repeated key would collapse two rows onto one slot
+/// and corrupt the client DOM. Falling back to positional is always safe.
 inline bool fully_keyed(const std::vector<NodeRef>& a, const std::vector<NodeRef>& b) {
     if (a.empty() && b.empty()) return false;
+    // Fast bail (the common case is UNKEYED lists): if either side's first child
+    // has no key, it can't be fully keyed — return before allocating any set.
+    if ((!a.empty() && (!a.front() || a.front()->key.empty())) ||
+        (!b.empty() && (!b.front() || b.front()->key.empty())))
+        return false;
     std::unordered_set<std::string> seen;
+    seen.reserve((a.size() + b.size()));
     for (auto& c : a) {
         if (!c || c->key.empty()) return false;
         if (!seen.insert(c->key).second) return false;   // duplicate key in old
