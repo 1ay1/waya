@@ -382,6 +382,31 @@ the core. See [The Component Library](14-components.md) for the full guide.
 | `spotlight(items, query, sel, onQuery, onRun, onClose)` | The same launcher over arbitrary `SpotItem`s (label + category + icon + keywords). |
 | `icon("name", size=24)` | An inline SVG icon (tint with `fg`). |
 
+### Marketing / docs site (`ui/site.hpp`)
+
+A landing or docs page as a readable list of section calls — no raw CSS at the
+call site. Every builder reads a `SiteTheme` (GitHub-dark default) set by
+`site_page`, so a whole site re-skins from one struct. Links are real,
+scheme-sanitised `<a href>`s; sections use semantic landmark tags.
+
+| Signature | Description |
+|---|---|
+| `site_page(theme, sections…)` | The site root: sets the active theme, paints the page bg + base text, stacks the sections. `site_page(sections…)` uses the default theme. |
+| `SiteTheme{ bg, surface, border, text, dim, faint, accent, accent2, code_bg, maxw }` | The palette + content width every builder reads. |
+| `site_nav(brand, version, {NavLink…}, cta…)` | A sticky, blurred top bar: brand + version chip, links, your CTAs. |
+| `nav_cta(label, href, primary=true)` | A nav button. |
+| `site_hero(title, accent_line, lede, actions…)` | The hero: fluid title + gradient accent line + lede + a `cta_row`. |
+| `cta_row(buttons…)` / `cta_primary(label, href)` / `cta_ghost(label, href)` | Hero buttons. |
+| `stats_row(stats…)` / `site_stat(number, label)` | A centered row of big-number stats. |
+| `site_section(eyebrow, title, sub, body…)` | A titled content block (eyebrow + fluid title + sub + your nodes) with a top hairline. |
+| `site_features(eyebrow, title, sub, {cards})` / `site_feature(title, body, icon="")` / `site_feature_grid(cards, minColPx=280)` | Responsive auto-fitting feature-card grids. |
+| `compare_table({headers}, {{rows}})` | An "us vs. them" grid — the 2nd column's cells are highlighted as the winner (green). |
+| `cta_band(title, sub, body…)` | The closing call-to-action band. |
+| `copy_line(command, Msg)` | A mono command line that copies to the clipboard on tap (wire it to a `Cmd::copy`). |
+| `site_footer(brand, tagline, {NavLink…})` | A hairline-topped footer. |
+
+See `examples/agentty.cpp` for a full landing page built from these.
+
 ---
 
 ## Performance & memoisation (`component.hpp`)
