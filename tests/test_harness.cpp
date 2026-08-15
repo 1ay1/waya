@@ -36,9 +36,13 @@ struct Counter {
         return col(
             text("count: " + std::to_string(m.n)) | key("label"),
             row(
-                button("−") | tap(0),
-                button("+") | tap(1)
+                button("−") | tap(Dec{}),
+                button("+") | tap(Inc{})
             ),
+            // a text-labelled button + a wired input, so the harness can drive
+            // them by label/placeholder through the real token wiring.
+            button("Save changes") | tap(Save{}),
+            input(std::to_string(m.n)) | placeholder("set count") | on_input([](std::string){ return SetTo{}; }),
             m.saved ? text("saved!") : text("")
         );
     }
@@ -71,7 +75,7 @@ int main() {
     check(app.text_contains("saved!"), "view shows saved!");
 
     // ── structural queries over the rendered view ────────────────────────────
-    check(app.count(Kind::button) == 2, "two buttons rendered");
+    check(app.count(Kind::button) == 3, "three buttons rendered (−, +, Save)");
     check(app.find_key("label") != nullptr, "keyed node addressable");
     check(app.valid(), "rendered view is structurally sound");
     check(app.validate().empty(), "no violations reported");
@@ -108,6 +112,34 @@ int main() {
         check(r.header("content-type") == "application/json", "header lookup case-insensitive");
         Cmd<Counter::Msg>::Response bad{ 0, "", {} };
         check(!bad.ok(), "status 0 (never completed) is not ok()");
+    }
+
+    // ── INTERACTION: click/fill drive the app through the REAL wiring ────────
+    // This is what `send()` can't do: prove the button you rendered is actually
+    // wired to the Msg you think, and that a text input dispatches on_input.
+    {
+        auto a = test::harness<Counter>();
+        // click by label resolves "+"/"−" -> the tapped token -> the Msg
+        a.click("+").click("+").click("−");
+        check(a.model().n == 1, "click(+/−) drives the counter through its wiring");
+        // the labelled Save button dispatches Save{} — which returns a timer
+        // Cmd (Saved fires later). click() proves the WIRING; the effect is the
+        // app's own (after 300ms). Drive the follow-up Msg to complete it.
+        check(!a.model().saved, "not saved before the click");
+        a.click("Save");                        // substring match on "Save changes"
+        check(!a.model().saved, "click(Save) dispatched Save (timer pending, not yet saved)");
+        a.send(Counter::Saved{});               // the timer's Msg lands
+        check(a.model().saved, "Saved sets the flag — the full click→effect→Msg loop");
+        // can_click distinguishes a live button from an absent one
+        check(a.can_click("Save"), "can_click finds the live Save button");
+        check(!a.can_click("Delete"), "can_click is false for an absent label");
+        // fill types into the wired input -> on_input -> SetTo
+        a.fill("42");
+        check(a.model().n == 42, "fill() fires the input's on_input handler");
+        // clicking a label that isn't a wired target throws (loud test failure)
+        bool threw = false;
+        try { a.click("nonexistent button"); } catch (const std::exception&) { threw = true; }
+        check(threw, "click on an unwired label throws");
     }
 
     std::cout << "test_harness: " << pass << " passed, " << fail << " failed\n";

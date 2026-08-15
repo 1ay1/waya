@@ -44,6 +44,31 @@ app.count(Kind::button);       // how many nodes of a kind
 app.find_key("row-7");         // the node carrying a given key (or nullptr)
 ```
 
+## Interacting like a user — `click` / `fill`
+
+`send(Msg)` tests `update` in isolation — but it trusts that the button you
+rendered is wired to the Msg you passed. The most common real bug is exactly
+that trust being misplaced: a button wired to the *wrong* Msg, or not wired at
+all. `click` and `fill` drive the app by what's ON SCREEN — they render the
+view, find the node you name, and dispatch the Msg it's actually wired to,
+through the same token path the live runtime uses.
+
+```cpp
+app.click("Increment");            // find the button labelled “Increment”, fire its Msg
+app.click("Save");                 // substring match — hits “Save changes” too
+app.fill("ada@example.com");       // type into the first wired text input
+app.fill("secret", /*near=*/"Password"); // …or the input whose placeholder/value matches
+
+assert(app.can_click("Save"));     // is the Save button present AND wired?
+assert(!app.can_click("Delete"));  // a removed/disabled action isn't clickable
+```
+
+`click` on a label with no wired tap target **throws** — a test that means to
+press a button fails loudly if that button vanished or lost its handler. This
+catches wiring regressions `send()` never could: rename a Msg, forget to
+re-wire the button, and `click("Save")` fails while `send(Save{})` would still
+pass.
+
 ## Asserting effects — without running them
 
 `Cmd` is value-comparable, and the harness records the `Cmd` every `update`

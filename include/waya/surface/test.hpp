@@ -20,15 +20,29 @@
 ///   app.send(Counter::Save{});
 ///   assert(app.last_cmd() == Cmd<Msg>::after(300, Counter::Saved{}));
 ///
+/// And you can drive the app the way a USER does — by the label on screen, not
+/// the Msg. `click`/`fill` render the view, find the node you point at, and
+/// dispatch the Msg it's WIRED to through the same path the live runtime uses.
+/// So they catch the bug `send()` can't: a button wired to the wrong Msg, or
+/// not wired at all.
+///
+///   app.click("Increment");                 // finds the button, fires its Msg
+///   app.fill("ada@x.com", /*near=*/"Email");// types into the wired input
+///   assert(app.can_click("Save"));          // is the Save button live?
+///   // app.click("Nope") throws — a missing/unwired target fails loudly.
+///
 /// Everything here is header-only and dependency-free; drop it in any test.
 
 #include "node.hpp"
 #include "program.hpp"
 #include "effect.hpp"
 #include "validate.hpp"
+#include "msg.hpp"
+#include "dom.hpp"
 
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -60,6 +74,21 @@ inline int count_kind(const NodeRef& n, Kind k) {
     return c;
 }
 
+/// Find the first node whose visible text CONTAINS `needle` (a button/link by
+/// its label). Used by `click("Save")`.
+inline NodeRef find_text(const NodeRef& n, std::string_view needle) {
+    NodeRef hit;
+    std::function<void(const NodeRef&)> go = [&](const NodeRef& cur) {
+        if (hit || !cur) return;
+        // a text node's content, OR a button/link's own label (stored in ->text).
+        bool holds_label = (cur->kind == Kind::text || cur->kind == Kind::button);
+        if (holds_label && cur->text.find(needle) != std::string::npos) { hit = cur; return; }
+        for (auto& k : cur->kids) go(k);
+    };
+    go(n);
+    return hit;
+}
+
 /// Find the first node carrying a given key (keyed lists / addressable nodes).
 inline NodeRef find_key(const NodeRef& n, std::string_view key) {
     NodeRef hit;
@@ -70,6 +99,27 @@ inline NodeRef find_key(const NodeRef& n, std::string_view key) {
     };
     go(n);
     return hit;
+}
+
+/// Find the first node carrying a wired handler that satisfies `pred` — the
+/// nearest ancestor of a label often holds the tap, so callers walk up.
+inline NodeRef find_where(const NodeRef& n, const std::function<bool(const Node&)>& pred) {
+    NodeRef hit;
+    std::function<void(const NodeRef&)> go = [&](const NodeRef& cur) {
+        if (hit || !cur) return;
+        if (pred(*cur)) { hit = cur; return; }
+        for (auto& k : cur->kids) go(k);
+    };
+    go(n);
+    return hit;
+}
+
+/// True if `anc`'s subtree contains `target` (used to attribute a label's click
+/// to the nearest tappable ancestor).
+inline bool subtree_contains(const NodeRef& anc, const Node* target) {
+    bool found = false;
+    walk(anc, [&](const Node& nd){ if (&nd == target) found = true; });
+    return found;
 }
 
 /// The harness: a live-runtime-free driver for one Program `P`. Holds the
@@ -114,6 +164,83 @@ public:
 
     /// Render the current model to a node tree (calls the app's real view()).
     NodeRef view() const { return P::view(model_); }
+
+    // ── INTERACTION: drive the app the way a user does ──────────────────
+    // `send(Msg)` tests update() in isolation. These test the WIRING too: they
+    // render the view, find the node you point at, resolve the token it carries
+    // back to a Msg through the SAME path the live runtime uses, and dispatch
+    // that. So a button wired to the wrong Msg — or not wired at all — fails
+    // here, which `send()` can never catch.
+
+    /// Click the nearest tappable node at/above the element whose label CONTAINS
+    /// `label`. Throws if no such node is wired — the test SHOULD fail loudly if
+    /// the button it means to press isn't there or isn't clickable.
+    Harness& click(std::string_view label) {
+        auto [node, ok] = resolve_tap(label);
+        if (!ok) throw std::runtime_error("harness.click: no wired tap target for label '" + std::string(label) + "'");
+        return send(std::move(node), std::string{});
+    }
+    /// True if a wired, clickable target for `label` exists (assert without
+    /// dispatching — “is the Save button live?”).
+    bool can_click(std::string_view label) {
+        return resolve_tap(label).second;
+    }
+    /// Type `value` into the first text input/textarea and fire its on_input
+    /// (as a real keystroke would). Optional `near` narrows to the input whose
+    /// placeholder/value contains that text, for multi-field forms.
+    Harness& fill(std::string value, std::string_view near = {}) {
+        auto [msg, ok] = resolve_input(value, near);
+        if (!ok) throw std::runtime_error("harness.fill: no wired text input found");
+        return send(std::move(msg), std::move(value));
+    }
+
+private:
+    // Resolve the nearest tappable node containing `label` to its wired Msg.
+    // Renders under a fresh capture so the token is live, then maps token->Msg
+    // through the SAME resolve_msg the live runtime uses — so this exercises the
+    // real wiring, not a shortcut.
+    std::pair<Msg,bool> resolve_tap(std::string_view label) {
+        detail::begin_msg_capture();
+        NodeRef t = P::view(model_);
+        NodeRef lbl = find_text(t, label);
+        const Node* target = lbl ? lbl.get() : nullptr;
+        int tok = -1;
+        std::function<void(const NodeRef&)> go = [&](const NodeRef& cur){
+            if (!cur) return;
+            // the label's nearest tapped ancestor (deepest match wins), OR a
+            // tapped node whose own text is the label.
+            if (cur->on_tap >= 0 && ((target && (cur.get()==target || subtree_contains(cur, target)))
+                                     || (!target && cur->text.find(label)!=std::string::npos)))
+                tok = cur->on_tap;
+            for (auto& k : cur->kids) go(k);
+        };
+        go(t);
+        if (tok < 0) return { Msg{}, false };
+        auto m = detail::resolve_msg<Msg>(tok, std::string{});
+        if (!m) return { Msg{}, false };
+        return { std::move(*m), true };
+    }
+    std::pair<Msg,bool> resolve_input(const std::string& value, std::string_view near) {
+        detail::begin_msg_capture();
+        NodeRef t = P::view(model_);
+        int tok = -1;
+        std::function<void(const NodeRef&)> go = [&](const NodeRef& cur){
+            if (tok >= 0 || !cur) return;
+            bool is_text_input = (cur->kind==Kind::input || cur->kind==Kind::textarea);
+            bool matches = near.empty()
+                || cur->placeholder.find(near)!=std::string::npos
+                || cur->text.find(near)!=std::string::npos;
+            if (is_text_input && cur->on_input>=0 && matches) { tok = cur->on_input; return; }
+            for (auto& k : cur->kids) go(k);
+        };
+        go(t);
+        if (tok < 0) return { Msg{}, false };
+        auto m = detail::resolve_msg<Msg>(tok, value);
+        if (!m) return { Msg{}, false };
+        return { std::move(*m), true };
+    }
+
+public:
 
     // ── convenience queries over the freshly-rendered view ──────────────────
     std::string text() const { return text_of(view()); }
