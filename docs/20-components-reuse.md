@@ -177,17 +177,20 @@ alone), so wrapping a widget that itself wrapped a sub-widget just composes.
 
 **The complete contract.** A self-contained *stateful* widget exposes its own
 `view`, `update`, optional `subscribe`, and its own `Msg` — and the parent embeds
-all of it with the three maps that mirror each other:
+all of it with four mirror-image maps that share ONE lifter `f : Child -> Parent`:
 
-| Widget exposes | Parent lifts with | Lifts what |
+| Widget exposes | Parent embeds with | Flows |
 |---|---|---|
-| `view(state) -> NodeRef` | `map_msg<Child>(node, f)` | the messages the DOM emits |
-| `update -> Cmd<Child>` | `childCmd.map(f)` | the commands it fires |
-| `subscribe -> Sub<Child>` | `childSub.map(f)` | its timers / listeners / topics |
+| `view(state) -> NodeRef` | `map_msg<Child>(node, f)` | messages up |
+| `update(state, msg) -> (state, Cmd)` | `embed_update(model, &Model::field, update, msg, f)` | state down, cmd up |
+| `subscribe(state) -> Sub<Child>` | `childSub.map(f)` | timers / listeners / topics up |
 
-All three take the *same* `f : Child -> Parent`, so a widget library ships a
-widget as `{ view, update, subscribe, Msg }` and a consumer wires it in with one
-mapper — no widget internals leak into the app's types.
+`embed_update` focuses the widget's sub-state at `model.*field`, runs the
+widget's own `update`, writes the new state back, and lifts the returned command
+via `f` — so the parent handles a wrapped child event in one line, with no
+get/run/set boilerplate, and no widget internals leaking into the app's types. A
+widget library ships a widget as `{ view, update, subscribe, Msg }`; a consumer
+wires it in with a single mapper.
 
 ## Putting it together
 

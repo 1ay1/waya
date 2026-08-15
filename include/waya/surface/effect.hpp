@@ -537,4 +537,33 @@ private:
     std::shared_ptr<Alt> alt_;
 };
 
+// ── embedding a sub-widget's update ──────────────────────────────────
+/// `embed_update(model, &Model::field, child_update, child_msg, lift)` — the
+/// state-side complement of `map_msg`/`Cmd::map`. It focuses a sub-widget's
+/// state living at `model.*field`, runs the widget's own
+/// `update(ChildState, ChildMsg) -> pair<ChildState, Cmd<ChildMsg>>`, writes the
+/// new child state back, and lifts the returned command into the PARENT's Cmd
+/// via `lift : ChildMsg -> ParentMsg`. So the parent's update handles a wrapped
+/// child event in ONE line, with no get/run/set boilerplate:
+///
+///   // Model { Ticker::State clock; ... };  AppMsg carries TickerEvent{Ticker::Msg}
+///   [&](TickerEvent e){
+///       return embed_update(m, &Model::clock, &Ticker::update, e.m,
+///                           [](Ticker::Msg c){ return AppMsg{TickerEvent{c}}; });
+///   }
+///
+/// Returns `pair<ParentModel, Cmd<ParentMsg>>` — exactly the update shape — so
+/// the whole widget (view via map_msg, cmd via Cmd::map, sub via Sub::map, and
+/// now state via embed_update) embeds with four mirror-image calls and no
+/// widget internals leaking into the app.
+template <typename ParentModel, typename ChildState, typename ChildUpdate,
+          typename ChildMsg, typename Lift>
+auto embed_update(ParentModel model, ChildState ParentModel::* field,
+                  ChildUpdate child_update, ChildMsg child_msg, Lift lift) {
+    auto [next_child, child_cmd] = child_update(model.*field, std::move(child_msg));
+    model.*field = std::move(next_child);
+    using ParentMsg = std::invoke_result_t<Lift, ChildMsg>;
+    return std::pair<ParentModel, Cmd<ParentMsg>>{ std::move(model), child_cmd.map(lift) };
+}
+
 } // namespace waya::surface

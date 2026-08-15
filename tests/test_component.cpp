@@ -190,6 +190,11 @@ int main() {
             }
             static Cmd<Msg> on_reset(){ return Cmd<Msg>::emit(Msg{Tick{}}); }   // demo cmd
             static Sub<Msg> subscribe(){ return Sub<Msg>::every(1000ms, Msg{Tick{}}); }
+            // its own pure update: Tick increments, Reset zeroes; Tick re-arms.
+            static std::pair<State, Cmd<Msg>> update(State s, Msg m){
+                if (std::holds_alternative<Tick>(m)) { s.n += 1; return { s, Cmd<Msg>::none() }; }
+                s.n = 0; return { s, Cmd<Msg>::emit(Msg{Tick{}}) };   // Reset -> fire a Tick
+            }
         };
 
         // Parent lifts the widget's Msg into its own variant.
@@ -219,6 +224,21 @@ int main() {
         check(std::holds_alternative<TickerEvent>(ts[0].msg)
                  && std::holds_alternative<Ticker::Tick>(std::get<TickerEvent>(ts[0].msg).m),
               "triad: Sub::map lifts the widget's tick into AppMsg{TickerEvent{Tick}}");
+
+        // 4) STATE composes: embed_update runs the widget's update on a sub-field
+        //    of the parent model, writes it back, and lifts the Cmd — no
+        //    get/run/set boilerplate. This closes the loop (state down, msgs up).
+        struct App { Ticker::State clock{5}; int other = 99; };
+        App app;
+        // deliver a Tick to the embedded widget through the parent's update step.
+        auto [m2, c2] = embed_update(app, &App::clock, &Ticker::update, Ticker::Msg{Ticker::Tick{}}, lift);
+        check(m2.clock.n == 6, "embed_update: child update ran + state written back (5 -> 6)");
+        check(m2.other == 99, "embed_update: the rest of the parent model is untouched");
+        // a Reset returns a Cmd (emit Tick); embed_update lifts it into Cmd<AppMsg>.
+        auto [m3, c3] = embed_update(app, &App::clock, &Ticker::update, Ticker::Msg{Ticker::Reset{}}, lift);
+        check(m3.clock.n == 0, "embed_update: Reset zeroed the child state");
+        check(c3 == Cmd<AppMsg>::emit(AppMsg{TickerEvent{Ticker::Msg{Ticker::Tick{}}}}),
+              "embed_update: the child's returned Cmd is lifted into the parent's Cmd");
     }
 
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";
