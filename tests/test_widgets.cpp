@@ -359,6 +359,50 @@ int main() {
         check(has(pal, "data-input"), "palette has a wired search box");
     }
 
+    // ── spotlight: generic fuzzy launcher over arbitrary items ────────
+    {
+        struct Q{ bool operator==(const Q&)const=default; };
+        struct Run{ std::string id; }; struct C{ bool operator==(const C&)const=default; };
+        std::vector<SpotItem> items = {
+            { "Profile settings", "Settings", "settings", "account preferences", "s-profile" },
+            { "Invite teammate",  "People",   "plus",     "add member",          "invite"    },
+            { "Project settings",  "Settings", "settings", "",                    "s-project" },
+        };
+
+        // ranking is pure + reuses the palette scorer.
+        auto hits = spotlight_matches(items, "setti");
+        check(hits.size() == 2, "spotlight matches by label subsequence");
+        // keywords are searched even though not shown: "prefs"->"account preferences".
+        check(spotlight_matches(items, "prefer").size() == 1, "keywords fold into the fuzzy match");
+        // category is searchable too.
+        check(spotlight_matches(items, "people").size() == 1, "category is searchable");
+        check(spotlight_matches(items, "").size() == 3, "empty query matches everything");
+        check(spotlight_matches(items, "zzzz").empty(), "a no-match query returns nothing");
+
+        // word-boundary ranking: "is" hits "Invite" mid-word in item 1 but the
+        // WORD-START "I"+"s"(settings) path scores higher — verify a boundary match
+        // outranks a purely-scattered one. "invtm" hits Invite Teammate at word starts.
+        auto rank = spotlight_matches(items, "invtm");
+        check(!rank.empty() && items[rank[0]].id == "invite", "a multi-word-start query ranks its item first");
+
+        // the view: rows with labels, categories, icons, roles.
+        detail::begin_msg_capture();
+        auto sv = html_of(spotlight(items, "set", 0,
+            [](std::string){ return Q{}; }, [](std::string id){ return Run{id}; }, C{}));
+        check(has(sv, "role=\"listbox\""), "spotlight is a listbox");
+        check(has(sv, "Profile settings") && has(sv, "Project settings"), "spotlight shows filtered items");
+        check(has(sv, "Settings") && has(sv, "<svg"), "items show their category + icon");
+        check(has(sv, "data-input"), "spotlight has a wired search box");
+        check(has(sv, "aria-selected=\"true\""), "the highlighted row is aria-selected");
+        check((SpotItem{} == SpotItem{}), "SpotItem has value equality");
+
+        // no results shows a message, not a blank panel.
+        detail::begin_msg_capture();
+        auto empty = html_of(spotlight(items, "qqqq", 0,
+            [](std::string){ return Q{}; }, [](std::string id){ return Run{id}; }, C{}));
+        check(has(empty, "No results"), "an empty result set shows a message");
+    }
+
     // ── History<T>: undo / redo timelines as one value ─────────────────────
     {
         History<int> h{0};

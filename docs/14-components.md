@@ -516,7 +516,40 @@ m.open ? command_palette(keys(), m.q, m.sel,
 
 You own the little bit of state (query + selected index); the palette is pure.
 `palette_matches(keymap, query)` is the ranked list on its own if you want a
-custom shell.
+custom shell. The fuzzy scorer rewards word-boundary hits (a match after a
+space/`-`/`_`/`/`), contiguous runs, and early position, and penalises gaps —
+so "usr" ranks "**Us**e**r** settings" above a scattered match, and "gts"
+finds "**G**o **T**o **S**ettings".
+
+### Spotlight — fuzzy launcher over anything
+
+`command_palette` searches a `Keymap`. **`spotlight`** is the same launcher over
+ARBITRARY items — files, people, settings pages, recent docs — using the very
+same fuzzy scorer, so ranking feels identical. Each `SpotItem` has a `label`
+(shown + matched), an optional `category` (a muted sublabel), an optional `icon`,
+hidden `keywords` (aliases/synonyms folded into the match but not shown), and a
+stable `id` that `onRun` reports.
+
+```cpp
+std::vector<SpotItem> items = {
+    { "Profile settings", "Settings", "settings", "account preferences", "s-profile" },
+    { "Invite teammate",  "People",   "plus",     "add member",          "invite"    },
+};
+struct Query{std::string v;}; struct Run{std::string id;}; struct Close{};
+
+m.open ? spotlight(items, m.q, m.sel,
+            [](std::string v){ return Query{v}; },
+            [](std::string id){ return Run{id}; },   // the chosen item's id
+            Close{})
+       : nothing()
+```
+
+`spotlight_matches(items, query)` is the pure ranked-index list (matching
+`label + category + keywords`, best first) if you want your own shell. The view
+renders each result with its icon + category, highlights the selected row
+(`aria-selected`), wraps selection, wires ↑/↓ + Enter, and shows a "No results"
+message rather than a blank panel. `onRun(id)` dispatches by the item's stable
+handle.
 
 ### Undo / redo — `History<T>`
 

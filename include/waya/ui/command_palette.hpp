@@ -47,25 +47,35 @@ namespace palette_detail {
 inline std::string lower(std::string s){ for(char& c : s) if(c>='A'&&c<='Z') c += 32; return s; }
 
 /// Subsequence fuzzy match: every char of `q` appears in `text` in order.
-/// Returns a score (higher = better: contiguous + early matches win) or -1 for
-/// no match. Empty query matches everything with score 0.
+/// Returns a score (higher = better) or -1 for no match. Empty query matches
+/// everything with score 0. Scoring rewards, in order of weight: matches at a
+/// WORD BOUNDARY (start, or after a space/`-`/`_`/`/`), CONTIGUOUS runs, and
+/// EARLY position; it penalises gaps between matched chars. So "usr" ranks
+/// "User settings" above "Go to user list", and "gts" finds "Go To Settings".
 inline int fuzzy_score(const std::string& text_lower, const std::string& q_lower){
     if (q_lower.empty()) return 0;
     int score = 0, run = 0;
     std::size_t ti = 0;
+    bool first = true;
     for (char qc : q_lower){
         bool found = false;
+        std::size_t gap = 0;
         for (; ti < text_lower.size(); ++ti){
             if (text_lower[ti] == qc){
-                run += 1;
-                score += 1 + run;                     // reward contiguous runs
-                if (ti < 4) score += 2;               // reward early matches
+                bool boundary = (ti == 0) ||
+                    text_lower[ti-1]==' ' || text_lower[ti-1]=='-' ||
+                    text_lower[ti-1]=='_' || text_lower[ti-1]=='/';
+                run = (gap == 0 && !first) ? run + 1 : 0;   // reset run on a gap
+                score += 1 + run * 3;                        // contiguous runs win
+                if (boundary)   score += 10;                 // word-start is a strong signal
+                if (ti < 4)     score += 2;                  // early in the string
+                score -= (int)std::min<std::size_t>(gap, 4); // penalise scanned-over chars
                 ++ti; found = true; break;
             }
+            ++gap;
         }
-        if (!found) return -1;                        // a query char never appeared
-        // reset the run if the next expected char isn't adjacent (handled by run
-        // only incrementing on consecutive hits above — approximate but good).
+        if (!found) return -1;                              // a query char never appeared
+        first = false;
     }
     return score;
 }
