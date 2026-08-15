@@ -128,7 +128,59 @@ Built on the core `overlay` / `anchored` primitives.
   that closes on click, a stopped panel so content clicks don't close it, plus
   frosted chrome and a pop-in entrance.
 - `toast(message, tone = neutral)` and `toast_layer(nodes)` — a fixed,
-  non-interactive top-right stack for toasts.
+  non-interactive top-right stack for toasts. For a real notification SYSTEM
+  (auto-dismiss, stacking, close buttons), use the `Toasts` queue below.
+
+### Notifications — the `Toasts` queue
+
+`toast()` draws one card. A real notification system is a QUEUE: messages
+arrive, stack, auto-dismiss after a timeout, and can be closed early. `Toasts`
+makes that queue one value in your model — no per-item timer bookkeeping:
+
+```cpp
+struct Model { Toasts notes; };
+
+// update:
+[&](Saved)     { m.notes.success("Saved!");   return {m, Cmd::none()}; }
+[&](Failed e)  { m.notes.error(e.why);        return {m, Cmd::none()}; }
+[&](Close c)   { m.notes.dismiss(c.id);       return {m, Cmd::none()}; }
+[&](Tick)      { m.notes.tick(100ms);         return {m, Cmd::none()}; }
+
+// subscribe: run the clock ONLY while a toast is counting down
+static Sub<Msg> subscribe(const Model& m){
+    return m.notes.ticking() ? Sub<Msg>::every(100, Tick{}) : Sub<Msg>::none();
+}
+
+// view: one call renders the fixed, keyed, aria-live top-right stack
+overlay(main_ui, toasts_layer(m.notes, [](int id){ return Close{id}; }))
+```
+
+`push(msg, tone, ttl)` returns a stable id; `success`/`error`/`info` are sugar.
+A `ttl` of `0ms` makes a toast sticky (dismiss-only). Every card is keyed by id
+so the diff moves/removes them precisely, carries an aria-labelled close button,
+and the layer is an `aria-live` region so screen readers announce new messages.
+
+### Optimistic updates — `Optimistic<T>`
+
+For an instant-feeling UI you apply a change LOCALLY before the server confirms
+it, then roll back if the request fails. `Optimistic<T>` is that value — it holds
+the committed truth and an in-flight guess, and `value()` returns the right one:
+
+```cpp
+struct Model { Optimistic<bool> liked{false}; };
+
+[&](Like)     { m.liked.apply(!m.liked.value());        // show it NOW
+                return {m, postLike(m.liked.value())}; }
+[&](LikeOk)   { m.liked.confirm();  return {m, Cmd::none()}; }   // it stuck
+[&](LikeFail) { m.liked.rollback(); return {m, Cmd::none()}; }   // undo it
+
+// view: value() is the optimistic guess while pending, else the committed truth
+heart | (m.liked.value() ? filled : outline)
+      | (m.liked.pending() ? opacity(.6f) : Mod{})
+```
+
+`confirm(authoritative)` takes a server-corrected value (a normalised string, a
+server-assigned id); `settled()` reads past any in-flight guess.
 
 ### Stateful widgets
 

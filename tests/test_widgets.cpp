@@ -197,6 +197,58 @@ int main() {
         check(!stagger_done(50, 5, 40, 100) && stagger_done(1000, 5, 40, 100), "stagger_done gates the clock");
     }
 
+    // ── Toasts: a notification QUEUE with a lifecycle, as model state ───────
+    {
+        using namespace std::chrono_literals;
+        Toasts q;
+        q.push("Saved!", Tone::success);         // 4s default
+        q.error("Upload failed");                // 6s
+        int sticky = q.push("Persistent", Tone::neutral, 0ms);  // never expires
+        check(q.size()==3 && q.any() && q.ticking(), "three toasts queued, clock needed");
+        q.tick(4000ms);                          // the 4s Saved expires; 6s + sticky stay
+        check(q.size()==2, "tick() auto-dismisses the elapsed toast");
+        q.tick(3000ms);                          // now the 6s error is gone too
+        check(q.size()==1 && !q.ticking(), "only the sticky remains, no clock needed");
+        q.dismiss(sticky);
+        check(q.size()==0 && !q.any(), "dismiss() removes by id");
+        check((Toasts{} == Toasts{}), "Toasts has value equality");
+        // the layer renders keyed cards with a close button + aria-live
+        Toasts r; r.info("hi");
+        detail::begin_msg_capture();
+        auto h = html_of(toasts_layer(r, [](int id){ return id; }));
+        check(has(h, "aria-live=\"polite\""), "toast layer is an aria-live region");
+        check(has(h, "role=\"button\"") && has(h, "Dismiss notification"), "toast has a labelled close button");
+    }
+
+    // ── Optimistic<T>: show a change instantly, roll back on failure ───────
+    {
+        Optimistic<bool> liked{false};
+        check(liked.value()==false && !liked.pending(), "starts at committed value, not pending");
+        liked.apply(true);
+        check(liked.value()==true && liked.pending() && liked.settled()==false,
+              "apply() shows the guess immediately; settled() still the old truth");
+        liked.rollback();
+        check(liked.value()==false && !liked.pending(), "rollback() snaps back to committed");
+        liked.apply(true); liked.confirm();
+        check(liked.value()==true && liked.settled()==true && !liked.pending(), "confirm() promotes the guess");
+        // confirm(authoritative) takes a server-corrected value
+        Optimistic<int> count{1}; count.apply(2); count.confirm(5);
+        check(count.value()==5 && count.settled()==5, "confirm(value) takes the server's answer");
+        check((Optimistic<bool>{true} == Optimistic<bool>{true}), "Optimistic has value equality");
+    }
+
+    // ── typed a11y composites (replace the role/aria/tabindex hand-dance) ───
+    {
+        auto d = html_of(box() | dialog());
+        check(has(d, "role=\"dialog\"") && has(d, "aria-modal=\"true\""), "dialog() sets role + aria-modal");
+        check(has(d, "tabindex=\"-1\"") && has(d, "data-modal"), "dialog() sets tabindex + the client modal hook");
+        check(!has(html_of(box() | dialog(false)), "data-modal"), "dialog(false) is a non-modal dialog");
+        auto s = html_of(box() | aria_expanded(true) | aria_pressed(false) | aria_selected(true) | aria_current("page"));
+        check(has(s, "aria-expanded=\"true\"") && has(s, "aria-pressed=\"false\""), "aria state mods");
+        check(has(s, "aria-selected=\"true\"") && has(s, "aria-current=\"page\""), "aria selected/current");
+        check(has(html_of(box() | aria_hidden), "aria-hidden=\"true\""), "aria_hidden hides decorative nodes");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

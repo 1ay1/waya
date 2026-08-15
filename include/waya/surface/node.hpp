@@ -1491,6 +1491,30 @@ inline Mod role(std::string r){ return attr("role", std::move(r)); }
 inline Mod aria(std::string k, std::string v){ return attr("aria-" + k, std::move(v)); }
 /// `aria_label("Close menu")` — the accessible name for an icon-only control.
 inline Mod aria_label(std::string l){ return attr("aria-label", std::move(l)); }
+/// `dialog(modal=true)` — the composite a11y contract for a dialog/modal: it
+/// sets `role=dialog`, `aria-modal`, a `tabindex=-1` so it can hold programmatic
+/// focus, AND `data-modal` — the hook the client uses to make the layer
+/// underneath inert (clicks + Tab trapped). One mod for the whole dance that
+/// every modal previously hand-wrote as four `attr(…)` calls.
+inline Mod dialog(bool modal=true){ return {[=](Node& n){
+    n.attrs.emplace_back("role", "dialog");
+    n.attrs.emplace_back("aria-modal", modal ? "true" : "false");
+    n.attrs.emplace_back("tabindex", "-1");
+    if (modal) n.attrs.emplace_back("data-modal", "1");
+}}; }
+/// `aria_expanded(open)` / `aria_pressed(on)` / `aria_selected(on)` — the state
+/// of a disclosure, a toggle button, a tab/option. Screen readers announce
+/// “collapsed”→”expanded”, “not pressed”→”pressed” as your Model flips them.
+inline Mod aria_expanded(bool open){ return attr("aria-expanded", open ? "true" : "false"); }
+inline Mod aria_pressed(bool on){ return attr("aria-pressed", on ? "true" : "false"); }
+inline Mod aria_selected(bool on){ return attr("aria-selected", on ? "true" : "false"); }
+/// `aria_current("page")` — mark the active item in a set (the current nav link,
+/// step, or page). Common values: "page", "step", "true".
+inline Mod aria_current(std::string what="page"){ return attr("aria-current", std::move(what)); }
+/// `aria_hidden` — hide a purely-decorative node from assistive tech (an icon
+/// beside a text label, an ambient background). Different from `sr_only` (which
+/// hides from SIGHT but keeps it for readers); this is the opposite.
+inline const Mod aria_hidden = {[](Node& n){ n.attrs.emplace_back("aria-hidden", "true"); }};
 /// `sr_only()` — visually hidden but read by screen readers (skip links, icon
 /// button labels, live-region status). The a11y hallmark, one word.
 inline const Mod sr_only = sty([](Style& s){

@@ -79,6 +79,28 @@ on autopilot, surfaced immediately with a message that tells you the fix. The
 catch *silent* bugs: the UI renders, but interactions are quietly lost — exactly
 the failures the surface model exists to prevent.
 
+## Accessibility mods
+
+The validator flags missing a11y; these mods let you fix it in the vocabulary,
+not with raw `attr("aria-…")` strings. All are typed and take your Model state.
+
+| Mod | What it does |
+|---|---|
+| `aria_label("Close")` | The accessible name for an icon-only control. |
+| `aria_hidden` | Hide a decorative node from screen readers. |
+| `sr_only` | Visually hidden, still read aloud (skip links, status). |
+| `role("tablist")` / `aria(k, v)` | Any ARIA role / attribute. |
+| `dialog(modal=true)` | The whole modal contract in one mod: `role=dialog` + `aria-modal` + `tabindex=-1` + `data-modal` (the client's layer-inert hook). Replaces four `attr()` calls. |
+| `aria_expanded(open)` | A disclosure / dropdown's open state. |
+| `aria_pressed(on)` | A toggle button's pressed state. |
+| `aria_selected(on)` | A tab / option's selected state. |
+| `aria_current("page")` | The active item in a set (nav link, step). |
+| `live_region(assertive=false)` | Announce this container's text changes — the a11y counterpart to waya's silent delta streaming. |
+
+Because these take Model state (`aria_expanded(m.open)`, `aria_pressed(m.on)`),
+the accessible state can never drift from the visual state — they're computed
+from the same value in the same `view`.
+
 ## Context-aware escaping
 
 The DOM backend escapes every value for the context it lands in — you never

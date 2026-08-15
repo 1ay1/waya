@@ -21,4 +21,6 @@
 #include "ui/charts.hpp"
 #include "ui/scene.hpp"
 #include "ui/async.hpp"
+#include "ui/toast.hpp"
+#include "ui/optimistic.hpp"
 #include "ui/patterns.hpp"
