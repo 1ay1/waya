@@ -174,6 +174,53 @@ int main() {
               "map_msg: two instances of one widget disambiguate via the parent map");
     }
 
+    // ── the full triad: a self-contained stateful widget embeds via all three ─
+    //    maps at once (view=map_msg, commands=Cmd::map, subs=Sub::map). This is
+    //    the whole "reusable widget library" contract in one place.
+    {
+        using namespace std::chrono_literals;
+        // A mini timer-counter widget with its OWN everything.
+        struct Ticker {
+            struct Tick {}; struct Reset {};
+            using Msg = std::variant<Tick, Reset>;
+            struct State { int n = 0; };
+            static NodeRef view(const State& s){
+                return col(text(std::to_string(s.n)),
+                           button("reset") | tap(Msg{Reset{}}));
+            }
+            static Cmd<Msg> on_reset(){ return Cmd<Msg>::emit(Msg{Tick{}}); }   // demo cmd
+            static Sub<Msg> subscribe(){ return Sub<Msg>::every(1000ms, Msg{Tick{}}); }
+        };
+
+        // Parent lifts the widget's Msg into its own variant.
+        struct TickerEvent { Ticker::Msg m; }; struct Nop {};
+        using AppMsg = std::variant<TickerEvent, Nop>;
+        auto lift = [](Ticker::Msg m){ return AppMsg{TickerEvent{m}}; };
+
+        // 1) VIEW composes: the widget's reset tap lifts into AppMsg{TickerEvent{Reset}}.
+        detail::begin_msg_capture();
+        Ticker::State st{7};
+        auto node = map_msg<Ticker::Msg>(Ticker::view(st), lift);
+        check(node->kids[0]->kind == Kind::text, "triad: widget view renders under the parent");
+        auto rv = detail::resolve_msg<AppMsg>(node->kids[1]->on_tap, "");
+        check(rv && std::holds_alternative<TickerEvent>(*rv)
+                 && std::holds_alternative<Ticker::Reset>(std::get<TickerEvent>(*rv).m),
+              "triad: view map lifts the widget's reset into AppMsg{TickerEvent{Reset}}");
+
+        // 2) COMMANDS compose: the widget's Cmd<Ticker::Msg> lifts into Cmd<AppMsg>.
+        auto cmd = Ticker::on_reset().map(lift);
+        auto want_cmd = Cmd<AppMsg>::emit(AppMsg{TickerEvent{Ticker::Msg{Ticker::Tick{}}}});
+        check(cmd == want_cmd, "triad: Cmd::map lifts the widget's command into the parent's Cmd");
+
+        // 3) SUBSCRIPTIONS compose: the widget's Sub<Ticker::Msg> lifts into Sub<AppMsg>.
+        auto sub = Ticker::subscribe().map(lift);
+        auto ts = sub.timers();
+        check(ts.size() == 1 && ts[0].interval == 1000ms, "triad: Sub::map preserves the widget's timer");
+        check(std::holds_alternative<TickerEvent>(ts[0].msg)
+                 && std::holds_alternative<Ticker::Tick>(std::get<TickerEvent>(ts[0].msg).m),
+              "triad: Sub::map lifts the widget's tick into AppMsg{TickerEvent{Tick}}");
+    }
+
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

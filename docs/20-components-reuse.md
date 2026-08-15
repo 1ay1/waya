@@ -175,6 +175,20 @@ top-level alternative of the app's variant — the parent maps it in. Mapping is
 safe to nest and idempotent-safe (a handler that isn't a `Child` value is left
 alone), so wrapping a widget that itself wrapped a sub-widget just composes.
 
+**The complete contract.** A self-contained *stateful* widget exposes its own
+`view`, `update`, optional `subscribe`, and its own `Msg` — and the parent embeds
+all of it with the three maps that mirror each other:
+
+| Widget exposes | Parent lifts with | Lifts what |
+|---|---|---|
+| `view(state) -> NodeRef` | `map_msg<Child>(node, f)` | the messages the DOM emits |
+| `update -> Cmd<Child>` | `childCmd.map(f)` | the commands it fires |
+| `subscribe -> Sub<Child>` | `childSub.map(f)` | its timers / listeners / topics |
+
+All three take the *same* `f : Child -> Parent`, so a widget library ships a
+widget as `{ view, update, subscribe, Msg }` and a consumer wires it in with one
+mapper — no widget internals leak into the app's types.
+
 ## Putting it together
 
 The [`living` example](13-examples.md) is a todo list where rows are memoised
