@@ -45,7 +45,10 @@ struct App {
                 { {"Docs", "/docs"}, {"Install", "/docs/installation"},
                   {"Manual", "/docs/interface"}, {"Blog", "/blog"}, {"Community", "/community"} }),
             agentty::home(install, Copy{ install }),
-            agentty::site_footer());
+            agentty::site_footer(),
+            agentty::command_palette(
+                { {"Docs", "/docs"}, {"Install", "/docs/installation"},
+                  {"Manual", "/docs/interface"}, {"Blog", "/blog"}, {"Community", "/community"} }));
     }
 
     static Meta meta(const Model&) {

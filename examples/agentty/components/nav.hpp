@@ -226,4 +226,88 @@ inline NodeRef site_footer() {
     return footer;
 }
 
+/// `agentty::command_palette(items)` — the \u2318K fuzzy jump-to overlay
+/// (CommandPalette.tsx). Opens on the `agentty:open-palette` event (fired by the
+/// nav's \u2318K trigger) or \u2318/Ctrl-K; type to filter, \u2191\u2193 to move, Enter to go, Esc
+/// to close. Pure client navigation — no Model, no server round-trip. Drop it
+/// once at the end of the page.
+inline NodeRef command_palette(std::vector<NavItem> items) {
+    install_theme();
+    assets().css(
+        ".cmdk-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:flex-start;justify-content:center;"
+        "padding-top:14vh;background:rgba(1,4,9,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}"
+        ".cmdk-overlay.open{display:flex}"
+        ".cmdk{width:min(92vw,560px);background:var(--bg-elev);border:1px solid var(--border);border-radius:14px;"
+        "box-shadow:0 30px 80px -20px rgba(0,0,0,.6);overflow:hidden}"
+        ".cmdk-in{width:100%;border:0;outline:0;background:transparent;color:var(--text);font:16px var(--sans);"
+        "padding:16px 18px;border-bottom:1px solid var(--border-soft)}"
+        ".cmdk-in::placeholder{color:var(--text-faint)}"
+        ".cmdk-list{max-height:52vh;overflow-y:auto;padding:8px}"
+        ".cmdk-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;cursor:pointer;color:var(--text);font-size:14.5px}"
+        ".cmdk-item .sec{margin-left:auto;color:var(--text-faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}"
+        ".cmdk-item.sel,.cmdk-item:hover{background:var(--accent);color:var(--on-accent)}"
+        ".cmdk-item.sel .sec,.cmdk-item:hover .sec{color:var(--on-accent);opacity:.8}"
+        ".cmdk-empty{padding:22px;text-align:center;color:var(--text-faint);font-size:14px}"
+        ".cmdk-foot{display:flex;gap:16px;padding:9px 14px;border-top:1px solid var(--border-soft);color:var(--text-faint);font-size:12px}"
+        ".cmdk-foot kbd{font:11px var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;margin-right:3px}");
+
+    // build the index JSON (title|href|section) from nav items + standard pages.
+    std::string idx = "[";
+    auto push = [&](const std::string& t, const std::string& h, const std::string& s, bool ext){
+        idx += "{\"t\":\"" + t + "\",\"h\":\"" + h + "\",\"s\":\"" + s + "\",\"x\":" + (ext?"1":"0") + "},";
+    };
+    push("Home", "/", "Pages", false);
+    for (auto& it : items) push(it.title, it.href, "Pages", false);
+    push("Acknowledgements", "/acknowledgements", "Pages", false);
+    push("Security", "/security", "Pages", false);
+    push("Contributing", "/contributing", "Pages", false);
+    push("Code of Conduct", "/code-of-conduct", "Pages", false);
+    push("License", "/license", "Pages", false);
+    push("GitHub repository \u2197", "https://github.com/1ay1/agentty", "Links", true);
+    push("Latest release \u2197", "https://github.com/1ay1/agentty/releases/latest", "Links", true);
+    idx += "]";
+
+    assets().script("agentty-cmdk",
+        "(function(){"
+        "var IDX=" + idx + ";var sel=0,results=[];"
+        "function ov(){return document.querySelector('.cmdk-overlay');}"
+        "function score(q,t){if(!q)return 1;t=t.toLowerCase();var qi=0,sc=0,st=0;"
+        "for(var i=0;i<t.length&&qi<q.length;i++){if(t[i]===q[qi]){qi++;st++;sc+=st;}else st=0;}"
+        "return qi===q.length?sc:0;}"
+        "function render(){var o=ov();if(!o)return;var inp=o.querySelector('.cmdk-in');var list=o.querySelector('.cmdk-list');"
+        "var q=inp.value.toLowerCase().trim();"
+        "results=IDX.map(function(it){return {it:it,s:score(q,it.t)};}).filter(function(r){return r.s>0;})"
+        ".sort(function(a,b){return b.s-a.s;}).map(function(r){return r.it;});"
+        "if(sel>=results.length)sel=0;"
+        "if(!results.length){list.innerHTML='<div class=\"cmdk-empty\">No matches</div>';return;}"
+        "list.innerHTML=results.map(function(it,i){return '<div class=\"cmdk-item'+(i===sel?' sel':'')+'\">'+"
+        "'<span>'+it.t+'</span><span class=\"sec\">'+it.s+'</span></div>';}).join('');"
+        "[].forEach.call(list.children,function(el,i){el.onclick=function(){go(results[i]);};});}"
+        "function go(it){if(!it)return;closeP();if(it.x==1)window.open(it.h,'_blank');else location.href=it.h;}"
+        "function openP(){var o=ov();if(!o)return;o.classList.add('open');var inp=o.querySelector('.cmdk-in');inp.value='';sel=0;render();setTimeout(function(){inp.focus();},30);}"
+        "function closeP(){var o=ov();if(o)o.classList.remove('open');}"
+        "function isOpen(){var o=ov();return o&&o.classList.contains('open');}"
+        // GLOBAL delegated listeners — survive any DOM re-render (no element binding).
+        "window.addEventListener('agentty:open-palette',openP);"
+        "document.addEventListener('input',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('cmdk-in')){sel=0;render();}});"
+        "document.addEventListener('click',function(e){var o=ov();if(o&&e.target===o)closeP();});"
+        "document.addEventListener('keydown',function(e){"
+        "if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();isOpen()?closeP():openP();return;}"
+        "if(!isOpen())return;"
+        "if(e.key==='Escape'){e.preventDefault();closeP();}"
+        "else if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(sel+1,results.length-1);render();}"
+        "else if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(sel-1,0);render();}"
+        "else if(e.key==='Enter'){e.preventDefault();go(results[sel]);}});"
+        "})();");
+
+    auto pal = markup(
+        "<div class=\"cmdk\" role=\"dialog\" aria-label=\"Command palette\">"
+        "<input class=\"cmdk-in\" placeholder=\"Jump to a page\xe2\x80\xa6\" aria-label=\"Search pages\"/>"
+        "<div class=\"cmdk-list\"></div>"
+        "<div class=\"cmdk-foot\"><span><kbd>\xe2\x86\x91</kbd><kbd>\xe2\x86\x93</kbd>move</span>"
+        "<span><kbd>\xe2\x86\xb5</kbd>open</span><span><kbd>esc</kbd>close</span></div></div>")
+        | add_class("cmdk-overlay");
+    return pal;
+}
+
 } // namespace agentty

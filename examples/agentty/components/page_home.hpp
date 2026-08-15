@@ -159,6 +159,20 @@ inline NodeRef html(std::string cls, std::string inner) {
 // of waiting for scroll. Clicking dispatches copy_msg.
 template <typename CopyMsg>
 inline NodeRef copy_row(std::string cmd, CopyMsg copy_msg, bool typed, bool immediate = false) {
+    // client-side copy feedback: on click, flash the row + swap the button label
+    // to "copied \u2713" for ~1.4s (the actual clipboard write is the Cmd::copy the
+    // tap dispatches server-side; this is just the visual affordance, no round-trip).
+    assets().script("agentty-copy-fx",
+        "document.addEventListener('click',function(e){"
+        "var btn=e.target.closest&&e.target.closest('.copybtn');if(!btn)return;"
+        "var row=btn.closest('.copyrow');if(row){row.classList.add('flash');setTimeout(function(){row.classList.remove('flash');},520);}"
+        "if(btn.__t)return;var orig=btn.getAttribute('data-label')||btn.textContent;btn.setAttribute('data-label',orig);"
+        "btn.textContent='copied \u2713';btn.classList.add('copied');"
+        "btn.__t=setTimeout(function(){btn.textContent=orig;btn.classList.remove('copied');btn.__t=null;},1400);});");
+    assets().css(
+        ".copyrow.flash{animation:cr-flash .5s ease}"
+        "@keyframes cr-flash{0%{box-shadow:0 0 0 0 rgba(88,166,255,.5)}100%{box-shadow:0 0 0 0 rgba(88,166,255,0)}}"
+        ".copybtn.copied{color:#7ee787;border-color:#7ee787}");
     auto code = text(cmd);
     if (typed) code = code | typewriter(true, immediate);
     auto btn = text("copy") | add_class("copybtn") | as("button") | tap(copy_msg);
