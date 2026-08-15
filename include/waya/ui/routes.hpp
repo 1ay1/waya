@@ -70,7 +70,7 @@ public:
         if (m.matched && m.value >= 0 && (std::size_t)m.value < builders_.size())
             return builders_[m.value](m);
         if (fallback_) return fallback_(m);
-        auto n = std::make_shared<Node>(); n->kind = Kind::box; finalize(*n); return n;
+        auto n = waya::surface::detail::new_node(); n->kind = Kind::box; finalize(*n); return n;
     }
     /// The `Match` for a path, if you need the params without rendering.
     [[nodiscard]] Match match(const std::string& path) const { return router_.match(path); }

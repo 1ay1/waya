@@ -240,7 +240,7 @@ NodeRef list(std::uint64_t id, const Range& range, KeyFn key_fn, ViewFn view_fn,
     if (slot.node && slot.deps == sig) return slot.node;   // list unchanged: reuse container
 
     // Rebuild the container node from the (possibly cached) children.
-    auto n = std::make_shared<Node>();
+    auto n = detail::new_node();
     n->kind = Kind::box; n->style.flow = flow; n->kids = std::move(kids);
     finalize(*n);
     slot.deps = sig; slot.node = n;
@@ -281,7 +281,7 @@ NodeRef list_versioned(std::uint64_t id, std::uint64_t version, const Range& ran
         if (c->key != k) { c->key = std::move(k); finalize(*c); }
         kids.push_back(std::move(c));
     }
-    auto n = std::make_shared<Node>();
+    auto n = detail::new_node();
     n->kind = Kind::box; n->style.flow = flow; n->kids = std::move(kids);
     finalize(*n);
     slot.deps = ver; slot.node = n;

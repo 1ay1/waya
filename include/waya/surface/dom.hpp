@@ -8,9 +8,9 @@
 
 #include "node.hpp"
 #include "../core/hash.hpp"
-
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace waya::surface {
@@ -191,7 +191,11 @@ private:
         std::string ident = base;
         for(auto&[sel,st]:s.states) ident += sel + decls(*st, kind, false);
         if(ident.empty()) return {};
-        for(std::size_t i=0;i<names_.size();++i) if(idents_[i]==ident) return names_[i];
+        // O(1) dedup: identical styles collapse to the same class. This used to
+        // be a linear scan over every already-interned style — quadratic on a
+        // page with many distinct styles. The map keys on the style identity;
+        // a hit returns the existing class, so the stylesheet stays minimal.
+        if(auto it = by_ident_.find(ident); it != by_ident_.end()) return names_[it->second];
         std::string name="ws-"; hex8(name, fnv1a(ident));
         std::string rule;
         if(!base.empty()){ rule += '.'; rule += name; rule += '{'; rule += base; rule += '}'; }
@@ -202,10 +206,11 @@ private:
             if(sel.rfind("@media",0)==0){ media += sel; media += "{."; media += name; media += '{'; media += body; media += "}}"; }
             else { rule += '.'; rule += name; rule += sel; rule += '{'; rule += body; rule += '}'; } }
         rule += media;
-        rules_.push_back(std::move(rule)); names_.push_back(std::move(name)); idents_.push_back(std::move(ident));
+        rules_.push_back(std::move(rule)); names_.push_back(std::move(name));
+        by_ident_.emplace(std::move(ident), names_.size()-1);
         return names_.back();
     }
-    std::vector<std::string> idents_;
+    std::unordered_map<std::string, std::size_t> by_ident_;   // style identity -> index in names_
 
     /// Generic wired events + draggable. Each event becomes data-ev-<name>=
     /// "<msg>" or "<msg>|<arg>" (arg narrows, e.g. a key). The client reads these

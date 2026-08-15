@@ -77,14 +77,14 @@ inline NodeRef hidden_input(std::string name, std::string value){
 // ── native progress / meter ─────────────────────────────────────────────────
 /// `progress_el(value, max)` — a native <progress> bar (indeterminate if value<0).
 inline NodeRef progress_el(double value, double max = 1.0){
-    auto n = std::make_shared<Node>(); n->kind = Kind::markup;
+    auto n = detail::new_node(); n->kind = Kind::markup;
     std::string v = value < 0 ? "" : " value=\"" + detail::numstr((float)value) + "\"";
     n->text = "<progress" + v + " max=\"" + detail::numstr((float)max) + "\"></progress>";
     finalize(*n); return n;
 }
 /// `meter_el(value, min, max)` — a native <meter> gauge (disk usage, score).
 inline NodeRef meter_el(double value, double min = 0, double max = 1.0){
-    auto n = std::make_shared<Node>(); n->kind = Kind::markup;
+    auto n = detail::new_node(); n->kind = Kind::markup;
     n->text = "<meter value=\"" + detail::numstr((float)value) + "\" min=\"" + detail::numstr((float)min)
             + "\" max=\"" + detail::numstr((float)max) + "\"></meter>";
     finalize(*n); return n;
@@ -95,7 +95,7 @@ inline NodeRef meter_el(double value, double min = 0, double max = 1.0){
 /// with a <legend>). Improves accessibility and groups related inputs.
 template <typename... Cs>
 NodeRef fieldset(std::string legend_text, Cs... fields){
-    auto leg = std::make_shared<Node>(); leg->kind = Kind::text; leg->text = std::move(legend_text); leg->tag = "legend"; finalize(*leg);
+    auto leg = detail::new_node(); leg->kind = Kind::text; leg->text = std::move(legend_text); leg->tag = "legend"; finalize(*leg);
     auto fs = box(std::move(leg), std::move(fields)...);
     fs->tag = "fieldset";
     finalize(*fs);
@@ -138,7 +138,7 @@ inline NodeRef with_list(std::string id, NodeRef field, std::vector<std::string>
 /// `label_for(text, id)` — an explicit <label for="id"> paired with a control by
 /// id (when you can't nest the control inside the label).
 inline NodeRef label_for(std::string text, std::string for_id){
-    auto n = std::make_shared<Node>(); n->kind = Kind::text; n->text = std::move(text);
+    auto n = detail::new_node(); n->kind = Kind::text; n->text = std::move(text);
     n->tag = "label"; n->attrs.emplace_back("for", std::move(for_id)); finalize(*n); return n;
 }
 

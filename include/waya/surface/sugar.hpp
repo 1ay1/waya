@@ -160,7 +160,7 @@ inline Mod theme_transition(){ return sty([](Style& s){
 /// children. This is what a hidden conditional should collapse to: unlike an
 /// empty `box()`, it never adds a phantom flex gap between its siblings.
 inline NodeRef nothing(){
-    auto n = std::make_shared<Node>(); n->kind = Kind::box;
+    auto n = detail::new_node(); n->kind = Kind::box;
     n->style.extra.emplace_back("display", "none");
     finalize(*n);
     return n;
@@ -222,7 +222,7 @@ std::vector<NodeRef> each_keyed(const Range& range, KeyFn key_fn, Fn view_fn){
 }
 
 // A box/row/col that takes a vector<NodeRef> (so `each` composes directly).
-inline NodeRef box_(std::vector<NodeRef> kids){ auto n=std::make_shared<Node>(); n->kind=Kind::box; n->kids=std::move(kids); finalize(*n); return n; }
+inline NodeRef box_(std::vector<NodeRef> kids){ auto n=detail::new_node(); n->kind=Kind::box; n->kids=std::move(kids); finalize(*n); return n; }
 inline NodeRef row_(std::vector<NodeRef> kids){ auto n=box_(std::move(kids)); n->style.flow=Flow::row; finalize(*n); return n; }
 inline NodeRef col_(std::vector<NodeRef> kids){ auto n=box_(std::move(kids)); n->style.flow=Flow::col; finalize(*n); return n; }
 

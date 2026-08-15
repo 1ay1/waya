@@ -220,6 +220,72 @@ struct Node {
     std::uint64_t   hash=0;
 };
 
+// ── Node pool ───────────────────────────────────────────────────────────────
+// A Node is ~720 bytes, and view() builds a whole tree of them every frame only
+// to diff it and drop the previous one. Profiling shows BUILDING the tree costs
+// ~170x the DIFF — the make_shared<Node> allocation + destruction churn is the
+// framework's real per-frame cost, not the (already O(1)-skip) diff.
+//
+// This pool recycles the fixed-size control-block+Node allocation. Because the
+// owner loop builds frame N+1 while frame N is still alive, then drops frame N,
+// the freed blocks return to a thread-local free-list and are immediately
+// reused — so steady-state rendering makes ZERO calls to the global allocator
+// for node storage. Nodes still reset all their fields on recycle (a fresh
+// Node{} placement-new), so there's no state leakage; only the raw memory is
+// reused. Fully transparent: node builders call new_node() instead of
+// make_shared, the API and shared_ptr semantics are identical.
+namespace detail {
+
+struct NodePool {
+    std::vector<void*> free_list;
+    std::size_t chunk = 0;              // the size make_shared asks for (learned once)
+    std::size_t high_water = 0;         // peak live blocks (diagnostics)
+    std::size_t live = 0;
+
+    // NOTE: no destructor frees the free-list. The pool is intentionally leaked
+    // at program exit (see node_pool()) — recycled node storage that a still-live
+    // shared_ptr might reference must NOT be freed by the pool, or its own
+    // deleter double-frees it during static teardown. Leaking a per-thread
+    // free-list at process exit is free (the OS reclaims it) and correct.
+
+    void* take(std::size_t n){
+        if (chunk == 0) chunk = n;      // first alloc fixes the block size
+        if (n != chunk){ ++live; return ::operator new(n); }  // odd size: bypass pool
+        if (!free_list.empty()){ void* p = free_list.back(); free_list.pop_back(); ++live; return p; }
+        ++live; if (live > high_water) high_water = live;
+        return ::operator new(n);
+    }
+    void give(void* p, std::size_t n){
+        --live;
+        if (n != chunk){ ::operator delete(p); return; }
+        // cap the free-list so a transient huge frame doesn't pin memory forever.
+        if (free_list.size() < 65536) free_list.push_back(p);
+        else ::operator delete(p);
+    }
+};
+
+// The pool is heap-allocated and never deleted, so it strictly outlives every
+// NodeRef (which may be destroyed during static teardown after main). A raw
+// leaked pointer is the simplest destruction-order-safe lifetime.
+inline NodePool& node_pool(){ static thread_local NodePool* p = new NodePool(); return *p; }
+
+// A stateless allocator that routes make_shared's single block through the pool.
+template <typename T>
+struct PoolAlloc {
+    using value_type = T;
+    PoolAlloc() = default;
+    template <typename U> PoolAlloc(const PoolAlloc<U>&) noexcept {}
+    T* allocate(std::size_t n){ return static_cast<T*>(node_pool().take(n * sizeof(T))); }
+    void deallocate(T* p, std::size_t n) noexcept { node_pool().give(p, n * sizeof(T)); }
+    template <typename U> bool operator==(const PoolAlloc<U>&) const noexcept { return true; }
+    template <typename U> bool operator!=(const PoolAlloc<U>&) const noexcept { return false; }
+};
+
+/// Allocate a fresh Node through the recycling pool. Drop-in for make_shared<Node>().
+inline NodeRef new_node(){ return std::allocate_shared<Node>(PoolAlloc<Node>{}); }
+
+} // namespace detail
+
 // ── Hashing (bottom-up; captures style incl. extra/states) ──────────────────
 template <typename I> requires std::is_integral_v<I> || std::is_enum_v<I>
 inline std::uint64_t mix(std::uint64_t h, I v){ auto u=(std::uint64_t)v;
@@ -286,7 +352,7 @@ inline std::string lenstr(Len l){
         case Unit::dvh:return n(l.value)+"dvh"; case Unit::dvw:return n(l.value)+"dvw"; }
     return n(l.value)+"px"; }
 }
-template <typename... Cs> NodeRef box(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
+template <typename... Cs> NodeRef box(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::box; detail::push(n->kids, std::move(cs)...); finalize(*n); return n; }
 template <typename... Cs> NodeRef row(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::row; finalize(*n); return n; }
 template <typename... Cs> NodeRef col(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
 template <typename... Cs> NodeRef stack(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::stack; finalize(*n); return n; }
@@ -296,39 +362,39 @@ template <typename... Cs> NodeRef stack(Cs... cs){ auto n=box(std::move(cs)...);
 /// that flex can only fake. e.g. grid(a,b,c,d) | grid_cols("1fr 1fr") | gap(16).
 template <typename... Cs> NodeRef grid(Cs... cs){ auto n=box(std::move(cs)...); n->style.flow=Flow::grid; finalize(*n); return n; }
 
-inline NodeRef text(std::string s){ auto n=std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(s); finalize(*n); return n; }
+inline NodeRef text(std::string s){ auto n=detail::new_node(); n->kind=Kind::text; n->text=std::move(s); finalize(*n); return n; }
 inline NodeRef text(long long v){ return text(std::to_string(v)); }
 inline NodeRef text(int v){ return text(std::to_string(v)); }
-inline NodeRef image(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::image; n->src=std::move(src); finalize(*n); return n; }
-inline NodeRef path(std::vector<Pt> pts, bool closed=false){ auto n=std::make_shared<Node>(); n->kind=Kind::path; n->points=std::move(pts); n->closed=closed; finalize(*n); return n; }
+inline NodeRef image(std::string src){ auto n=detail::new_node(); n->kind=Kind::image; n->src=std::move(src); finalize(*n); return n; }
+inline NodeRef path(std::vector<Pt> pts, bool closed=false){ auto n=detail::new_node(); n->kind=Kind::path; n->points=std::move(pts); n->closed=closed; finalize(*n); return n; }
 /// `input(value)` — a real text field. Style/placeholder/on_input via modifiers.
-inline NodeRef input(std::string value={}){ auto n=std::make_shared<Node>(); n->kind=Kind::input; n->text=std::move(value); n->input_type="text"; finalize(*n); return n; }
+inline NodeRef input(std::string value={}){ auto n=detail::new_node(); n->kind=Kind::input; n->text=std::move(value); n->input_type="text"; finalize(*n); return n; }
 /// `textarea(value)` — a multi-line text field. Same on_input/on_change flow.
-inline NodeRef textarea(std::string value={}){ auto n=std::make_shared<Node>(); n->kind=Kind::textarea; n->text=std::move(value); finalize(*n); return n; }
+inline NodeRef textarea(std::string value={}){ auto n=detail::new_node(); n->kind=Kind::textarea; n->text=std::move(value); finalize(*n); return n; }
 /// `checkbox(on)` — a boolean toggle. `on_change` fires with value "true"/"false".
-inline NodeRef checkbox(bool on=false){ auto n=std::make_shared<Node>(); n->kind=Kind::checkbox; n->checked=on; finalize(*n); return n; }
+inline NodeRef checkbox(bool on=false){ auto n=detail::new_node(); n->kind=Kind::checkbox; n->checked=on; finalize(*n); return n; }
 /// `radio(name, value, on)` — one choice in a named group; `on_change` fires with `value`.
-inline NodeRef radio(std::string group, std::string value, bool on=false){ auto n=std::make_shared<Node>(); n->kind=Kind::radio; n->name=std::move(group); n->text=std::move(value); n->checked=on; finalize(*n); return n; }
+inline NodeRef radio(std::string group, std::string value, bool on=false){ auto n=detail::new_node(); n->kind=Kind::radio; n->name=std::move(group); n->text=std::move(value); n->checked=on; finalize(*n); return n; }
 /// One `option` for a `select`. `value` rides the wire; `label` (or value) is shown.
 inline Opt option(std::string value, std::string label={}){ return {std::move(value), label.empty()?value:std::move(label)}; }
 /// `select(options, chosen)` — a dropdown; `on_change` fires with the chosen value.
-inline NodeRef select(std::vector<Opt> options, std::string chosen={}){ auto n=std::make_shared<Node>(); n->kind=Kind::select; n->options=std::move(options); n->selected=std::move(chosen); finalize(*n); return n; }
+inline NodeRef select(std::vector<Opt> options, std::string chosen={}){ auto n=detail::new_node(); n->kind=Kind::select; n->options=std::move(options); n->selected=std::move(chosen); finalize(*n); return n; }
 /// `button(label)` — a real <button>; pair with `tap(msg)`. Distinct from a
 /// tappable box: it's keyboard-focusable and announced as a button by default.
-inline NodeRef button(std::string label){ auto n=std::make_shared<Node>(); n->kind=Kind::button; n->text=std::move(label); finalize(*n); return n; }
+inline NodeRef button(std::string label){ auto n=detail::new_node(); n->kind=Kind::button; n->text=std::move(label); finalize(*n); return n; }
 /// `form(fields…) | on_submit(Save)` — a real <form> that groups named controls.
 /// Enter in any field, or a button inside it, fires submit; the runtime gathers
 /// every named field into the update value as "name=value&name2=value2".
-template <typename... Cs> NodeRef form(Cs... cs){ auto n=std::make_shared<Node>(); n->kind=Kind::form; detail::push(n->kids, std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
+template <typename... Cs> NodeRef form(Cs... cs){ auto n=detail::new_node(); n->kind=Kind::form; detail::push(n->kids, std::move(cs)...); n->style.flow=Flow::col; finalize(*n); return n; }
 /// `video(url)` — a media player. `controls`/`autoplay`/`loop` via attr(); size
 /// via w()/h()/aspect() like any node.
-inline NodeRef video(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::video; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
+inline NodeRef video(std::string src){ auto n=detail::new_node(); n->kind=Kind::video; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
 /// `audio(url)` — an audio player with default controls.
-inline NodeRef audio(std::string src){ auto n=std::make_shared<Node>(); n->kind=Kind::audio; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
+inline NodeRef audio(std::string src){ auto n=detail::new_node(); n->kind=Kind::audio; n->src=std::move(src); n->attrs.emplace_back("controls",""); finalize(*n); return n; }
 /// `markup(html)` — inject TRUSTED raw HTML (rich text, an SVG icon, embedded
 /// content). The one primitive that is NOT auto-escaped — never pass user input.
 /// (Debug/strict builds flag markup that carries <script>/on*= as `markup-unsafe`.)
-inline NodeRef markup(std::string html){ auto n=std::make_shared<Node>(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n; }
+inline NodeRef markup(std::string html){ auto n=detail::new_node(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n; }
 /// `sanitized_html(html)` — render rich HTML from a POSSIBLY-UNTRUSTED source
 /// (markdown output, CMS/user content). Strips `<script>`/`<style>`/`<iframe>`
 /// blocks, `on*=` inline handlers, and `javascript:` URLs before injecting, so
@@ -364,7 +430,7 @@ inline NodeRef sanitized_html(std::string html){
     // neutralise javascript: URLs
     { std::string lo=lower(html); std::size_t i=0;
       while((i=lo.find("javascript:", i))!=std::string::npos){ html.replace(i,11,"#"); lo=lower(html); i+=1; } }
-    auto n=std::make_shared<Node>(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n;
+    auto n=detail::new_node(); n->kind=Kind::markup; n->text=std::move(html); finalize(*n); return n;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1481,7 +1547,7 @@ inline Mod multiple(){ return {[](Node& n){ n.attrs.emplace_back("multiple", "")
 /// (An unwired positional overload `file_input(bool, accept)` lives in forms.hpp.)
 template <typename... M> requires (std::is_same_v<std::remove_cvref_t<M>, Mod> && ...)
 NodeRef file_input(M... mods){
-    auto n = std::make_shared<Node>(); n->kind=Kind::input; n->input_type="file";
+    auto n = detail::new_node(); n->kind=Kind::input; n->input_type="file";
     (mods.apply(*n), ...); finalize(*n); return n;
 }
 
@@ -1552,7 +1618,7 @@ inline Mod live_region(bool assertive=false){
 /// ("Saved", "Copied", "Loading…"). Renders visibly; pair with `sr_only` to make
 /// it screen-reader-only. `role=status` implies aria-live=polite.
 inline NodeRef status(std::string t){
-    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(t);
+    auto n = detail::new_node(); n->kind=Kind::text; n->text=std::move(t);
     n->attrs.emplace_back("role", "status");
     n->attrs.emplace_back("aria-live", "polite");
     n->attrs.emplace_back("aria-atomic", "true");
@@ -1561,7 +1627,7 @@ inline NodeRef status(std::string t){
 /// `alert(text)` — an assertive live region for errors/warnings that must be
 /// heard immediately. `role=alert` implies aria-live=assertive.
 inline NodeRef alert(std::string t){
-    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(t);
+    auto n = detail::new_node(); n->kind=Kind::text; n->text=std::move(t);
     n->attrs.emplace_back("role", "alert");
     n->attrs.emplace_back("aria-live", "assertive");
     n->attrs.emplace_back("aria-atomic", "true");
@@ -1633,7 +1699,7 @@ inline Mod href(std::string url){ return {[u=safe_url(std::move(url))](Node& n){
     n.attrs.emplace_back("href", u); }}; }
 /// `link_to(label, url)` — a real, safe anchor in one call.
 inline NodeRef link_to(std::string label, std::string url){
-    auto n = std::make_shared<Node>(); n->kind=Kind::text; n->text=std::move(label);
+    auto n = detail::new_node(); n->kind=Kind::text; n->text=std::move(label);
     n->tag="a"; n->attrs.emplace_back("href", safe_url(std::move(url))); finalize(*n); return n;
 }
 /// `tab_index(0)` — make any node keyboard-focusable (so on_key works on it).

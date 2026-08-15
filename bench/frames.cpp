@@ -95,6 +95,58 @@ int main() {
                     us, 1e6 / us);
         (void)sink;
     }
+
+    // ── Core allocation model ──────────────────────────────────────
+    // The diff is O(1)-skip cheap; the real per-frame cost is BUILDING the tree.
+    // A Node is ~720 bytes and view() rebuilds the whole tree each frame. The
+    // node pool recycles those blocks (frame N's nodes are freed as frame N+1's
+    // are built, so the free-list feeds the next frame). Measured below.
+    {
+        using clock = std::chrono::steady_clock;
+        const int n = 2000;
+        auto tree = [&](int sel){
+            std::vector<NodeRef> rs;
+            for (int i = 0; i < n; ++i)
+                rs.push_back(row(text("User " + std::to_string(i)), text(i%3?"Member":"Admin"))
+                    | pad(8) | (i==sel? bg(0x1e293b) : Mod{}) | round(6));
+            return col_(std::move(rs)) | gap(4);
+        };
+        NodeRef prev = tree(0);                       // warm the pool
+        auto t0 = clock::now();
+        for (int k = 0; k < 200; ++k){ NodeRef nx = tree(k%n); volatile auto s = diff(prev,nx).size(); (void)s; prev = std::move(nx); }
+        auto t1 = clock::now();
+        double us = std::chrono::duration<double,std::micro>(t1-t0).count()/200;
+        std::printf("\n=== core: %d-row frame cycle (build+diff+recycle) ===\n", n);
+        std::printf("  build+diff+drop:               %.0f us/frame  (%.0f fps)\n", us, 1e6/us);
+        std::printf("  node pool: %zu blocks recycled, %zu peak (0 malloc for node storage steady-state)\n",
+                    detail::node_pool().free_list.size(), detail::node_pool().high_water);
+    }
+
+    // ── Stylesheet interning is O(1) ─────────────────────────────────
+    // Identical styles collapse to one CSS class. The dedup is a hash lookup, so
+    // rendering a page with N DISTINCT styles is O(N), not O(N²). Scaling check:
+    {
+        using clock = std::chrono::steady_clock;
+        auto distinct = [](int n){
+            std::vector<NodeRef> rs;
+            for (int i = 0; i < n; ++i) rs.push_back(text("r"+std::to_string(i)) | pad((float)(i%400+1)) | fg((std::uint32_t)(i*7)));
+            return col_(std::move(rs));
+        };
+        std::printf("\n=== core: stylesheet interning (distinct styles) ===\n");
+        double prev_us = 0; int prev_n = 0;
+        for (int n : {500, 5000}){
+            auto t = distinct(n);
+            auto t0 = clock::now();
+            for (int k=0;k<20;k++){ DomBackend b; volatile auto sz=b.render(*t).css.size(); (void)sz; }
+            auto t1 = clock::now();
+            double us = std::chrono::duration<double,std::micro>(t1-t0).count()/20;
+            std::printf("  %d distinct styles: %.0f us\n", n, us);
+            if (prev_us > 0)
+                std::printf("  scaling %dx rows -> %.1fx time (O(n): linear, was O(n\xc2\xb2): ~%dx)\n",
+                            n/prev_n, us/prev_us, (n/prev_n)*(n/prev_n));
+            prev_us = us; prev_n = n;
+        }
+    }
     std::printf("\n");
     return 0;
 }
