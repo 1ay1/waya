@@ -177,17 +177,20 @@ if(WAYA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# ── Examples ────────────────────────────────────────────────────────────────
+# ── Examples ───────────────────────────────────────────────────
 option(WAYA_BUILD_EXAMPLES "Build waya's examples" ON)
 if(WAYA_BUILD_EXAMPLES)
     # Every example is a waya app: a surface Program run with waya::surface::live.
-    # Targets are derived from examples/*.cpp automatically, so dropping a new
-    # file in examples/ creates a new target with no edit here. CONFIGURE_DEPENDS
-    # re-globs on build, so added/removed files are picked up without re-running
-    # cmake by hand.
+    # Two shapes are auto-discovered, so adding an example needs NO edit here:
+    #   * a single file   examples/<name>.cpp          -> target <name>
+    #   * a directory      examples/<name>/*.cpp         -> target <name>
+    # CONFIGURE_DEPENDS re-globs on build, so new files are picked up without a
+    # manual re-run of cmake.
+    set(WAYA_EXAMPLE_TARGETS "")
+
+    # Single-file examples.
     file(GLOB WAYA_EXAMPLE_SRCS CONFIGURE_DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp")
-    set(WAYA_EXAMPLE_TARGETS "")
     foreach(ex_src ${WAYA_EXAMPLE_SRCS})
         get_filename_component(ex ${ex_src} NAME_WE)
         add_executable(${ex} ${ex_src})
@@ -195,58 +198,23 @@ if(WAYA_BUILD_EXAMPLES)
         list(APPEND WAYA_EXAMPLE_TARGETS ${ex})
     endforeach()
 
-    # Multi-file example: examples/matrix/ — a Matrix-style hacker terminal.
-    # One component per header (rain / terminal / hud / boot), composed in
-    # app.cpp. Shows a heavily component-based waya app.
-    file(GLOB WAYA_MATRIX_SRCS CONFIGURE_DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/examples/matrix/*.cpp")
-    if(WAYA_MATRIX_SRCS)
-        add_executable(matrix ${WAYA_MATRIX_SRCS})
-        target_link_libraries(matrix PRIVATE waya::waya waya_dev_flags)
-        list(APPEND WAYA_EXAMPLE_TARGETS matrix)
-    endif()
-
-    # Multi-file example: examples/airwave/ — an online radio player. Real live
-    # <audio> streams, a station browser, now-playing bar, animated visualizer.
-    # One component per header; app.cpp composes them.
-    file(GLOB WAYA_AIRWAVE_SRCS CONFIGURE_DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/examples/airwave/*.cpp")
-    if(WAYA_AIRWAVE_SRCS)
-        add_executable(airwave ${WAYA_AIRWAVE_SRCS})
-        target_link_libraries(airwave PRIVATE waya::waya waya_dev_flags)
-        list(APPEND WAYA_EXAMPLE_TARGETS airwave)
-    endif()
-
-    # Multi-file example: examples/autorace/ — a fully-playable homage to Mattel
-    # Auto Race (1976), the first handheld electronic game. A red-LED grid
-    # racer: steer between lanes, shift gears, dodge oncoming cars. Real
-    # keyboard controls via global hotkeys + a server game-loop tick.
-    file(GLOB WAYA_AUTORACE_SRCS CONFIGURE_DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/examples/autorace/*.cpp")
-    # Guard: the sources include local headers (store/theme/board/console.hpp)
-    # that must be present, or every configure of the tree breaks on one demo.
-    if(WAYA_AUTORACE_SRCS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/autorace/store.hpp")
-        add_executable(autorace ${WAYA_AUTORACE_SRCS})
-        target_link_libraries(autorace PRIVATE waya::waya waya_dev_flags)
-        list(APPEND WAYA_EXAMPLE_TARGETS autorace)
-    elseif(WAYA_AUTORACE_SRCS)
-        message(WARNING "examples/autorace: skipped — store.hpp/theme.hpp/board.hpp/console.hpp are missing (incomplete commit?)")
-    endif()
-
-    # Multi-file example: examples/dragster/ — a playable homage to Activision's
-    # Dragster (1980, David Crane). A best-time drag race played on a tachometer:
-    # build revs, shift up through 4 gears before the redline blows the engine,
-    # cross the strip in the fewest seconds. Server game-loop tick + hotkeys.
-    file(GLOB WAYA_DRAGSTER_SRCS CONFIGURE_DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/examples/dragster/*.cpp")
-    if(WAYA_DRAGSTER_SRCS)
-        add_executable(dragster ${WAYA_DRAGSTER_SRCS})
-        target_link_libraries(dragster PRIVATE waya::waya waya_dev_flags)
-        list(APPEND WAYA_EXAMPLE_TARGETS dragster)
-    endif()
+    # Multi-file examples: one subdirectory each, globbed into one target.
+    file(GLOB WAYA_EXAMPLE_DIRS CONFIGURE_DEPENDS
+         LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/examples/*")
+    foreach(ex_dir ${WAYA_EXAMPLE_DIRS})
+        if(IS_DIRECTORY ${ex_dir})
+            file(GLOB ex_srcs CONFIGURE_DEPENDS "${ex_dir}/*.cpp")
+            if(ex_srcs)
+                get_filename_component(ex ${ex_dir} NAME)
+                add_executable(${ex} ${ex_srcs})
+                target_link_libraries(${ex} PRIVATE waya::waya waya_dev_flags)
+                list(APPEND WAYA_EXAMPLE_TARGETS ${ex})
+            endif()
+        endif()
+    endforeach()
 
     # Dev-server smoke test: start an app, confirm it serves the shell + client.
-    # Uses the first discovered example as the subject.
+    # Uses the first discovered example as the subject (only if any exist).
     if(WAYA_BUILD_TESTS AND UNIX AND WAYA_EXAMPLE_TARGETS)
         find_program(WAYA_CURL curl)
         if(WAYA_CURL)
