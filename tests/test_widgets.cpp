@@ -759,6 +759,41 @@ int main() {
         check(!has(rs, "data-ev") && !has(rs, "data-tap"), "read-only stars have no click handlers");
     }
 
+    // ── pickers: color_field / swatch_picker / segmented / breadcrumb ────
+    {
+        struct SetC { std::string v; }; struct SetV { int i; }; struct Go { std::string p; };
+        detail::begin_msg_capture();
+
+        // color_field: native swatch + hex text box, both reporting.
+        auto cf = html_of(color_field("Accent", "#6366f1", [](std::string v){ return SetC{v}; }));
+        check(has(cf, "type=\"color\""), "color_field has a native colour swatch");
+        check(has(cf, "value=\"#6366f1\""), "color_field shows the current colour");
+        check(has(cf, "Accent"), "color_field shows its label");
+
+        // swatch_picker: chips; the chosen one is ringed; bad hex is neutralised.
+        detail::begin_msg_capture();
+        auto sp = css_of(swatch_picker("#10b981", {"#ef4444","#10b981"}, [](std::string v){ return SetC{v}; }));
+        check(has(sp, "10b981"), "swatch_picker paints each chip");
+        check(has(sp, "box-shadow"), "the chosen swatch gets a ring");
+        auto evil = css_of(swatch_picker("", {"red;}body{x:y"}, [](std::string v){ return SetC{v}; }));
+        check(!has(evil, "body{") && has(evil, "transparent"), "malformed colour is neutralised (no CSS breakout)");
+
+        // segmented: one-of-N pill; active segment is selected.
+        detail::begin_msg_capture();
+        auto sg = html_of(segmented(1, {"Day","Week","Month"}, [](int i){ return SetV{i}; }));
+        check(has(sg, "role=\"tablist\""), "segmented is a tablist");
+        check(has(sg, "Day") && has(sg, "Month"), "segmented renders every label");
+        check(has(sg, "aria-selected=\"true\""), "segmented marks the active segment");
+
+        // breadcrumb: linked crumbs + a muted current one; escaped separator.
+        detail::begin_msg_capture();
+        auto bc = html_of(breadcrumb({ crumb("Home", Go{"/"}), crumb("Docs", Go{"/docs"}), crumb("Here") }));
+        check(has(bc, "Home") && has(bc, "Docs") && has(bc, "Here"), "breadcrumb renders every crumb");
+        check(has(bc, "role=\"link\""), "linked crumbs are links");
+        check(has(bc, "aria-current=\"page\""), "the final crumb is aria-current");
+        check(has(bc, "role=\"navigation\""), "breadcrumb is a nav landmark");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

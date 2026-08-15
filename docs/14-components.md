@@ -93,6 +93,26 @@ number; the value clamps where it makes sense, and you parse + store in `update`
 - `stars(value, out_of = 5, size = 18)` — a **read-only** star display (an
   `img` with an aria label) for showing an average score. No handlers.
 
+### Choosers
+
+- `color_field(label, value, to_msg, hint = "")` — a labelled colour chooser:
+  the native swatch next to a `#rrggbb` text box, **both** wired to the same
+  `to_msg` (value→Msg mapper), so opening the picker or typing a hex flow to
+  one update.
+- `swatch_picker(value, palette, to_msg, size = 28)` — a wrapping grid of
+  preset colour chips; the chosen one gets a ring, clicking one delivers
+  `to_msg(hex)`. Each chip's colour is **sanitised** to a `#hex`/keyword shape
+  before it reaches CSS, so a malformed palette entry can never break out of
+  the `background:` value — it just renders `transparent`.
+- `segmented(active, labels, to_msg)` — a one-of-N pill (Day/Week/Month,
+  List/Grid); the active segment is filled, clicking segment `i` delivers
+  `to_msg(i)`. A compact `tablist`. Reach for this over full `tabs` when the
+  switch is small.
+- `breadcrumb({crumb("Home", Go{"/"}), crumb("Docs", Go{"/docs"}), crumb("Here")})`
+  — a "Home › Docs › Here" trail. `crumb(label, msg)` is a clickable link;
+  `crumb(label)` is the trailing, non-clickable current crumb (rendered
+  `aria-current="page"`). Separators are non-selectable.
+
 ### Status & identity
 
 `Tone` = `neutral | primary | success | warning | danger`.
