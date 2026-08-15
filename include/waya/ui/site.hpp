@@ -343,6 +343,44 @@ inline NodeRef site_hero_split_bg(NodeRef backdrop, std::string lead, std::strin
         | detail::raw_css("padding","72px 0 64px");
 }
 
+/// `site_hero_lead(lead_node, backdrop, lead, gradient_word, tail, lede, aside,
+/// actions…)` — same two-column hero, with an extra node (a logo, a badge, an
+/// announcement bar) placed ABOVE the headline in the left column. `lead_node`
+/// is brand content the app supplies; pass `nullptr` for none.
+template <typename... Actions>
+inline NodeRef site_hero_lead(NodeRef lead_node, NodeRef backdrop, std::string lead,
+                             std::string gradient_word, std::string tail, std::string lede,
+                             NodeRef aside, Actions... actions){
+    using namespace site_detail;
+    auto piece = [](std::string s){
+        return text(std::move(s)) | detail::raw_css("font-size","clamp(38px, 6vw, 66px)")
+            | detail::raw_css("font-weight","800") | tracking_em(-0.04f) | leading(1.04f); };
+    auto title = row(
+        piece(std::move(lead)),
+        piece(std::move(gradient_word)) | gradient_text(T().accent, T().accent2, 110),
+        piece(std::move(tail)))
+        | items_baseline | surface::wrap | detail::raw_css("gap","0 14px");
+    std::vector<NodeRef> head;
+    if (lead_node) head.push_back(std::move(lead_node));
+    head.push_back(std::move(title));
+    if (!lede.empty())
+        head.push_back(text(std::move(lede)) | fg(T().dim)
+            | detail::raw_css("font-size","clamp(15px, 1.6vw, 18px)") | leading(1.65f)
+            | max_w(560) | detail::raw_css("margin-top","22px"));
+    (head.push_back(std::move(actions)), ...);
+    auto left = box(); left->kids = std::move(head); left->style.flow = Flow::col;
+    finalize(*left);
+    left = left | gap(0) | detail::raw_css("min-width","320px");
+    auto grid = row(left, std::move(aside))
+        | detail::raw_css("display","grid")
+        | detail::raw_css("grid-template-columns","minmax(340px, 1fr) minmax(0, 1.05fr)")
+        | detail::raw_css("gap","56px") | items_center | relative | z(1);
+    NodeRef bg = backdrop ? backdrop : hero_glow(T().accent);
+    return box(std::move(bg), wrap(grid)) | as_section | w_full | relative
+        | detail::raw_css("overflow","hidden")
+        | detail::raw_css("padding","72px 0 64px");
+}
+
 template <typename... Actions>
 inline NodeRef site_hero_split(std::string lead, std::string gradient_word, std::string tail,
                               std::string lede, NodeRef aside, Actions... actions){

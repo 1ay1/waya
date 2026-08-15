@@ -11,19 +11,100 @@
 #include <waya/surface/live.hpp>
 #include <waya/ui.hpp>
 
+#include <array>
+#include <vector>
+
 using namespace waya::surface;
 using namespace waya::ui;
+
+// The agentty pixel wordmark: ">AGENTTY" in a 6x7 bitmap font, rendered as a
+// grid of tiny lit/unlit cells with a magenta gradient — the site's welcome
+// mark. Brand policy, so it lives in the app. Bitmaps transcribed from the
+// author's own AgenttyLogo.
+static NodeRef pixel_logo() {
+    // 6-wide x 7-tall glyphs; '#' = a lit pixel.
+    static const std::vector<std::pair<char, std::array<const char*, 7>>> GLYPHS = {
+        {'>', {"      ","#  #  ","## ## "," ## ##","## ## ","#  #  ","      "}},
+        {'A', {"  ##  "," #  # ","#    #","######","#    #","#    #","#    #"}},
+        {'G', {" #### ","#    #","#     ","#  ###","#    #","#    #"," #### "}},
+        {'E', {"######","#     ","#     ","##### ","#     ","#     ","######"}},
+        {'N', {"#    #","##   #","# #  #","#  # #","#   ##","#    #","#    #"}},
+        {'T', {"######","  ##  ","  ##  ","  ##  ","  ##  ","  ##  ","  ##  "}},
+        {'Y', {"#    #","#    #"," #  # ","  ##  ","  ##  ","  ##  ","  ##  "}},
+    };
+    const std::string text = ">AGENTTY";
+    const int cell = 11;      // px per pixel-cell
+    // Build the letters as a row of pixel grids.
+    std::vector<NodeRef> letters;
+    for (char ch : text) {
+        const std::array<const char*, 7>* g = nullptr;
+        for (auto& [k, bmp] : GLYPHS) if (k == ch) { g = &bmp; break; }
+        if (!g) continue;
+        std::vector<NodeRef> cells;
+        for (int y = 0; y < 7; ++y)
+            for (int x = 0; x < 6; ++x) {
+                bool lit = (*g)[(std::size_t)y][(std::size_t)x] == '#';
+                cells.push_back(box() | w((float)cell) | h((float)cell)
+                    | (lit ? bg_transparent() : bg_transparent()));  // color via parent gradient
+                if (lit) cells.back() = cells.back() | detail::raw_css("background","currentColor") | round(2);
+            }
+        auto grid = box(); grid->kids = std::move(cells); grid->style.flow = Flow::grid; finalize(*grid);
+        grid = grid | detail::raw_css("grid-template-columns", "repeat(6," + std::to_string(cell) + "px)")
+            | detail::raw_css("gap","1px");
+        letters.push_back(std::move(grid));
+    }
+    auto mark = box(); mark->kids = std::move(letters); mark->style.flow = Flow::row; finalize(*mark);
+    // magenta gradient tint + a soft glow, applied via currentColor + text-shadow.
+    return mark | items_start | detail::raw_css("gap", std::to_string(cell) + "px")
+        | fg(0xd97cd9)
+        | detail::raw_css("filter","drop-shadow(0 0 24px rgba(217,124,217,.45))")
+        | detail::raw_css("margin-bottom","28px");
+}
+
+// Server-driven "matrix rain": a grid of columns, each a stack of glyphs that
+// scrolls down one row per frame. Rendered on the SERVER from the frame counter
+// — the diff ships only the glyphs that changed. This is the waya-native version
+// of the site's <canvas> rain: state + a tick, no client JS.
+static NodeRef matrix_rain(std::uint32_t frame, std::uint32_t accent) {
+    static const char* GLYPHS = "01<>{}[]#$/\\|=+*ABCDEF0123456789";
+    const int cols = 26, rows = 20, n = (int)std::string(GLYPHS).size();
+    // a cheap deterministic hash so each cell's glyph + brightness is stable per
+    // (col,row,frame) but looks random.
+    auto hash = [](std::uint32_t x){ x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; };
+    std::vector<NodeRef> columns;
+    for (int c = 0; c < cols; ++c) {
+        std::uint32_t speed = 1 + (hash((std::uint32_t)c * 2654435761U) % 3);   // 1..3 rows/frame
+        int head = (int)((frame * speed + hash((std::uint32_t)c) % rows));
+        std::vector<NodeRef> cells;
+        for (int r = 0; r < rows; ++r) {
+            std::uint32_t h = hash((std::uint32_t)(c * 131 + r * 977) + frame / 4);
+            char ch = GLYPHS[h % (std::uint32_t)n];
+            int dist = ((head - r) % rows + rows) % rows;   // 0 = bright head
+            float op = dist == 0 ? 1.0f : dist < 6 ? (0.55f - dist * 0.08f) : 0.05f;
+            std::uint32_t col = dist == 0 ? 0xbfe0ff : accent;
+            cells.push_back(text(std::string(1, ch)) | mono | text_size(13)
+                | fg(col) | detail::raw_css("opacity", detail::numstr(op))
+                | detail::raw_css("line-height","1.15"));
+        }
+        auto colBox = box(); colBox->kids = std::move(cells); colBox->style.flow = Flow::col; finalize(*colBox);
+        columns.push_back(colBox | items_center);
+    }
+    auto grid = box(); grid->kids = std::move(columns); grid->style.flow = Flow::row; finalize(*grid);
+    return grid | detail::raw_css("gap","14px") | justify_center
+        | absolute() | detail::raw_css("inset","0") | z(0) | no_pointer
+        | detail::raw_css("overflow","hidden") | detail::raw_css("opacity","0.5")
+        | detail::raw_css("mask-image","linear-gradient(180deg,#000 0%,#000 55%,transparent 100%)")
+        | detail::raw_css("-webkit-mask-image","linear-gradient(180deg,#000 0%,#000 55%,transparent 100%)");
+}
 
 // The agentty-specific hero backdrop — a blueprint grid + falling digital-rain
 // streaks + a drifting brand glow + CRT scanlines. This is the APP's brand
 // aesthetic (policy), NOT the framework's — so it lives here in the example and
 // is passed to site_hero_split_bg(), keeping ui/site.hpp unopinionated.
-static NodeRef agentty_backdrop(std::uint32_t accent) {
+static NodeRef agentty_backdrop(std::uint32_t accent, std::uint32_t frame) {
     assets().keyframes("agentty-glow",
         "from{transform:translate(0,0) scale(1);opacity:.75}"
         "to{transform:translate(140px,70px) scale(1.18);opacity:1}");
-    assets().keyframes("agentty-rain",  "to{background-position:12% 1000px, 62% 0}");
-    assets().keyframes("agentty-rain2", "to{background-position:12% 0, 62% 1000px}");
 
     auto grid = box() | absolute() | detail::raw_css("inset", "-2px")
         | detail::raw_css("background-image",
@@ -32,17 +113,7 @@ static NodeRef agentty_backdrop(std::uint32_t accent) {
         | detail::raw_css("background-size", "44px 44px")
         | detail::raw_css("mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
         | detail::raw_css("-webkit-mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
-    auto rain = box() | absolute() | detail::raw_css("inset", "0")
-        | detail::raw_css("background-image",
-            "linear-gradient(180deg, transparent 0%, " + detail::rgba_hex(accent, 0.55f) + " 45%, transparent 60%),"
-            "linear-gradient(180deg, transparent 0%, " + detail::rgba_hex(accent, 0.35f) + " 50%, transparent 65%)")
-        | detail::raw_css("background-size", "2px 180px, 2px 300px")
-        | detail::raw_css("background-position", "12% 0, 62% 0")
-        | detail::raw_css("background-repeat", "repeat-y, repeat-y")
-        | detail::raw_css("animation", "agentty-rain 3.2s linear infinite, agentty-rain2 5s linear infinite")
-        | detail::raw_css("opacity", "0.8")
-        | detail::raw_css("mask-image", "radial-gradient(760px 500px at 72% 0%, #000, transparent 75%)")
-        | detail::raw_css("-webkit-mask-image", "radial-gradient(760px 500px at 72% 0%, #000, transparent 75%)");
+    auto rain = matrix_rain(frame, accent);   // the LIVE, server-driven falling code
     auto glow = box() | absolute()
         | detail::raw_css("width", "760px") | detail::raw_css("height", "760px")
         | detail::raw_css("top", "-220px") | detail::raw_css("left", "20%")
@@ -61,9 +132,13 @@ static NodeRef agentty_backdrop(std::uint32_t accent) {
 }
 
 struct App {
-    struct Model { std::string copied; };
+    struct Model {
+        std::string copied;
+        std::uint32_t frame = 0;   // rain animation frame (bumped by a server tick)
+    };
     struct Copy { std::string cmd; };        // a copy button was clicked
-    using Msg = std::variant<Copy>;
+    struct Tick {};                          // the rain clock advanced
+    using Msg = std::variant<Copy, Tick>;
 
     static Model init() { return {}; }
 
@@ -73,10 +148,22 @@ struct App {
                 m.copied = c.cmd;
                 return { m, Cmd<Msg>::copy(c.cmd) };   // real clipboard write
             },
+            [&](Tick) -> std::pair<Model, Cmd<Msg>> {
+                ++m.frame;                             // advance the falling code
+                return { m, Cmd<Msg>::none() };
+            },
         }, msg);
     }
 
-    static NodeRef view(const Model&) {
+    // Drive the matrix rain from the SERVER: one tick every 110ms bumps the
+    // frame, the view re-renders the glyph columns shifted down, and only the
+    // changed cells stream over the WebSocket. This is how waya does a "canvas
+    // animation" — no client JS, the diff makes it cheap.
+    static Sub<Msg> subscribe(const Model&) {
+        return Sub<Msg>::every(110, Tick{});
+    }
+
+    static NodeRef view(const Model& m) {
         // A GitHub-dark theme (the site toolkit's default), tweak-able in one struct.
         SiteTheme theme{};
 
@@ -91,28 +178,44 @@ struct App {
                 nav_cta("Get started", "/docs/quick-start")),
 
             // ── HERO ──────────────────────────────────────────────────
-            //   the app supplies its OWN backdrop (the framework stays neutral).
-            site_hero_split_bg(
-                agentty_backdrop(0x58a6ff),
+            //   app supplies its OWN logo + backdrop (the framework stays neutral).
+            site_hero_lead(
+                pixel_logo(),
+                agentty_backdrop(0x58a6ff, m.frame),
                 "Blazing-fast", "coding agent", "in your terminal.",
                 "A drop-in alternative to claude-code, written in C++26. 13 MB binary, "
                 "millisecond cold start, sandboxed by default, SSH air-gap in one command, "
                 "and runs inside Zed over ACP. Signs in with your existing Claude Pro/Max "
                 "\xe2\x80\x94 or point it at OpenAI, Groq, OpenRouter, Cerebras, or a local Ollama.",
-                // the demo box on the right — a replica agentty session
-                tui_window("agentty \xe2\x80\x94 ~/auth-service",
-                    tui_line({ {0xd97cd9, "\xe2\x96\x8e "}, {0xe6edf3, "fix the token cache fallback"} }),
+                // the demo box on the right — a faithful replica agentty session
+                tui_window("agentty \xe2\x80\x94 ~/projects/app",
+                    // ACTIONS panel header
+                    tui_line({ {0xd97cd9, "\xe2\x94\x8e "}, {0xaab1bd, "A C T I O N S"}, {0x656d76, "  \xc2\xb7  4/4"}, {0x656d76, "                          4.2s \xe2\x94\x92"} }),
+                    tui_line({ {0xd97cd9, "\xe2\x94\x8e "}, {0x56b6c2, "I N S P E C T"}, {0xaab1bd, " 2"}, {0x656d76, "  \xc2\xb7  "}, {0xc586c0, "M U T A T E"}, {0xaab1bd, " 1"}, {0x656d76, "  \xc2\xb7  "}, {0x56b6c2, "E X E C U T E"}, {0xaab1bd, " 1"} }),
                     tui_line({ {0x656d76, ""} }),
-                    tui_line({ {0xd97cd9, "\xe2\x96\x8e "}, {0x7ee787, "agentty"}, {0x656d76, "  \xc2\xb7 sonnet \xc2\xb7 4/4"} }),
-                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0x56d4e0, "Read"}, {0x656d76, "    src/auth/token_cache.cpp"}, {0x7ee787, "     \xe2\x9c\x93 0.2s"} }),
-                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0xc586c0, "Edit"}, {0x656d76, "    resolve() \xe2\x86\x92 TokenCache::lookup"}, {0x7ee787, "  \xe2\x9c\x93 0.1s"} }),
-                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0x56b6c2, "Bash"}, {0x656d76, "    cmake --build build -j"}, {0xe5c07b, "      \xe2\x9c\x93 3.6s"} }),
+                    // tool rows: tree branch + status + name + detail + timing
+                    tui_line({ {0x656d76, " \xe2\x94\x9c\xe2\x94\x80 "}, {0x7ee787, "\xe2\x9c\x93 "}, {0x56d4e0, "Read"}, {0x656d76, "   src/auth/handler.cpp"}, {0xe5c07b, "  \xc2\xb7 214 lines"}, {0x656d76, "       142ms"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x9c\xe2\x94\x80 "}, {0x7ee787, "\xe2\x9c\x93 "}, {0x56d4e0, "Grep"}, {0x656d76, "   TokenCache"}, {0xe5c07b, "  \xc2\xb7 3 matches"}, {0x656d76, "            89ms"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x9c\xe2\x94\x80 "}, {0x7ee787, "\xe2\x9c\x93 "}, {0xc586c0, "Edit"}, {0x656d76, "   src/auth/handler.cpp"}, {0xe5c07b, "  (+18 \xe2\x88\x92 9)"}, {0x656d76, "          6ms"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82   "}, {0x656d76, "@@ resolve(id) @@"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82   "}, {0xe06c75, "- return fetch_remote(id);"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82   "}, {0x98c379, "+ if (auto v = cache.lookup(id)) return *v;"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x82"} }),
+                    tui_line({ {0x656d76, " \xe2\x94\x94\xe2\x94\x80 "}, {0x7ee787, "\xe2\x9c\x93 "}, {0x56b6c2, "Bash"}, {0x656d76, "   cmake --build build -j"}, {0x656d76, "                3.6s"} }),
+                    tui_line({ {0x656d76, "     "}, {0x656d76, "[100%] Built target agentty"} }),
                     tui_line({ {0x656d76, ""} }),
-                    tui_line({ {0xe6edf3, "Auth handler now resolves through "}, {0x56d4e0, "TokenCache::lookup"}, {0xe6edf3, ","} }),
-                    tui_line({ {0xe6edf3, "falling back to a network refresh only on a miss. Build is green."} }),
+                    tui_line({ {0x7ee787, " \xe2\x9c\x93 D O N E"}, {0x656d76, "   4 actions"}, {0x656d76, "   4.2s"} }),
                     tui_line({ {0x656d76, ""} }),
-                    tui_line({ {0x656d76, "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80"} }),
-                    tui_line({ {0x7ee787, "\xe2\x97\x8f Ready"}, {0x656d76, "   \xe2\x8c\x83 3 edits \xc2\xb7 2.1k tokens \xc2\xb7 esc to interrupt"} })),
+                    // assistant prose
+                    tui_line({ {0xe6edf3, "Auth handler now resolves through "}, {0x56d4e0, "TokenCache::lookup"}, {0xe6edf3, ", falling"} }),
+                    tui_line({ {0xe6edf3, "back to a network refresh only on a miss. Build is green."} }),
+                    tui_line({ {0x656d76, ""} }),
+                    // input line + status bar
+                    tui_line({ {0xd97cd9, " \xe2\x9d\xaf "}, {0x656d76, "type a message\xe2\x80\xa6"} }),
+                    tui_line({ {0x656d76, ""} }),
+                    tui_line({ {0xd97cd9, " \xe2\x96\x8e "}, {0xaab1bd, "refactor auth"}, {0x656d76, "   \xc2\xb7   "}, {0x7ee787, "\xe2\x97\x8f Ready"}, {0xe5c07b, " \xe2\x9a\xa1"}, {0x656d76, "   0.0 t/s  \xe2\x96\x81\xe2\x96\x82\xe2\x96\x83\xe2\x96\x82\xe2\x96\x85\xe2\x96\x83\xe2\x96\x82\xe2\x96\x81"} })),
                 cta_row(
                     cta_primary("Quick start", "/docs/quick-start"),
                     cta_ghost("Star on GitHub", "https://github.com/1ay1/agentty"),
