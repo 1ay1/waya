@@ -94,6 +94,10 @@ Frame decode(std::string_view buf, std::size_t& consumed){
     // `buf.size() < pos+len` check below immune to uint64 overflow: len is now
     // bounded well under SIZE_MAX, so pos+len cannot wrap.
     if(len > kMaxFrame){ fr.opcode = -2; return fr; }
+    // RFC 6455 §5.1: every client→server frame MUST be masked. An unmasked frame
+    // is a protocol violation (a broken proxy or a hand-rolled/hostile client);
+    // reject it rather than reading an unmasked body. -2 = fatal (close).
+    if(!masked){ fr.opcode = -2; return fr; }
     unsigned char mask[4]={0,0,0,0};
     if(masked){ if(buf.size()<pos+4) return fr; for(int i=0;i<4;i++) mask[i]=buf[pos+i]; pos+=4; }
     if(buf.size() < pos+len) return fr;

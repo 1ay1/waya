@@ -124,6 +124,14 @@ int main() {
         CHECK(!decode(std::string{(char)0x81, (char)127, 0,0,0,0}, used).ok);
         // masked bit set but mask bytes missing → incomplete
         CHECK(!decode(std::string{(char)0x81, (char)0x82, (char)0x01}, used).ok);
+        // RFC 6455: an UNMASKED client frame is a protocol violation. A complete
+        // unmasked text frame ("hi", len 2, no mask bit) must be rejected with a
+        // fatal opcode (-2), not decoded.
+        {
+            std::string unmasked{(char)0x81, (char)0x02, 'h', 'i'};   // FIN+text, len 2, unmasked
+            auto fr = decode(unmasked, used);
+            CHECK(!fr.ok && fr.opcode == -2);
+        }
     }
 
     // ── fuzz: no byte sequence up to 24 bytes may crash decode() ─────────────
