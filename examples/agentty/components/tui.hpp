@@ -49,6 +49,7 @@ inline const char* TUI_CSS =
 ".ttui-scroll{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}"
 ".ttui-turn{flex:none;border-left:2px solid transparent;padding-left:16px;margin-bottom:2px}"
 ".ttui-turn.rail-mag{border-color:#c586c0}.ttui-turn.rail-bmag{border-color:#e29be0}"
+".ttui-divider{height:0;border-top:1px solid #21262d;margin:12px 0 12px -16px;opacity:.9}"
 ".ttui-chrome{flex:none;margin-top:auto;padding-top:12px}"
 ".ttui-head{display:flex;align-items:baseline;white-space:pre}"
 ".ttui-meta{margin-left:auto;padding-left:18px}"
@@ -196,7 +197,9 @@ inline NodeRef tui() {
         prose
     ) | add_class("ttui-turn rail-bmag");
 
-    auto scroll = col(user_turn, assistant_turn) | add_class("ttui-scroll");
+    auto scroll = col(user_turn,
+                      box() | add_class("ttui-divider"),
+                      assistant_turn) | add_class("ttui-scroll");
     scroll->attrs.emplace_back("data-tui-scroll", "");   // hook: client animation rewrites this
 
     // ── COMPOSER ──
@@ -306,8 +309,8 @@ inline NodeRef tui() {
         "let h='';"
         // user turn
         "h+='<div class=\"ttui-turn rail-mag\"><div class=\"row ttui-head\"><span class=\"mag\">\u276f</span><span> </span><span class=\"mag b\">You</span><span class=\"ttui-meta dim\">12:34</span></div><div class=\"row ttui-blank\"></div><div class=\"row\"><span class=\"bwhite\">refactor the auth handler to use the new token cache</span>'+(!userTyped?'<span class=\"term-cursor\"> </span>':'')+'</div></div>';"
-        // assistant turn
-        "if(userTyped){h+='<div class=\"ttui-turn rail-bmag\"><div class=\"row ttui-head\"><span class=\"bmag\">\u2726</span><span> </span><span class=\"bmag b\">Opus 4.5</span><span class=\"ttui-meta dim\">12:34  \u00b7  '+(allDone?'4.2s':'\u2026')+'  \u00b7  turn 3</span></div>';"
+        // assistant turn (with a divider from the user turn, like real agentty)
+        "if(userTyped){h+='<div class=\"ttui-divider\"></div>';h+='<div class=\"ttui-turn rail-bmag\"><div class=\"row ttui-head\"><span class=\"bmag\">\u2726</span><span> </span><span class=\"bmag b\">Opus 4.5</span><span class=\"ttui-meta dim\">12:34  \u00b7  '+(allDone?'4.2s':'\u2026')+'  \u00b7  turn 3</span></div>';"
         "if(showPanel){"
         "h+='<div class=\"row ttui-blank\"></div><div class=\"ttui-panel\">';"
         "h+='<div class=\"ttui-panel-top\"><span class=\"dim\">\u256d\u2500</span><span class=\"dim b\"> A C T I O N S  \u00b7  '+doneCount+'/'+total+' </span><span class=\"dim ttui-fill\"></span><span class=\"dim b\"> 4.2s </span><span class=\"dim\">\u2500\u256e</span></div>';"
