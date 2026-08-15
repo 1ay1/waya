@@ -62,12 +62,12 @@ inline const char* HOME_CSS =
 ".hero-tui .ttui{max-width:780px;margin:0 auto}}"
 // copyrow
 ".copyrow{display:flex;align-items:center;gap:10px;max-width:600px;background:var(--code-bg);border:1px solid var(--border);"
-"border-radius:12px;padding:13px 15px;font-family:var(--mono);font-size:14px;color:var(--text)}"
-".copyrow .prompt{color:var(--accent);user-select:none}.copyrow code{flex:1;overflow-x:auto;white-space:nowrap}"
-".copybtn{background:var(--bg-elev);border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:5px 11px;"
+"border-radius:12px;padding:13px 15px;font-family:var(--mono);font-size:14px;color:#e6edf3}"
+".copyrow .prompt{color:#58a6ff;user-select:none}.copyrow code{flex:1;overflow-x:auto;white-space:nowrap;color:#e6edf3}"
+".copybtn{background:#1c2128;border:1px solid #30363d;color:#8b949e;border-radius:7px;padding:5px 11px;"
 "font-size:12px;cursor:pointer;font-family:var(--sans);transition:color .15s,border-color .15s}"
-".copybtn:hover{color:var(--text);border-color:var(--accent)}"
-".copyrow-caret{display:inline-block;width:7px;height:1.05em;margin-left:1px;vertical-align:text-bottom;background:var(--accent);animation:cr-blink 1s steps(2,start) infinite}"
+".copybtn:hover{color:#e6edf3;border-color:#58a6ff}"
+".copyrow-caret{display:inline-block;width:7px;height:1.05em;margin-left:1px;vertical-align:text-bottom;background:#58a6ff;animation:cr-blink 1s steps(2,start) infinite}"
 "@keyframes cr-blink{to{opacity:0}}"
 // install band
 ".install-band{padding:0 0 8px;margin-top:-8px}"
