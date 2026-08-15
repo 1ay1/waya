@@ -953,6 +953,33 @@ int main() {
         check(!has(ek, "<img src=x>") && has(ek, "&lt;img"), "card content is escaped (no injection)");
     }
 
+    // ── site toolkit: a whole landing page from one-liners ────────────
+    {
+        struct Go { std::string url; };
+        detail::begin_msg_capture();
+        auto pageNode = site_page(SiteTheme{},
+            site_nav("acme", "v1", {{"Docs","/docs"}}, nav_cta("Star","/gh", false)),
+            site_hero("Big title", "accent line", "A lede sentence.",
+                cta_row(cta_primary("Go","/go"), cta_ghost("GitHub","/gh"))),
+            stats_row(site_stat("13 MB","binary"), site_stat("2 ms","cold start")),
+            site_section("Speed","Fast.","Sub copy.",
+                compare_table({"","us","them"}, {{"Start","2 ms","150 ms"}})),
+            site_features("Features","All of them.","", {
+                site_feature("One","first","check"), site_feature("Two","second") }),
+            cta_band("Ready?","One line.", box()),
+            site_footer("acme","MIT.", {{"GitHub","/gh"}}));
+        auto h = html_of(pageNode);
+        auto hc = css_of(pageNode);
+        check(has(h, "Big title") && has(h, "accent line"), "site: hero title + accent render");
+        check(has(h, "<nav") && has(h, "<section") && has(h, "<footer"), "site: semantic landmark tags");
+        check(has(hc, "background-clip:text"), "site: hero accent is gradient text");
+        check(has(h, "Big title") && has(h, "A lede sentence"), "site: lede renders");
+        check(has(h, "13 MB") && has(h, "cold start"), "site: stats row renders");
+        check(has(h, "150 ms") && has(hc, "3fb950"), "site: compare_table renders + highlights the winner");
+        check(has(h, "One") && has(h, "Two"), "site: feature cards render");
+        check(has(h, "href=\"/docs\""), "site: nav links are real anchors");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

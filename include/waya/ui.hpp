@@ -46,4 +46,5 @@
 #include "ui/split_pane.hpp"
 #include "ui/virtual_list.hpp"
 #include "ui/patterns.hpp"
+#include "ui/site.hpp"
 #include "ui/pickers.hpp"
