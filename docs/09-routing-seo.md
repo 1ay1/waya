@@ -44,6 +44,35 @@ m.param("slug");      // "hello"
 `Match` fields: `matched` (bool), `value` (int id), `params` (the captures),
 and the convenience `param(name)` (empty string if absent).
 
+### Typed routes — pattern to view, one table (`waya::ui`)
+
+`Router` gives you a screen id you then feed into a `screens()` switch — two
+tables to keep in sync, and params re-fetched by string far from the route. The
+`Routes` table in `waya::ui` collapses that: each pattern carries the builder
+that renders it, and the builder receives the `Match`, so params are read right
+where the route is declared — no id enum, no second switch.
+
+```cpp
+auto pages = routes()
+    .at("/",           []            { return home(); })
+    .at("/users",      []            { return user_list(); })
+    .at("/users/:id",  [](const Match& m){ return user_detail(m.param("id")); })
+    .at("/docs/*",     [](const Match& m){ return docs(m.param("*")); })
+    .fallback(         []            { return not_found(); });   // 404
+
+// in view(): render whatever the current path resolves to
+static NodeRef view(const Model& m){ return pages.view(m.path); }
+// in subscribe(): keep m.path synced to the URL
+static Sub<Msg> subscribe(const Model&){
+    return Sub<Msg>::on_route([](std::string p){ return Nav{p}; });
+}
+```
+
+It reuses the core `Router` for matching (`:name`, `*`, query parsing), so
+params behave identically — this is only the pattern-to-view binding on top. Use
+`pages.matches(path)` to test a route without rendering, `pages.match(path)` to
+read its params.
+
 ### Query strings
 
 The `?a=1&b=2` portion is parsed for you — no manual string-splitting, ever.

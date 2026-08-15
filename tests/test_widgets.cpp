@@ -317,6 +317,70 @@ int main() {
         check(has(html_of(scroll_window(360, 0, vl)), "data-ev-scroll"), "scroll_window reports its offset");
     }
 
+    // ── command_palette: fuzzy launcher over a Keymap ────────────────────
+    {
+        struct A{ bool operator==(const A&)const=default; };
+        struct B{ bool operator==(const B&)const=default; };
+        struct GU{ bool operator==(const GU&)const=default; };
+        using KMsg = std::variant<A, B, GU>;
+        struct Q{ bool operator==(const Q&)const=default; };
+        struct C{ bool operator==(const C&)const=default; };
+        auto km = Keymap<KMsg>{}
+            .bind("mod+k", "Open palette", A{})
+            .bind("?", "Toggle help", B{})
+            .bind("g u", "Go to user settings", GU{}, "Navigation");
+        // fuzzy subsequence: "usr" -> "Go to USeR settings"
+        auto hits = palette_matches(km, "usr");
+        check(hits.size()==1 && hits[0]->label=="Go to user settings", "fuzzy match finds a subsequence");
+        check(palette_matches(km, "").size()==3, "empty query matches every command");
+        check(palette_matches(km, "zzzz").empty(), "a no-match query returns nothing");
+        detail::begin_msg_capture();
+        auto pal = html_of(command_palette(km, "help", 0,
+            [](std::string){ return Q{}; }, [](KMsg){ return Q{}; }, C{}));
+        check(has(pal, "role=\"listbox\""), "palette is a listbox");
+        check(has(pal, "Toggle help") && !has(pal, "Open palette"), "palette shows only the filtered command");
+        check(has(pal, "data-input"), "palette has a wired search box");
+    }
+
+    // ── History<T>: undo / redo timelines as one value ─────────────────────
+    {
+        History<int> h{0};
+        check(!h.can_undo() && !h.can_redo() && h.get()==0, "fresh history has no timeline");
+        h.push(1); h.push(2); h.push(3);
+        check(h.get()==3 && h.depth()==3 && h.can_undo() && !h.can_redo(), "push builds the past");
+        h.undo(); h.undo();
+        check(h.get()==1 && h.can_redo(), "undo walks back and enables redo");
+        h.redo();
+        check(h.get()==2, "redo walks forward");
+        h.push(99);
+        check(h.get()==99 && !h.can_redo(), "editing after undo forks the timeline (redo cleared)");
+        int before = (int)h.depth();
+        h.push(99);
+        check((int)h.depth()==before, "pushing the same value is a no-op");
+        h.reset(7);
+        check(h.get()==7 && !h.can_undo() && !h.can_redo(), "reset wipes both timelines");
+        // the limit caps the past depth
+        History<int> capped{0}; capped.limit = 3;
+        for (int i=1;i<=10;++i) capped.push(i);
+        check(capped.depth()==3 && capped.get()==10, "limit caps undo depth");
+        check((History<int>{5} == History<int>{5}), "History has value equality");
+    }
+
+    // ── Routes: one table from URL pattern to a view builder ───────────────
+    {
+        auto pages = routes()
+            .at("/", []{ return text("home"); })
+            .at("/users/:id", [](const Match& m){ return text("user " + m.param("id")); })
+            .at("/docs/*", [](const Match& m){ return text("docs " + m.param("*")); })
+            .fallback([]{ return text("404"); });
+        check(has(html_of(pages.view("/")), ">home<"), "static route renders");
+        check(has(html_of(pages.view("/users/42")), "user 42"), ":id param passed to the builder");
+        check(has(html_of(pages.view("/docs/guide/intro")), "docs guide/intro"), "* wildcard tail captured");
+        check(has(html_of(pages.view("/nope")), ">404<"), "unmatched path renders the fallback");
+        check(pages.matches("/users/1") && !pages.matches("/xyz"), "matches() tests a real route (not fallback)");
+        check(pages.match("/users/7").param("id")=="7", "match() exposes params without rendering");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

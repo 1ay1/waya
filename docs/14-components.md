@@ -256,6 +256,51 @@ Because the help view is generated from the keymap, it can never drift from the
 behaviour — add a binding and it appears in the sheet automatically. `"+"` splits
 a chord (`mod+k`), a space splits a sequence (`g h`), each rendered as `kbd` caps.
 
+### Command palette — Cmd+K, on the keymap
+
+The same `Keymap` powers a fuzzy launcher. `command_palette` reads it, filters
+by a subsequence match on the label ("usr" finds "Go to **us**e**r** settings"),
+and renders a searchable list — so the palette and the keyboard always list the
+same commands.
+
+```cpp
+struct Model { bool open=false; std::string q; int sel=0; };
+
+[&](OpenPalette){ m.open=true; m.q=""; m.sel=0; return {m, Cmd::focus("cmdk")}; }
+[&](Query e)    { m.q=e.value; m.sel=0;            return {m, Cmd::none()}; }
+[&](Run c)      { m.open=false; /* re-dispatch c.msg */ return {m, Cmd::none()}; }
+
+// view:
+m.open ? command_palette(keys(), m.q, m.sel,
+             Query{}, [](Msg cmd){ return Run{cmd}; }, ClosePalette{})
+       : nothing()
+```
+
+You own the little bit of state (query + selected index); the palette is pure.
+`palette_matches(keymap, query)` is the ranked list on its own if you want a
+custom shell.
+
+### Undo / redo — `History<T>`
+
+Wrap any (sub)model value in `History<T>` and undo/redo come for free:
+
+```cpp
+struct Model { History<Doc> doc; };
+
+[&](Edit e){ m.doc.push(edited(m.doc.get(), e)); return {m, Cmd::none()}; }
+[&](Undo)  { m.doc.undo();  return {m, Cmd::none()}; }
+[&](Redo)  { m.doc.redo();  return {m, Cmd::none()}; }
+
+// view: read the present, gate the buttons
+editor(m.doc.get());
+button("Undo", Undo{}) | when_(!m.doc.can_undo(), disabled());
+```
+
+`push` records the current present onto the past and clears the redo branch
+(editing after undo forks the timeline); pushing an unchanged value is a no-op;
+a `limit` caps the past so a long session stays bounded. It's a plain value with
+`==`, so an undoable model stays testable and time-travels cleanly.
+
 ### Virtualized lists — `virtual_list`
 
 waya rebuilds the whole tree every frame, and the diff makes that cheap — but

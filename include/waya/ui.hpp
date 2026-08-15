@@ -25,5 +25,8 @@
 #include "ui/optimistic.hpp"
 #include "ui/form.hpp"
 #include "ui/keymap.hpp"
+#include "ui/command_palette.hpp"
+#include "ui/history.hpp"
+#include "ui/routes.hpp"
 #include "ui/virtual_list.hpp"
 #include "ui/patterns.hpp"
