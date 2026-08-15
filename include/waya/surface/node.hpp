@@ -1756,9 +1756,20 @@ template <typename... M> Mod focus_within(M... mods){
 /// `group()` on a parent + `group_hover(...)` on a descendant — reveal/restyle a
 /// child when the PARENT is hovered (a card whose action buttons appear on
 /// hover, a row whose delete icon shows on hover). Registers one global rule.
+/// `add_class(name)` — attach an author CSS class to a node. The framework's
+/// styling still owns the node's INTERNED class; `add_class` MERGES `name` into
+/// that single `class=` token (the DOM backend coalesces them), so a component
+/// ported from a CSS stylesheet can carry its own class names AND waya styling
+/// on the same element — no duplicate-`class` invalidity, no collision. Register
+/// the matching rules with `assets().css(".name{…}")`. Multiple `add_class`
+/// calls stack. This is the seam for porting class-driven component libraries
+/// (e.g. a React component + its .css file) 1:1.
+inline Mod add_class(std::string name){
+    return {[name = std::move(name)](Node& n){ n.attrs.emplace_back("class", name); }};
+}
 inline Mod group(){
     assets().css(".wa-group:hover [data-wa-gh]{opacity:1;transform:none;pointer-events:auto}");
-    return attr("class", "wa-group"); }
+    return add_class("wa-group"); }
 inline Mod group_hidden(){   // the child: hidden until the group is hovered
     return {[](Node& n){ n.attrs.emplace_back("data-wa-gh", "");
         n.style.extra.emplace_back("opacity","0");

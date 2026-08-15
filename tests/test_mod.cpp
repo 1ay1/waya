@@ -177,6 +177,86 @@ int main() {
         assets().script("my-lib", "console.log('hi');");
         check(assets().head_html().find("console.log('hi')") != std::string::npos, "assets().script injects client JS");
     }
+
+    {
+        // add_class merges author classes INTO the interned styling class — one
+        // valid class attr, both present (the seam for porting CSS components).
+        auto styled = (text("x") | bg(0x111111) | add_class("mag") | add_class("b")).done();
+        auto h = html_of(styled);
+        std::size_t first = h.find("class=");
+        check(first != std::string::npos && h.find("class=", first + 1) == std::string::npos,
+              "add_class: exactly one class attribute on the element");
+        check(has(h, "mag") && has(h, " b\""), "add_class: both author classes present");
+        check(has(h, "ws-"), "add_class: interned styling class still present");
+        auto bare = (box() | add_class("ttui-bar")).done();
+        check(has(html_of(bare), "class=\"ttui-bar\""), "add_class on an unstyled node: just the author class");
+    }
+
+    // ── reveal-family: client-owned decorative motion (no Model coupling) ────
+    {
+        assets().clear();
+        auto n = (text("Fast") | reveal()).done();
+        check(has(html_of(n), "data-wa-reveal"), "reveal() marks the node");
+        check(assets().head_html().find("IntersectionObserver") != std::string::npos, "reveal() registers the shared IO boot");
+        check(assets().style_css().find(".wa-seen") != std::string::npos, "reveal() registers its entrance CSS");
+        check(assets().style_css().find("prefers-reduced-motion") != std::string::npos, "reveal() is inert under reduced-motion");
+    }
+    {
+        assets().clear();
+        auto n = (box(text("a"), text("b")) | reveal_stagger(90)).done();
+        check(has(html_of(n), "data-wa-stagger=\"90\""), "reveal_stagger(90) sets the stagger interval");
+    }
+    {
+        assets().clear();
+        auto n = (text("agentty --version") | typewriter()).done();
+        auto h = html_of(n);
+        check(has(h, "data-wa-reveal=\"type\""), "typewriter() marks kind=type");
+        check(has(h, "data-wa-type=\"agentty --version\""), "typewriter() snapshots the full text (SSR-safe)");
+        check(has(h, "agentty --version"), "typewriter() leaves real text in the DOM for crawlers");
+        check(has(h, "data-wa-caret"), "typewriter() default caret marker");
+        // must NOT emit a second class attr (invalid HTML) alongside the styled class
+        check(!has(h, "class=\"wa-caret\""), "typewriter() drives caret via JS, not a colliding class attr");
+        check(assets().style_css().find("wa-caret-blink") != std::string::npos, "typewriter() registers the caret keyframe");
+    }
+    {
+        assets().clear();
+        auto plain = (text("agentty --version") | typewriter(false)).done();
+        check(!has(html_of(plain), "data-wa-caret"), "typewriter(false) has no caret");
+    }
+    {
+        assets().clear();
+        auto n = (text("8.8 MB") | count_up()).done();
+        auto h = html_of(n);
+        check(has(h, "data-wa-reveal=\"count\""), "count_up() marks kind=count");
+        check(has(h, "data-wa-count=\"8.8 MB\""), "count_up() snapshots the target value");
+        check(has(h, "8.8 MB"), "count_up() leaves the real number in the DOM (SSR-safe)");
+    }
+    {
+        assets().clear();
+        auto n = (button("Get started") | magnetic()).done();
+        check(has(html_of(n), "data-wa-mag=\"6\""), "magnetic() default strength");
+        check(has(html_of((button("x") | magnetic(10)).done()), "data-wa-mag=\"10\""), "magnetic(10) custom strength");
+        check(assets().head_html().find("pointermove") != std::string::npos, "magnetic() registers the pointer handler");
+    }
+    {
+        assets().clear();
+        auto bar = scroll_progress();
+        auto h = html_of(bar);
+        check(has(h, "id=\"wa-scrollprog\""), "scroll_progress() emits the fixed bar");
+        check(has(css_of(bar), "scaleX(0)"), "scroll_progress() starts empty");
+        check(assets().head_html().find("scrollHeight") != std::string::npos, "scroll_progress() registers the scroll handler");
+    }
+    {
+        assets().clear();
+        auto t = theme_toggle();
+        auto h = html_of(t);
+        check(has(h, "data-wa-theme"), "theme_toggle() marks the JS hook");
+        check(has(h, "wa-sun") && has(h, "wa-moon"), "theme_toggle() ships both sun + moon icons");
+        // no double class attr on the root (interned styling class only)
+        check(h.find("class=") == h.rfind("class=") || h.find("data-wa-theme") != std::string::npos, "theme_toggle() root has a single class");
+        check(assets().head_html().find("prefers-color-scheme") != std::string::npos, "theme_toggle() installs a FOUC-free boot");
+        check(assets().head_html().find("setItem('waya:theme'") != std::string::npos, "theme_toggle() persists choice to localStorage");
+    }
     assets().clear();
 
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";

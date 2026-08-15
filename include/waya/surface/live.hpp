@@ -29,6 +29,7 @@
 #include "effect.hpp"
 #include "meta.hpp"
 #include "assets.hpp"
+#include "reveal.hpp"    // client-owned decorative motion (reveal/typewriter/count_up/magnetic/scroll_progress)
 #include "validate.hpp"
 #include "component.hpp"
 #include "client.hpp"

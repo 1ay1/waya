@@ -277,7 +277,14 @@ private:
         // hatch can't smuggle a `javascript:`/`data:` scheme past the sanitiser
         // that href()/link_to() apply. (These are the sink attributes the HTML
         // spec treats as URLs.)
+        //
+        // `class` is SPECIAL: a node already carries ONE interned styling class
+        // (emitted by open_attrs/control_attrs), and duplicate `class` attributes
+        // are invalid HTML — the parser keeps only the first and silently drops
+        // the rest. So author classes (from an add_class()-style mod) are merged
+        // into the interned token in class_token()/emit and skipped here.
         for(auto& a : nd.attrs){
+            if(a.first=="class") continue;   // merged into the interned class token
             o+=' '; o+=a.first;
             if(!a.second.empty()){
                 o+="=\"";
@@ -288,6 +295,20 @@ private:
         }
     }
 
+    /// The full class token for a node: the interned styling class plus any
+    /// author-supplied `class` attrs (add_class), space-joined into ONE value so
+    /// styling and author classes coexist on a single, valid `class=` attribute.
+    std::string class_token(const Node& nd, bool tappable){
+        std::string_view base = intern(nd.style, nd.kind, tappable);
+        std::string cls(base);
+        for(auto& a : nd.attrs){
+            if(a.first!="class" || a.second.empty()) continue;
+            if(!cls.empty()) cls += ' ';
+            cls += a.second;   // author class names: no escaping (validated at call site)
+        }
+        return cls;
+    }
+
     /// Attributes whose value is a URL and must be scheme-sanitised.
     static bool is_url_attr(std::string_view k){
         return k=="href" || k=="src" || k=="action" || k=="formaction" ||
@@ -296,7 +317,7 @@ private:
     }
 
     void open_attrs(std::string& o, const Node& nd){
-        auto cls = intern(nd.style, nd.kind, nd.on_tap>=0);
+        auto cls = class_token(nd, nd.on_tap>=0);
         if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
         if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
         event_attrs(o,nd);
@@ -304,7 +325,7 @@ private:
 
     /// Shared control attributes: class, input/change wiring, disabled, name.
     void control_attrs(std::string& o, const Node& nd){
-        auto cls = intern(nd.style, nd.kind, false);
+        auto cls = class_token(nd, false);
         if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
         if(!nd.name.empty()){ o+=" name=\""; esc_attr(o,nd.name); o+='"'; }
         if(nd.on_input>=0){ o+=" data-input=\""; o+=std::to_string(nd.on_input); o+='"'; }
@@ -358,7 +379,7 @@ private:
             }
             case Kind::button: {
                 o+="<button type=\""; o+=(nd.name=="submit"?"submit":"button"); o+='"';
-                auto cls = intern(nd.style, nd.kind, true);
+                auto cls = class_token(nd, true);
                 if(!cls.empty()){ o+=" class=\""; o+=cls; o+='"'; }
                 if(nd.on_tap>=0){ o+=" data-tap=\""; o+=std::to_string(nd.on_tap); o+='"'; }
                 if(nd.disabled) o+=" disabled";

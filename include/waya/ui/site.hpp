@@ -33,6 +33,7 @@
 
 #include "../surface/node.hpp"
 #include "../surface/sugar.hpp"
+#include "../surface/reveal.hpp"   // reveal/typewriter/count_up/magnetic — client-owned motion
 #include "components.hpp"
 #include "icons.hpp"
 
@@ -421,7 +422,8 @@ inline NodeRef site_section(std::string eyebrow, std::string title, std::string 
     inner = inner | gap(0);
     return box(wrap(inner)) | as_section | w_full
         | detail::raw_css("padding","72px 0")
-        | detail::raw_css("border-top","1px solid " + detail::hexstr(T().border));
+        | detail::raw_css("border-top","1px solid " + detail::hexstr(T().border))
+        | reveal();
 }
 
 // ── features ──────────────────────────────────────────────────────────────────
@@ -460,17 +462,19 @@ inline NodeRef site_stat(std::string number, std::string label){
     using namespace site_detail;
     return col(
         text(std::move(number)) | gradient_text(T().accent, T().accent2, 100)
-            | font_fluid(30, 46) | detail::raw_css("font-weight","800") | tracking_em(-0.02f),
+            | font_fluid(30, 46) | detail::raw_css("font-weight","800") | tracking_em(-0.02f)
+            | count_up() | detail::raw_css("font-variant-numeric","tabular-nums"),
         text(std::move(label)) | fg(T().dim) | text_size(14)
             | detail::raw_css("margin-top","4px"))
         | items_center | text_center;
 }
 /// `stats_row(stats…)` — a centered row of big-number stats that wraps on mobile.
+/// The stats cascade in (staggered reveal) when the row scrolls into view.
 template <typename... Stats>
 inline NodeRef stats_row(Stats... stats){
     return row(std::move(stats)...) | justify_center | items_start
         | gap(56) | wrap | w_full
-        | detail::raw_css("padding","28px 0");
+        | detail::raw_css("padding","28px 0") | reveal_stagger(90);
 }
 
 // ── install / copy band ───────────────────────────────────────────────────────
@@ -480,7 +484,7 @@ inline NodeRef copy_line_view(std::string command){
     using namespace site_detail;
     return row(
         text("$ ") | fg(T().faint) | mono,
-        text(command) | fg(T().text) | mono | text_size(14.5f) | grow(),
+        text(command) | fg(T().text) | mono | text_size(14.5f) | grow() | typewriter(),
         text("copy") | fg(T().dim) | text_size(12.5f)
             | pad_x(9) | pad_y(4) | round(7) | border(1, rgba(T().border,1.0f)))
         | items_center | gap(10)
