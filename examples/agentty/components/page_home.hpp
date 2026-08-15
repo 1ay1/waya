@@ -46,7 +46,7 @@ inline const char* HOME_CSS =
 ".hero-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;text-align:left}"
 ".hero-logo{margin:-16px 0 22px;max-width:100%}"
 ".hero-inner .lede{margin-left:0;margin-right:0}.hero-inner .hero-actions{justify-content:flex-start}"
-".hero-tui{min-width:0}.hero-tui .ttui{margin:132px 0 0;max-width:100%;width:100%;position:relative}"
+".hero-tui{min-width:0}.hero-tui .ttui{margin:24px 0 0;max-width:100%;width:100%;position:relative}"
 ".hero-tui .ttui::before{content:'';position:absolute;inset:-1px;border-radius:13px;padding:1px;"
 "background:linear-gradient(135deg,rgba(88,166,255,.55),rgba(210,168,255,.35),transparent 60%);"
 "-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;"
