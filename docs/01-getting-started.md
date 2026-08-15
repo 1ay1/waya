@@ -35,8 +35,9 @@ Put it on your PATH (`ln -s "$PWD/waya" ~/.local/bin/waya`) and drop the `./`.
 Every command takes an optional target and flags like `--port` / `--no-open`:
 
 ```sh
-waya dev palette
-waya run aurora --port 9000 --no-open
+waya new my-app && cd my-app   # scaffold a complete, building app
+waya dev                       # build + live-reload on http://localhost:8080
+waya run --port 9000 --no-open # serve without opening a browser
 ```
 
 ## Install

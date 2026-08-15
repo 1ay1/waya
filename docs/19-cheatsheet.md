@@ -155,6 +155,46 @@ already a named mod — check this page first.
 | `switch_field(t, desc, on, Msg)` `checkbox_field(l, on, Msg)` `form_actions(…)` | form fields |
 | `confirm_dialog(open, t, msg, "OK", Yes{}, No{})` `dialog(open, Close{}, …)` | dialogs |
 
+## Data, forms & navigation widgets (`waya/ui.hpp`)
+
+| Call | What |
+|------|------|
+| `data_table<Row>(rows, cols)` | sortable / filterable / paginated table |
+| `data_grid<Row>(rows, cols, ts, edit, …)` | editable spreadsheet (click-to-edit cells) |
+| `stepper(v, fn, min, max, step)` `number_field(…)` `percent_field(…)` | numeric inputs |
+| `star_rating(v, fn)` `stars(v)` | rating (editable / read-only) |
+| `color_field(l, v, fn)` `swatch_picker(v, palette, fn)` | colour pickers |
+| `segmented(active, labels, fn)` `breadcrumb({crumb(…)})` | nav controls |
+| `tree_view(…)` `file_tree(root, ts, sel, onToggle, onSelect)` | trees / file explorer |
+| `kanban(cols, renderCard, onMove)` | drag-and-drop board |
+| `command_palette(…)` `spotlight(items, …)` | Cmd+K fuzzy launcher |
+| `Toasts` + `toasts_layer(q, onDismiss[, onAction])` | notification queue (+ Undo button) |
+
+## Effects, state & persistence (`Cmd` / `Sub`)
+
+| Call | What |
+|------|------|
+| `Cmd::none()` `Cmd::emit(Msg)` `Cmd::batch(…)` | do nothing / send a msg now / several |
+| `Cmd::after(ms, Msg)` `Cmd::task(fn)` | delayed msg / background work (off the pool) |
+| `Cmd::fetch(url, on_done)` `Cmd::post(…)` | HTTP; result → msg |
+| `Cmd::navigate(url)` `Cmd::set_title(t)` `Cmd::scroll_to(id)` `Cmd::focus(id)` | browser control |
+| `Cmd::store(key, val)` `Cmd::store_clear(key)` | persist to `localStorage` |
+| `Cmd::copy(text)` `Cmd::download(name, data, mime)` | clipboard / file |
+| `Cmd::broadcast(topic, payload)` | multiplayer publish |
+| `Sub::every(ms, Msg)` `Sub::on_route(fn)` `Sub::on_viewport(fn)` | timers / route / display |
+| `Sub::on_storage(fn)` | replay persisted keys on connect (pair with `Cmd::store`) |
+| `Sub::on_topic(topic, fn)` | multiplayer subscribe |
+
+## Reusable widgets & testing
+
+| Call | What |
+|------|------|
+| `map_msg<Child>(node, f)` | lift a child widget's view messages into the parent's `Msg` |
+| `embed_update(m, &Model::field, child_update, msg, f)` | run a child widget's update in the parent |
+| `cmd.map(f)` `sub.map(f)` | lift a child's commands / subscriptions |
+| `test::harness<P>()` | drive a whole app in a test (`click`/`fill`/`send`, no server) |
+| `test::widget_harness(state, &W::view, &W::update)` | drive one widget in a test |
+
 ## Spacing scale (`waya/ui/space.hpp`)
 
 4px design-token scale so an app reads on a consistent rhythm. `sp(4)` == 16px.

@@ -13,7 +13,7 @@ Put it on your `PATH` once and drop the `./`:
 
 ```sh
 ln -s "$PWD/waya" ~/.local/bin/waya
-waya run aurora
+waya new my-app && cd my-app && waya run
 ```
 
 It runs everywhere: Linux, macOS, the BSDs, and Windows under
@@ -27,13 +27,14 @@ Git-Bash / MSYS2 / Cygwin / WSL (native cmd/PowerShell via `waya.cmd`).
 | `dev [target]` | Watch the source, rebuild on save, and live-reload the browser. No target opens an arrow-key picker. |
 | `build [target]` | Configure (if needed) and build one target — no run. |
 | `run [target]` | Build, then run the server. Alias: **`serve`**. |
-| `list` | List the example targets you can `dev`/`run`/`build`. |
+| `list` | List the runnable targets in the project. |
 | `clean` | Remove the build directory. |
 | `doctor` | Check your toolchain (cmake, C++26 compiler, file watcher). |
 | `help` | Show usage. |
 
-The `target` is an example name (`aurora`, `pulse`, `showcase`, …) or any
-CMake target in your project. `waya list` prints the built-in examples.
+The `target` is any CMake executable target in your project (your app, or an
+example under `examples/`). With one target, you can omit it; `waya list` prints
+what's available.
 
 ## Options
 
@@ -48,7 +49,7 @@ These apply to `dev`, `build`, and `run`:
 | `-j, --jobs <n>` | Parallel build jobs. | `JOBS` |
 
 The environment variables work with a raw binary too, so
-`WAYA_PORT=9000 ./build/aurora` behaves the same as `waya run aurora -p 9000`.
+`WAYA_PORT=9000 ./build/my_app` behaves the same as `waya run my_app -p 9000`.
 
 ## Examples
 
@@ -56,11 +57,11 @@ The environment variables work with a raw binary too, so
 # scaffold and run a brand-new app
 waya new my-app && cd my-app && waya run
 
-# live-reload development on a bundled example
-waya dev showcase
+# live-reload development (picks the target, or omit it if there's one)
+waya dev
 
 # serve on a custom port without opening a browser
-waya run aurora --port 9000 --no-open
+waya run --port 9000 --no-open
 
 # see what you can run, and check your toolchain
 waya list

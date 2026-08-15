@@ -97,7 +97,7 @@ nav:
       - API Reference: 11-api-reference.md
       - Browser Parity (CSS/HTML → waya): 14-browser-parity.md
       - Recipes & Patterns: 12-recipes.md
-      - Examples Walkthrough: 13-examples.md
+      - Build a Complete App: 13-examples.md
       - Glossary: glossary.md
   - Internals:
       - How It Works: internals/architecture.md

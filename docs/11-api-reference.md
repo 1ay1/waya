@@ -353,7 +353,34 @@ the core. See [The Component Library](14-components.md) for the full guide.
 | `tooltip(trigger, text, place="top")` | Hover tooltip (no model state). |
 | `dialog(open, close_msg, panel…)` | A complete modal. |
 | `toast(message, Tone=neutral)` / `toast_layer(nodes)` | Toast + its fixed stack. |
+| `Toasts` (queue) + `toasts_layer(q, onDismiss[, onAction])` | A notification queue with auto-dismiss; `push_action(msg, label, ...)` adds an Undo/Retry button. |
 | `light()` `midnight()` `ocean()` `rose()` | Ready-made `Theme` presets. |
+
+### Data & forms
+
+| Signature | Description |
+|---|---|
+| `data_table<Row>(rows, cols)` | Sortable / filterable / paginated table over `col<Row>` columns + `TableState`. |
+| `data_grid<Row>(rows, gcols, TableState, GridEdit, rowId, onSort, onPage, onEdit, onType, onDone, onCancel)` | Editable spreadsheet grid: click-to-edit cells (text/number/select), keyboard commit. |
+| `stepper(value, to_msg, min, max, step)` | −/value/+ numeric spinner, clamped. |
+| `number_field(label, value, to_msg, min, max, step, hint)` | Labelled `type=number` field. |
+| `percent_field(label, value, to_msg, hint)` | A `number_field` pinned 0..100 with a `%`. |
+| `star_rating(value, to_msg, out_of=5)` / `stars(value, out_of=5)` | Clickable / read-only star rating. |
+| `color_field(label, value, to_msg, hint)` | Native swatch + hex text box. |
+| `swatch_picker(value, palette, to_msg)` | A palette of preset colour chips (sanitised). |
+| `segmented(active, labels, to_msg)` | A one-of-N pill (compact tabs). |
+| `breadcrumb({crumb(label, msg), …, crumb(label)})` | A navigation trail. |
+
+### Navigation & structure
+
+| Signature | Description |
+|---|---|
+| `tree_view(root, TreeState, id, label, children, onToggle)` | A generic expand/collapse tree. |
+| `file_tree(root, TreeState, selected, onToggle, onSelect)` | A file explorer with extension icons; `file()`/`folder()` build the model. |
+| `kanban(columns, renderCard, onMove)` | A drag-and-drop board of columns; `kcolumn()` builds a column, `apply_kanban_move()` splices the move. |
+| `command_palette(keymap, query, sel, onQuery, onRun, onClose)` | Cmd+K fuzzy launcher over a `Keymap`. |
+| `spotlight(items, query, sel, onQuery, onRun, onClose)` | The same launcher over arbitrary `SpotItem`s (label + category + icon + keywords). |
+| `icon("name", size=24)` | An inline SVG icon (tint with `fg`). |
 
 ---
 
@@ -368,6 +395,48 @@ Make `view()` O(changed) for large or high-frequency screens. See
 | `component(Fn)` | Wrap `fn(Props...) -> NodeRef` into an auto-memoised, reusable component. |
 | `list(std::uint64_t id, range, key_fn, view_fn, Flow=col)` | A memoised keyed list: builds each row and caches the container by child identity. |
 | `list_versioned(std::uint64_t id, std::uint64_t version, range, key_fn, view_fn, Flow=col)` | O(1) when `version` is unchanged — the range is never iterated. |
+
+---
+
+## Reusable widgets & composition (`node.hpp` + `effect.hpp`)
+
+Build a self-contained widget with its OWN `Msg` and embed it in any app — its
+message type never has to leak into the consumer's variant. A widget library
+ships `{ view, update, subscribe, Msg }`; a consumer wires it in with ONE lifter
+`f : ChildMsg -> ParentMsg`. See [Reusable Components](20-components-reuse.md).
+
+| Signature | Description |
+|---|---|
+| `map_msg<Child>(NodeRef node, Fn f)` | Lift every message a subtree emits from the child widget's `Msg` to the parent's, via `f`. The view-side complement of `Cmd::map`. Two instances of one widget disambiguate by their lifter. |
+| `cmd.map(Fn f)` | Lift a `Cmd<Child>` into `Cmd<Parent>` (member of `Cmd`). |
+| `sub.map(Fn f)` | Lift a `Sub<Child>` into `Sub<Parent>` (member of `Sub`). |
+| `embed_update(Model, ChildState Model::* field, child_update, ChildMsg, Fn f)` | Run a child widget's `update` on `model.*field`, write the new state back, and lift its returned `Cmd` via `f`. Returns `pair<Model, Cmd<ParentMsg>>` — the state-side of the contract. |
+
+The four calls mirror each other and share one `f`:
+
+```cpp
+// view:      messages up
+map_msg<W::Msg>(W::view(m.w), [](W::Msg c){ return App{Wrap{c}}; })
+// update:    state down, cmd up
+embed_update(m, &Model::w, &W::update, wrapped, [](W::Msg c){ return App{Wrap{c}}; })
+// subscribe: listeners up
+W::subscribe(m.w).map([](W::Msg c){ return App{Wrap{c}}; })
+```
+
+---
+
+## Testing (`test.hpp`)
+
+A waya app is pure, so you can drive the whole thing — or a single widget — in a
+plain test with no server or socket. See [Testing](21-testing.md).
+
+| Signature | Description |
+|---|---|
+| `test::harness<P>()` | Drive a whole `Program`: runs `init()`, holds the model. |
+| `Harness::send(Msg)` / `send(Msg, value)` | Dispatch through the real `update`; records the returned `Cmd`. |
+| `Harness::click(label)` / `fill(value, near={})` | Drive by the RENDERED label, through the real token->Msg path. |
+| `Harness::model()` / `text()` / `text_contains(s)` / `count(Kind)` / `last_cmd()` / `valid()` | Inspect state, rendered output, and effects. |
+| `test::widget_harness(state, &W::view, &W::update)` | Drive a self-contained *widget* (no Program): same `click`/`fill`/`send` + `state()`/`text()`/`last_cmd()`. `State`/`Msg` deduced from the update signature. |
 
 ---
 
@@ -391,7 +460,10 @@ Make `view()` O(changed) for large or high-frequency screens. See
 | `Cmd<Msg>::focus(std::string target)` / `blur()` | Move keyboard focus / release it. |
 | `Cmd<Msg>::copy(std::string text)` | Write to the clipboard. |
 | `Cmd<Msg>::download(std::string name, std::string data, std::string mime=…)` | Offer a file download. |
+| `Cmd<Msg>::store(std::string key, std::string value)` | Write a value to the browser's `localStorage` (client-side persistence). |
+| `Cmd<Msg>::store_clear(std::string key)` | Remove a `localStorage` key. |
 | `Cmd<Msg>::batch(cmds… \| vector)` | Several commands. |
+| `cmd.map(Fn: Msg→Parent)` | Lift this command into a parent's `Msg` type (widget embedding). |
 
 ### `Sub<Msg>`
 
@@ -401,8 +473,10 @@ Make `view()` O(changed) for large or high-frequency screens. See
 | `Sub<Msg>::every(long ms, Msg)` | Repeating timer. |
 | `Sub<Msg>::on_route(std::function<Msg(std::string)>)` | Route-change → message. |
 | `Sub<Msg>::on_viewport(std::function<Msg(Viewport)>)` | Display report (size / dark / tz) → message; on connect, resize, scheme flip. |
+| `Sub<Msg>::on_storage(std::function<Msg(std::string key, std::string value)>)` | On connect, replays each persisted `localStorage` key → message. Pair with `Cmd::store`. |
 | `Sub<Msg>::on_topic(std::string topic, std::function<Msg(std::string)>)` | Broadcast → message. |
 | `Sub<Msg>::batch(subs… \| vector)` | Combine subscriptions. |
+| `sub.map(Fn: Msg→Parent)` | Lift these subscriptions into a parent's `Msg` type (widget embedding). |
 
 ---
 
@@ -522,8 +596,23 @@ struct P {
     static Meta     meta(const Model&);
     static const char* site_url();
     static std::vector<std::string> sitemap();
+    static const char* head();                    // raw HTML spliced into <head>
+                                                  //   (analytics, fonts, verify tags)
+    static std::vector<std::string> allowed_origins();  // WebSocket Origin allowlist
+    static bool expose_metrics();                 // enable GET /metrics
 };
 ```
+
+### Built-in endpoints
+
+The runtime serves these before touching your app:
+
+| Route | Response |
+|---|---|
+| `GET /healthz` | `200 ok` (liveness probe; no render). |
+| `GET /metrics` | Prometheus metrics — **only** if `WAYA_METRICS` set or `P::expose_metrics()` returns true. |
+| `GET /robots.txt` | Auto-generated (links the sitemap if `site_url()` is set). |
+| `GET /sitemap.xml` | Built from `P::sitemap()` + `P::site_url()`. |
 
 ### `overload`
 
@@ -537,9 +626,19 @@ The helper for `std::visit` over a `std::variant` `Msg`.
 
 | Variable | Effect |
 |---|---|
-| `WAYA_PORT` | Override listen port. |
-| `WAYA_HOST` | Override bind address. |
-| `WAYA_NO_OPEN` | Don't auto-open the browser. |
+| `WAYA_PORT` | Override listen port (default 8080). |
+| `WAYA_HOST` | Override bind address (default `0.0.0.0`). |
+| `WAYA_NO_OPEN` | Don't auto-open the browser (set in production). |
+| `WAYA_WORKERS` | Size of the effect thread pool (default: CPU count). |
+| `WAYA_LOG` | Enable one-line access logs (method, path, status) to stderr. |
+| `WAYA_ALLOWED_ORIGINS` | Comma-separated WebSocket `Origin` allowlist. Unset = allow all (dev). **Set in production** to block cross-site WS hijacking. |
+| `WAYA_CONN_RATE` | Per-IP new-connection rate, conns/sec (default 20; `0` disables). |
+| `WAYA_CONN_BURST` | Per-IP connection burst allowance (default 40). |
+| `WAYA_MAX_CONN` | Global live-connection ceiling (default 10000; excess gets a fast `503`). |
+| `WAYA_SESSION_CAP` | Max retained models for reconnect-resume (default 50000; oldest evicted past it). |
+| `WAYA_METRICS` | Expose `GET /metrics` (Prometheus). Off by default. |
+
+See [Deployment](17-deployment.md) for the full production guide.
 
 ### Rendering backend (`dom.hpp`)
 

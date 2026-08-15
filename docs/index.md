@@ -14,9 +14,9 @@ state in your code.
     ```sh
     ./waya new my-app && cd my-app && waya run   # builds + serves on :8080
     ```
-    Or just run a bundled example: `./waya run aurora` (see `./waya list`).
     New to the whole idea? Read **[The Mental Model](02-mental-model.md)** first,
-    then follow **[Getting Started](01-getting-started.md)**.
+    then follow **[Getting Started](01-getting-started.md)**, or jump straight to a
+    complete app in **[Build a Complete App](13-examples.md)**.
 
 ```cpp
 #include <waya/surface/live.hpp>
@@ -134,6 +134,10 @@ never touch.** You describe *what* to show; waya owns *how* to show it.
 | A one-second clock tick | `Sub<Msg>::every(1000, Tick{})` |
 | Fetch JSON asynchronously | `Cmd<Msg>::fetch("/data.json", Loaded{})` |
 | Navigate to another route | `Cmd<Msg>::navigate("/next")` |
+| Persist across reloads | `Cmd<Msg>::store("theme", "dark")` + `Sub<Msg>::on_storage(fn)` |
+| Sync every open tab (multiplayer) | `Cmd<Msg>::broadcast("room", msg)` + `Sub<Msg>::on_topic("room", fn)` |
+| Embed a reusable widget | `map_msg<W::Msg>(W::view(m.w), lift)` |
+| Test the whole app, no browser | `test::harness<App>().click("Save")` |
 
 Read on — the [Mental Model](02-mental-model.md) makes all of this click in a
 single page.
