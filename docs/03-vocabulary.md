@@ -105,6 +105,35 @@ path(pts, /*closed=*/true) | fill(0x6366f1)     // a filled polygon
 Because it's one node, you can draw a 5,000-point chart and it diffs like any
 other node.
 
+### `scene` — vector drawing
+
+`path()` draws one polyline. For anything richer — a chart with axes and labels,
+a sprite, a game board, an animated backdrop — use `scene`, the vector
+vocabulary. Shapes are values painted with a fluent chain; the whole thing
+renders to one `<svg>` and diffs like any subtree.
+
+```cpp
+scene(400, 200,                                     // coordinate space (viewBox)
+    vrect(0, 0, 400, 200).fill(0x0b1020),
+    vline(0, 100, 400, 100).stroke(0x22d3ee, 2).dashed(),
+    vcircle(200, 100, 40).fill(rgba(0x6366f1, 0.8f)),
+    vtext(200, 105, "score").fill(0xffffff).anchor_mid().bold())
+| w_full | h(200)                                   // the node sizes like any box
+```
+
+Builders: `vrect(x,y,w,h,r=0)`, `vcircle(cx,cy,r)`, `vellipse`, `vline`,
+`vpolyline(pts)` / `vpolygon(pts)`, `vpath(d)` (raw SVG path data), `vtext(x,y,s)`,
+and `vgroup(shapes…)` (a group one `.transform()`/`.opacity()` covers). Paint is
+a chain — `.fill()`, `.stroke(color, w)`, `.opacity()`, `.dashed()`, `.round_cap()`,
+`.anchor_mid()`, `.font_px()`, `.bold()`, `.mono()`, `.transform()`.
+
+Two things matter: **text is escaped** (a `vtext("a<b")` can't break your markup
+or inject anything — unlike a hand-built `"<text>"` string), and the scene
+inherits `currentColor`, so `scene(…) | fg(0x22d3ee)` recolours every shape that
+didn't set its own fill. This is the framework's promise — *you never write
+markup by hand* — finally extended to pixels. `bars()`, and the matrix rain in
+the examples, are built on it.
+
 ## Form controls
 
 waya has a complete set of real, accessible form controls. Each is a node you

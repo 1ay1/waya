@@ -18,4 +18,5 @@
 #include "ui/icons.hpp"
 #include "ui/widgets.hpp"
 #include "ui/charts.hpp"
+#include "ui/scene.hpp"
 #include "ui/patterns.hpp"

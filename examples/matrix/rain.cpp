@@ -3,7 +3,9 @@
 #include "rain.hpp"
 #include "theme.hpp"
 
+#include <waya/ui/scene.hpp>
 #include <string>
+#include <vector>
 
 namespace mtx {
 
@@ -24,51 +26,42 @@ char glyph_for(std::uint32_t seed, int row) {
 
 waya::surface::NodeRef rain_canvas(const Model& m) {
     using namespace waya::surface;
+    using namespace waya::ui;
     const int W = kCols * CW, H = kRows * CH;
 
-    std::string svg;
-    svg.reserve(64 * 1024);
-    svg += "<svg viewBox='0 0 " + std::to_string(W) + " " + std::to_string(H) +
-           "' preserveAspectRatio='xMidYMid slice' "
-           "style='position:absolute;inset:0;width:100%;height:100%;display:block'>";
-    svg += "<rect width='" + std::to_string(W) + "' height='" + std::to_string(H) + "' fill='#000'/>";
-    svg += "<g font-family='monospace' font-size='16' text-anchor='middle'>";
-
+    // Every glyph is a typed vtext Shape — no string concatenation, no manual
+    // entity escaping (the scene escapes '<'/'&' for us), no hand-formatted
+    // opacity. The rain is now DATA the backend draws, like everything else.
+    std::vector<Shape> glyphs;
+    glyphs.push_back(vrect(0, 0, W, H).fill(black));
     for (int ci = 0; ci < (int)m.cols.size() && ci < kCols; ++ci) {
         const auto& c = m.cols[ci];
-        int hx_ = ci * CW + CW / 2;
+        float cx = ci * CW + CW / 2.f;
         int head_row = (int)c.head;
         for (int k = 0; k < c.len; ++k) {
             int row = head_row - k;
             if (row < 0 || row >= kRows) continue;
-            int y = row * CH + CH - 4;
-            char g = glyph_for(c.seed + row, row);
-            std::string ch(1, g);
-            if (ch == "<") ch = "&lt;"; else if (ch == ">") ch = "&gt;";
-            else if (ch == "&") ch = "&amp;";
+            float y = row * CH + CH - 4.f;
+            std::string ch(1, glyph_for(c.seed + row, row));
             if (k == 0) {
-                // bright head — the only near-white glyph, small glow
-                svg += "<text x='" + std::to_string(hx_) + "' y='" + std::to_string(y) +
-                       "' fill='" + hx(bright) + "' opacity='0.95'"
-                       " style='filter:drop-shadow(0 0 5px " + hx(green) + ")'>" + ch + "</text>";
+                // bright head — the only near-white glyph
+                glyphs.push_back(vtext(cx, y, ch).fill(bright).opacity(0.95f)
+                                 .font_px(16).anchor_mid().mono());
             } else {
-                // trail: a sharp falloff so only the top few glyphs are visible
-                // and the rest fades to near-black — reads as a distinct stream,
-                // not a wall of noise. Squared falloff + a low ceiling.
+                // trail: squared falloff so only the top few glyphs read as a
+                // distinct stream; drop the tail once it's too faint.
                 float t = 1.0f - float(k) / c.len;
-                float op = 0.55f * t * t;           // squared => quick fade
-                if (op < 0.02f) continue;           // drop the tail entirely when too faint
-                char ob[8]; std::snprintf(ob, sizeof ob, "%.2f", op);
-                svg += "<text x='" + std::to_string(hx_) + "' y='" + std::to_string(y) +
-                       "' fill='" + hx(green) + "' opacity='" + ob + "'>" + ch + "</text>";
+                float op = 0.55f * t * t;
+                if (op < 0.02f) continue;
+                glyphs.push_back(vtext(cx, y, ch).fill(green).opacity(op)
+                                 .font_px(16).anchor_mid().mono());
             }
         }
     }
-    svg += "</g></svg>";
 
     // The rain sits BEHIND everything at reduced opacity so the terminal + HUD
     // read clearly on top — the rain is atmosphere, not the subject.
-    return box(markup(std::move(svg)))
+    return box(scene((float)W, (float)H, std::move(glyphs)) | w_full | h_full)
         | absolute() | pin()
         | z(0)
         | opacity(.55f)

@@ -1,5 +1,6 @@
 // tests/test_widgets.cpp — the stateful component library + icons + form data.
 #include <waya/surface/live.hpp>
+#include <waya/surface/diff.hpp>
 #include <waya/ui.hpp>
 #include <iostream>
 #include <string>
@@ -90,6 +91,34 @@ int main() {
       check(has(h, "<label"), "file_field is a real labelled field");
       check(has(h, "Avatar"), "file_field shows its label");
       check(has(h, "up to 8 MB"), "file_field shows its hint"); }
+
+    // ── scene(): the vector-drawing vocabulary (replaces raw <svg> strings) ──
+    {
+        auto s = scene(100, 50,
+            vrect(0, 0, 100, 50).fill(0x0b1020),
+            vline(0, 25, 100, 25).stroke(0x22d3ee, 2).dashed(),
+            vcircle(50, 25, 10).fill(rgba(0x6366f1, 0.8f)),
+            vtext(50, 30, "a<b&c").fill(0xffffff).anchor_mid().bold());
+        auto h = html_of(s);
+        check(has(h, "<svg") && has(h, "viewBox=\"0 0 100 50\""), "scene emits one sized svg");
+        check(has(h, "<rect") && has(h, "fill=\"#0b1020\""), "vrect + fill(hex)");
+        check(has(h, "<line") && has(h, "stroke=\"#22d3ee\"") && has(h, "stroke-width=\"2\""), "vline + stroke");
+        check(has(h, "stroke-dasharray=\"4 4\""), ".dashed()");
+        check(has(h, "<circle") && has(h, "fill=\"rgba(99,102,241,0.8"), "vcircle + alpha fill");
+        check(has(h, "text-anchor=\"middle\"") && has(h, "font-weight=\"700\""), "vtext placement");
+        // THE point: content is escaped — no raw < or & reaches the DOM.
+        check(has(h, "a&lt;b&amp;c") && !has(h, "a<b&c"), "vtext escapes its content");
+    }
+    // a scene is a normal node: it diffs like any subtree.
+    {
+        auto a = scene(10, 10, vcircle(5, 5, 4));
+        auto b = scene(10, 10, vcircle(5, 5, 5));   // radius changed
+        check(!diff(a, b).empty(), "a changed scene diffs (not a no-op)");
+    }
+    // bars() is now built on the scene vocabulary, not hand-glued svg strings
+    { auto h = html_of(bars({1, 3, 2, 5}));
+      check(has(h, "<svg") && has(h, "<rect"), "bars() renders via scene");
+      check(!has(h, "<rect x='"), "bars() no longer hand-concatenates svg"); }
 
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;

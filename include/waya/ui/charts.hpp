@@ -11,6 +11,7 @@
 
 #include "../surface/node.hpp"
 #include "components.hpp"
+#include "scene.hpp"
 
 #include <algorithm>
 #include <vector>
@@ -67,12 +68,10 @@ inline NodeRef area_chart(const std::vector<float>& values, float w_ = 240, floa
     return path(std::move(pts), /*closed=*/true) | w(w_) | h(h_);
 }
 
-/// `bars(values)` — a simple bar chart drawn as SVG via markup (each bar a rect).
-/// Colour with `fg(hex)`; size with `w`/`h`. Bars share a baseline and gap.
+/// `bars(values)` — a simple bar chart. Each bar is a `vrect` in a `scene`;
+/// colour with `fg(hex)` (the scene inherits `currentColor`), size with `w`/`h`.
 inline NodeRef bars(const std::vector<float>& values, float w_ = 240, float h_ = 80) {
-    std::string svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " +
-        std::to_string((int)w_) + " " + std::to_string((int)h_) +
-        "' width='100%' height='100%' preserveAspectRatio='none' style='display:block;overflow:visible'>";
+    std::vector<Shape> rects;
     if (!values.empty()) {
         float hi = *std::max_element(values.begin(), values.end());
         if (hi <= 0) hi = 1;
@@ -82,14 +81,10 @@ inline NodeRef bars(const std::vector<float>& values, float w_ = 240, float h_ =
         for (std::size_t i = 0; i < values.size(); ++i) {
             float bh = h_ * (values[i] / hi);
             float x = slot * (float)i + (slot - bw) / 2.f;
-            float y = h_ - bh;
-            svg += "<rect x='" + std::to_string((int)x) + "' y='" + std::to_string((int)y) +
-                   "' width='" + std::to_string((int)bw) + "' height='" + std::to_string((int)bh) +
-                   "' rx='2' fill='currentColor'/>";
+            rects.push_back(vrect(x, h_ - bh, bw, bh, 2));   // fill = currentColor
         }
     }
-    svg += "</svg>";
-    return markup(std::move(svg)) | w(w_) | h(h_) | detail::raw_css("line-height", "0");
+    return scene(w_, h_, std::move(rects)) | w(w_) | h(h_) | detail::raw_css("line-height", "0");
 }
 
 } // namespace waya::ui
