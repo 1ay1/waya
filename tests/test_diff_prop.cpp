@@ -230,6 +230,24 @@ int main() {
         CHECK(p.empty());                                // no-op diff
     }
 
+    // ── hash determinism: the Style POD prefix is byte-hashed, so its padding
+    //    MUST be deterministic. Build the same styled node from many FRESH heap
+    //    allocations (poisoned-then-reused memory under a sanitizer) and confirm
+    //    they all hash identically — a padding leak would fail here.
+    {
+        std::uint64_t h0 = 0; bool stable = true;
+        for (int i = 0; i < 5000; ++i) {
+            NodeRef n = box(text("hi")) | pad(8) | round(6) | bg(0x123456) | fg(0xffffff);
+            if (i == 0) h0 = n->hash;
+            else if (n->hash != h0) { stable = false; break; }
+        }
+        CHECK(stable);   // identical styled nodes hash identically across allocations
+        // and a DIFFERENT style must hash differently (no false collisions).
+        NodeRef x = box() | pad(8);
+        NodeRef y = box() | pad(9);
+        CHECK(x->hash != y->hash);
+    }
+
     // ── the core property, over many random pairs ────────────────────────────
     // Mix of positional and keyed trees; keyed trees exercise move/insert/remove.
     int trials = 0, mismatches = 0;

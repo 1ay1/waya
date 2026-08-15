@@ -105,6 +105,24 @@ inline constexpr Len hug {0,   Unit::hug};
 /// case; `extra` (any CSS prop/value) and `states` (hover / media / …) for the
 /// long tail. Nothing is out of reach.
 struct Style {
+    // The POD prefix is hashed as raw BYTES (hash_style), so padding between
+    // fields must be deterministic. Zero the whole object first, then the member
+    // initializers set the real defaults — padding bytes stay 0 forever, so two
+    // equal Styles always hash identically. (Copy/move keep this: they copy the
+    // padding too, and copies of a zeroed-padding object have zeroed padding.)
+    // Zero the POD prefix. memset through a void* so no compiler warns about a
+    // non-trivially-copyable target — we only touch the trivially-copyable
+    // [0, pod_bytes()) region, never the string/vector members past it.
+    Style(){ void* raw = static_cast<void*>(this); std::memset(raw, 0, offsetof(Style, shadow_spec)); init_defaults(); }
+    // Copy/move must reproduce the POD prefix EXACTLY — padding included — or a
+    // clone would hash differently than its source (the byte-hash reads padding).
+    // A defaulted copy ctor copies members field-by-field and leaves the
+    // destination's padding indeterminate; memcpy the whole prefix instead.
+    Style(const Style& o){ copy_pod(o); shadow_spec=o.shadow_spec; transition_spec=o.transition_spec; extra=o.extra; states=o.states; }
+    Style(Style&& o) noexcept { copy_pod(o); shadow_spec=std::move(o.shadow_spec); transition_spec=std::move(o.transition_spec); extra=std::move(o.extra); states=std::move(o.states); }
+    Style& operator=(const Style& o){ if(this!=&o){ copy_pod(o); shadow_spec=o.shadow_spec; transition_spec=o.transition_spec; extra=o.extra; states=o.states; } return *this; }
+    Style& operator=(Style&& o) noexcept { if(this!=&o){ copy_pod(o); shadow_spec=std::move(o.shadow_spec); transition_spec=std::move(o.transition_spec); extra=std::move(o.extra); states=std::move(o.states); } return *this; }
+
     // colour & text
     bool has_fg=false;      std::uint32_t fg=0;
     bool has_bg=false;      std::uint32_t bg=0;
@@ -136,18 +154,46 @@ struct Style {
     bool has_z=false; int z=0;
 
     // effects
-    bool has_shadow=false;   std::string shadow_spec;   // "" = default nice shadow
+    bool has_shadow=false;
     bool has_opacity=false;  float opacity=1;
     Cursor cursor=Cursor::none;
-    bool has_transition=false; std::string transition_spec;
+    bool has_transition=false;
 
     // stroke (for path) & fill
     bool has_stroke_w=false; float stroke_w=2;
+
+    // ── END OF THE TRIVIALLY-COPYABLE POD PREFIX ──────────────────────────
+    // Everything above is bytes we hash in ONE pass (hash_style). The members
+    // below hold heap data and are hashed/compared individually. Keep this split
+    // intact: pod_end() marks the boundary.
+    std::string shadow_spec;      // "" = default nice shadow
+    std::string transition_spec;
 
     // the universal channel — ANY css, so nothing is ever off-limits
     std::vector<std::pair<std::string,std::string>> extra;   // (prop, value)
     // stateful/responsive overlays: (selector-or-media, css-body-of-a-Style)
     std::vector<std::pair<std::string, std::shared_ptr<Style>>> states;
+
+    /// The byte offset where the POD prefix ends (the first non-trivial member).
+    /// The whole [0, pod_bytes()) range is trivially copyable and hashed as raw
+    /// bytes in one FNV pass — 45 field-by-field mix() calls collapsed to one
+    /// tight loop, the dominant per-node hashing cost.
+    static constexpr std::size_t pod_bytes(){ return offsetof(Style, shadow_spec); }
+
+    // Re-apply the non-zero member defaults after the ctor's memset. Only the
+    // fields whose default isn't 0/false/none need listing here.
+    void init_defaults(){
+        opacity = 1; grow = 0; shrink = 1; stroke_w = 2;
+        // (all enums default to their 0 == "none" value; all Len/bool default to
+        // {0,px}/false, which is already zeroed — nothing else to restore.)
+    }
+    // Byte-copy the whole POD prefix INCLUDING padding, so a copy hashes exactly
+    // like its source. void* to keep the compiler quiet about the wider type.
+    void copy_pod(const Style& o){
+        void* dst = static_cast<void*>(this);
+        const void* src = static_cast<const void*>(&o);
+        std::memcpy(dst, src, offsetof(Style, shadow_spec));
+    }
 
     bool operator==(const Style& o) const {
         // compare everything except `states` deeply enough for diffing; states
@@ -296,16 +342,19 @@ inline std::uint64_t mix(std::uint64_t h, float f){ std::uint32_t b; std::memcpy
 inline std::uint64_t mix(std::uint64_t h, const Len& l){ return mix(mix(h,l.value),l.unit); }
 
 inline std::uint64_t hash_style(std::uint64_t h, const Style& s){
-    h=mix(h,s.has_fg);h=mix(h,(std::uint64_t)s.fg);h=mix(h,s.has_bg);h=mix(h,(std::uint64_t)s.bg);
-    h=mix(h,s.font_size);h=mix(h,s.weight);h=mix(h,s.italic);h=mix(h,s.underline);h=mix(h,s.strike);
-    h=mix(h,s.text_align);h=mix(h,s.line_height);h=mix(h,s.letter_spacing);
-    h=mix(h,s.pad);h=mix(h,s.pad_x);h=mix(h,s.pad_y);h=mix(h,s.margin);h=mix(h,s.margin_x);h=mix(h,s.margin_y);
-    h=mix(h,s.w);h=mix(h,s.h);h=mix(h,s.min_w);h=mix(h,s.max_w);h=mix(h,s.min_h);h=mix(h,s.max_h);h=mix(h,s.radius);
-    h=mix(h,s.has_border);h=mix(h,s.border_w);h=mix(h,(std::uint64_t)s.border_c);
-    h=mix(h,s.flow);h=mix(h,s.justify);h=mix(h,s.align);h=mix(h,s.wrap);h=mix(h,s.gap);h=mix(h,s.grow);h=mix(h,s.shrink);
-    h=mix(h,s.pos);h=mix(h,s.top);h=mix(h,s.right);h=mix(h,s.bottom);h=mix(h,s.left);h=mix(h,(std::uint64_t)s.z);
-    h=mix(h,s.has_shadow);h=mix(h,s.shadow_spec);h=mix(h,s.opacity);h=mix(h,s.cursor);h=mix(h,s.transition_spec);
-    h=mix(h,s.stroke_w);
+    // Hash the trivially-copyable POD prefix (~280 bytes of Len/bool/enum/uint/
+    // float) 8 bytes at a time — one multiply per 64-bit word, not per byte and
+    // not per field. This is the fast path that dominated per-node hashing.
+    const unsigned char* base = reinterpret_cast<const unsigned char*>(&s);
+    constexpr std::size_t N = Style::pod_bytes();
+    std::size_t i = 0;
+    for (; i + 8 <= N; i += 8){
+        std::uint64_t w; std::memcpy(&w, base + i, 8);
+        h ^= w; h *= 1099511628211ull;
+    }
+    for (; i < N; ++i){ h ^= base[i]; h *= 1099511628211ull; }   // tail < 8 bytes
+    // The heap-backed members are hashed by content.
+    h=mix(h,s.shadow_spec); h=mix(h,s.transition_spec);
     for(auto&[k,v]:s.extra){h=mix(h,k);h=mix(h,v);}
     for(auto&[sel,st]:s.states){h=mix(h,sel);h=hash_style(h,*st);}
     return h;
