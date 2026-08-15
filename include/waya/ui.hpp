@@ -23,4 +23,7 @@
 #include "ui/async.hpp"
 #include "ui/toast.hpp"
 #include "ui/optimistic.hpp"
+#include "ui/form.hpp"
+#include "ui/keymap.hpp"
+#include "ui/virtual_list.hpp"
 #include "ui/patterns.hpp"

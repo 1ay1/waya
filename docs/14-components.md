@@ -230,6 +230,57 @@ sparkline(cpu_history) | stroke(0x22d3ee, 2) | w(120) | h(32)
 bars({4, 9, 2, 7}) | fg(0x8b5cf6)
 ```
 
+### Keyboard shortcuts — `Keymap`
+
+`on_shortcut("mod+k", Open{})` wires one shortcut on one node — but scatter them
+across the view and there's no single source of truth, so you can't render a
+help overlay or spot collisions. `Keymap<Msg>` makes the shortcut set one value:
+declare bindings once, arm them all with `wire()`, and generate a help sheet
+from the same data.
+
+```cpp
+static Keymap<Msg> keys(){
+    return Keymap<Msg>{}
+        .bind("mod+k", "Command palette", OpenPalette{})
+        .bind("?",     "Toggle help",     ToggleHelp{})
+        .bind("g h",   "Go home",         Nav{"/"},   "Navigation")
+        .bind("g p",   "Go to profile",   Nav{"/me"}, "Navigation");
+}
+
+// view: one mod arms every binding; one call renders the grouped cheat-sheet
+app_shell | wire(keys())
+m.help_open ? modal(shortcut_help(keys()), CloseHelp{}) : nothing()
+```
+
+Because the help view is generated from the keymap, it can never drift from the
+behaviour — add a binding and it appears in the sheet automatically. `"+"` splits
+a chord (`mod+k`), a space splits a sequence (`g h`), each rendered as `kbd` caps.
+
+### Virtualized lists — `virtual_list`
+
+waya rebuilds the whole tree every frame, and the diff makes that cheap — but
+building 100,000 rows still costs 100,000 allocations per frame when the user
+sees ~20. `virtual_list` builds only the visible window plus a small overscan,
+with spacers keeping the scrollbar honest:
+
+```cpp
+struct Model { int scroll_top = 0; std::vector<Row> rows; };
+
+// update: the scroll container reports its scrollTop as the event value
+[&](Scrolled s){ m.scroll_top = std::atoi(s.value.c_str()); return {m, Cmd::none()}; }
+
+// view: a fixed-height scroll box; virtual_list windows the rows
+scroll_window(360, Scrolled{},                      // 360px tall, reports scroll
+    virtual_list(m.scroll_top, 360, /*row_h=*/48, (int)m.rows.size(),
+        [&](int i){ return row_view(m.rows[i]); }))
+```
+
+A million-row table costs ~30 built nodes per frame, not a million. Rows must be
+`row_h` tall for the math to line up (the helper sets it). The windowing math
+(`virtual_range`) is pure and unit-testable; every row is keyed by index so the
+diff reuses DOM as you scroll, and the client throttles scroll reporting to one
+frame.
+
 ### Forms
 
 `field(label, control, hint)` labels any control; `input_skin()` themes a raw
@@ -243,7 +294,36 @@ text_field("Email", m.email, SetEmail{}, "you@example.com", /*hint*/"",
            /*type*/"email", /*error*/ m.email_error)   // empty error = valid
 ```
 
-On submit, `FormData` (core) turns the gathered `"a=1&b=2"` string into a
+For a WHOLE form — validity gating submit, per-field errors, and "don't nag
+before they type" — hold a `Form<>` in your model. It's one value over your
+fields:
+
+```cpp
+struct Model { Form<> signup; };
+
+// update:
+[&](Edit e) { m.signup.set(e.field, e.value); return {m, Cmd::none()}; }
+[&](Submit) {
+    m.signup.touch_all();                          // reveal every error at once
+    m.signup.validate({                            // rules are pure data
+        {"email", rules::email("email")},
+        {"pw",    rules::min_len("pw", 8)},
+    });
+    if (!m.signup.valid()) return {m, Cmd::none()};
+    return {m, postSignup(m.signup.values())};
+}
+
+// view: error_for() only shows once the field is TOUCHED
+email_field("Email", f.get("email"), Edit{"email"}, "", "", f.error_for("email"));
+button("Sign up", Submit{}) | when_(!f.valid(), disabled());
+```
+
+A rule is `Form<>::Rule` = `std::string(const Form&)` (empty = ok), so you can
+unit-test validation with no UI. Ready-made rules: `required`, `email`,
+`min_len`, `matches` (password confirmation). Errors only render for touched
+fields — `touch_all()` on submit reveals them all.
+
+On submit of a NATIVE `<form>`, `FormData` (core) turns the gathered `"a=1&b=2"` string into a
 keyed lookup so you read fields by name:
 
 ```cpp

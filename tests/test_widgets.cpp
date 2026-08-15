@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <functional>
+#include <variant>
 
 using namespace waya::surface;
 using namespace waya::ui;
@@ -247,6 +249,72 @@ int main() {
         check(has(s, "aria-expanded=\"true\"") && has(s, "aria-pressed=\"false\""), "aria state mods");
         check(has(s, "aria-selected=\"true\"") && has(s, "aria-current=\"page\""), "aria selected/current");
         check(has(html_of(box() | aria_hidden), "aria-hidden=\"true\""), "aria_hidden hides decorative nodes");
+    }
+
+    // ── Form<>: whole-form validity + touched-gated errors, as one value ────
+    {
+        Form<> f;
+        f.set("email", "bad"); f.set("pw", "short");
+        f.validate({ {"email", rules::email("email")}, {"pw", rules::min_len("pw", 8)} });
+        check(!f.valid() && f.error_count()==2, "invalid form: both fields error");
+        check(f.error_for("email")=="Enter a valid email", "email rule fires; touched so it shows");
+        check(f.error_for("pw").find("8")!=std::string::npos, "min_len message mentions the length");
+        // touched-gating: a valid-so-far but UNTOUCHED field shows no error
+        Form<> g; g.preset("email", "");        // preset does not touch
+        g.validate({ {"email", rules::required("email")} });
+        check(!g.valid(), "required rule marks the empty field invalid");
+        check(g.error_for("email").empty(), "but an untouched field shows no error (don't nag early)");
+        g.touch_all();
+        check(g.error_for("email")=="Required", "touch_all() reveals every error on submit");
+        // a genuinely valid form
+        Form<> ok; ok.set("email", "a@b.com");
+        ok.validate({ {"email", rules::email("email")} });
+        check(ok.valid() && ok.error_for("email").empty(), "a valid form has no errors");
+        // matches rule (password confirmation)
+        Form<> m2; m2.set("p","secret"); m2.set("c","nope");
+        m2.validate({ {"c", rules::matches("c","p")} });
+        check(!m2.valid(), "matches rule catches a mismatch");
+        check((Form<>{} == Form<>{}), "Form has value equality");
+    }
+
+    // ── Keymap<Msg>: shortcuts as inspectable data + a generated help view ──
+    {
+        struct OpenP{ bool operator==(const OpenP&)const=default; };
+        struct HelpM{ bool operator==(const HelpM&)const=default; };
+        struct GoH{ bool operator==(const GoH&)const=default; };
+        using KMsg = std::variant<OpenP, HelpM, GoH>;
+        auto km = Keymap<KMsg>{}
+            .bind("mod+k", "Command palette", OpenP{})
+            .bind("?", "Toggle help", HelpM{})
+            .bind("g h", "Go home", GoH{}, "Navigation");
+        check(km.size()==3, "keymap holds all bindings");
+        detail::begin_msg_capture();
+        check(has(html_of(box() | wire(km)), "data-ev-shortcut"), "wire() arms every binding as a shortcut");
+        auto help = html_of(shortcut_help(km));
+        check(has(help, "Command palette") && has(help, "Go home"), "help sheet lists every binding");
+        check(has(help, "Navigation"), "help sheet renders group headings");
+        check(has(help, "role=\"dialog\""), "help sheet is a labelled dialog");
+    }
+
+    // ── virtual_list: build only the visible window of a huge list ──────────
+    {
+        // 10k rows, 40px each, 360px viewport scrolled to 1000px
+        auto r = virtual_range(/*scroll*/1000, /*vh*/360, /*row_h*/40, /*total*/10000, /*overscan*/4);
+        check(r.first == 21, "window starts overscan-above the first visible row");
+        check(r.count() < 40 && r.count() > 10, "builds ~20 rows, not 10000");
+        check(r.top_pad == r.first * 40, "top spacer reserves the scrolled-past height");
+        check(r.top_pad + r.count()*40 + r.bottom_pad == 10000*40, "spacers + rows == full list height");
+        // edge cases
+        check(virtual_range(0, 360, 40, 5, 4).count() == 5, "a short list renders entirely");
+        check(virtual_range(0, 360, 0, 100, 4).count() == 0, "zero row height is a safe no-op");
+        // the node actually built holds only the window + spacers
+        int built = 0;
+        auto vl = virtual_list(1000, 360, 40, 10000, [](int i){ return text(std::to_string(i)); });
+        std::function<void(const NodeRef&)> cnt = [&](const NodeRef& n){
+            if(!n) return; if(n->kind==Kind::text) built++; for(auto& k : n->kids) cnt(k); };
+        cnt(vl);
+        check(built == r.count(), "virtual_list builds exactly the windowed rows");
+        check(has(html_of(scroll_window(360, 0, vl)), "data-ev-scroll"), "scroll_window reports its offset");
     }
 
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
