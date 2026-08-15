@@ -1272,6 +1272,22 @@ struct FormData {
 inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
 /// `on_drop(fn)` on a drop target — fn maps the dropped payload to a Msg.
 template <typename Fn> Mod on_drop(Fn fn){ return on_ev("drop", std::move(fn)); }
+
+// ── appear (lazy load / infinite scroll) ────────────────────────────
+/// `on_appear(LoadMore{})` — fire ONCE when this node first scrolls into view.
+/// An element becoming visible is a user event (they scrolled to it), exactly
+/// like a keypress — so it's a Msg, not client code. The canonical patterns:
+///
+///   // infinite scroll: a sentinel row at the end of the list
+///   rows.push_back(box() | h(1) | on_appear(LoadMore{}));
+///
+///   // lazy section: don't compute the heavy chart until it's seen
+///   m.chart_seen ? heavy_chart(m) : box() | h(240) | on_appear(ChartSeen{})
+///
+/// Fires once per DOM lifetime (the client unobserves after firing); if the
+/// diff replaces the node, a fresh element re-arms — which is exactly right
+/// for "next page" sentinels that move.
+template <typename Msg> Mod on_appear(Msg m){ return on("appear", std::move(m)); }
 /// `drop_arg(id)` — tag a drop target with WHERE it is (e.g. a column id). The
 /// client delivers `"<dragged-payload>:<id>"` to this node's on_drop mapper, so
 /// the app learns both what was dropped AND where. Pair with `on_drop(fn)`.

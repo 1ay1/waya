@@ -136,7 +136,17 @@ inline std::string client(int port) {
     "function flush(){raf=0;var frames=q;q=[];var willMove=structural(frames);var prev=willMove?flipSnapshot():null;"
     "for(var fi=0;fi<frames.length;fi++){var m=frames[fi];if(m.css)addCss(m.css);"
     "for(var i=0;i<m.ops.length;i++){apply(m.ops[i]);}}"
-    "if(prev&&Object.keys(prev).length)flipPlay(prev);}"
+    "if(prev&&Object.keys(prev).length)flipPlay(prev);armAppear();}"
+    // ── appear: one IntersectionObserver serves every [data-ev-appear] ──────
+    // Fires the wired msg ONCE per element (unobserve after firing) and re-arms
+    // new sentinels after every paint. No IO support (very old engines): fire
+    // immediately — correct, just eager.
+    "var _io=window.IntersectionObserver?new IntersectionObserver(function(es){"
+    "for(var i=0;i<es.length;i++){if(!es[i].isIntersecting)continue;var el=es[i].target;"
+    "_io.unobserve(el);el._waSeen=true;var s=el.getAttribute('data-ev-appear');if(s!=null)sendev(s,'');}},{rootMargin:'120px'}):null;"
+    "function armAppear(){var els=document.querySelectorAll('[data-ev-appear]');"
+    "for(var i=0;i<els.length;i++){var el=els[i];if(el._waSeen||el._waArmed)continue;el._waArmed=true;"
+    "if(_io)_io.observe(el);else{el._waSeen=true;var s=el.getAttribute('data-ev-appear');if(s!=null)sendev(s,'');}}}"
     "function paint(m){q.push(m);if(!raf)raf=requestAnimationFrame(flush);}"
     "var ws,started=false;"
     // A stable per-tab session id, kept in sessionStorage so it SURVIVES a
@@ -150,11 +160,23 @@ inline std::string client(int port) {
     "var _wshost=location.host||(location.hostname+':"+std::to_string(port)+"');"
     "ws=new WebSocket(_wsproto+_wshost+'/?r='+encodeURIComponent(location.pathname+location.search)+'&s='+_sid);"
     "ws.binaryType='arraybuffer';"
-    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';_css={};}started=true;route();};"
+    "ws.onopen=function(){if(started){S.textContent='';R.innerHTML='';_css={};}started=true;_envLast='';envReport();hideOff();route();};"
     // Text frames are runtime control messages (navigation, dev hot-reload);
     // binary frames are paints. This keeps one socket doing input, output, effects.
     "ws.onmessage=function(ev){if(typeof ev.data==='string'){ctl(ev.data);return;}paint(readFrame(ev.data));};"
-    "ws.onclose=function(){setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
+    "ws.onclose=function(){offSoon();setTimeout(connect,300);};ws.onerror=function(){try{ws.close()}catch(_){}}}"
+    // ── connection indicator ───────────────────────────────────────
+    // A blip (rebuild, wifi hiccup) shows nothing. Only a SUSTAINED disconnect
+    // (>1.5s) shows a small fixed 'reconnecting' pill — the user learns their
+    // taps aren't landing, the way a dead terminal stops echoing. Removed the
+    // moment the socket is back. Styled inline: independent of the app's CSS.
+    "var _offT=0;"
+    "function offSoon(){if(_offT)return;_offT=setTimeout(function(){var p=document.getElementById('wa-off');"
+    "if(!p){p=document.createElement('div');p.id='wa-off';p.textContent='reconnecting\\u2026';"
+    "p.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483647;background:rgba(15,20,32,.92);color:#fca5a5;'"
+    "+'font:12px/1 ui-sans-serif,system-ui,sans-serif;padding:7px 12px;border-radius:999px;'"
+    "+'border:1px solid rgba(252,165,165,.35);pointer-events:none';document.body.appendChild(p);}},1500);}"
+    "function hideOff(){clearTimeout(_offT);_offT=0;var p=document.getElementById('wa-off');if(p)p.remove();}"
     // control: "@nav|<url>" pushes history + re-routes; "@url|<url>" only syncs
     // the address bar (deep-link) without a route; "@build|<id>" is the dev
     // hot-reload signal — if the server's build id changed since we first
@@ -188,6 +210,22 @@ inline std::string client(int port) {
     "function fbCopy(v){var t=document.createElement('textarea');t.value=v;t.style.position='fixed';t.style.opacity='0';"
     "document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(_){ }t.remove();}"
     "window.addEventListener('popstate',route);"
+    // ── display self-report: the browser's (rows, cols) + SIGWINCH ─────────
+    // "@env|w|h|dark|tz" on connect, on resize (debounced, only when changed),
+    // and when the OS colour scheme flips. The server maps it through
+    // Sub::on_viewport; apps that don't subscribe cost nothing.
+    "var _envLast='';"
+    "function envReport(){if(!ws||ws.readyState!==1)return;"
+    "var d=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'1':'0';"
+    "var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(_){}"
+    "var r=innerWidth+'|'+innerHeight+'|'+d+'|'+tz;"
+    "if(r!==_envLast){_envLast=r;ws.send('@env|'+r);}}"
+    "var _envT=0;window.addEventListener('resize',function(){clearTimeout(_envT);_envT=setTimeout(envReport,200);});"
+    "if(window.matchMedia){try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',envReport);}catch(_){}}"
+    // ── visibility: don't paint a screen nobody is watching ───────────────
+    // @hide parks the session's paints server-side; @show asks for a resync
+    // (one full frame) if anything changed while hidden.
+    "document.addEventListener('visibilitychange',function(){if(ws&&ws.readyState===1)ws.send(document.hidden?'@hide':'@show');});"
     "connect();"
     // ── Modal isolation ──────────────────────────────────────────────────
     // When any [data-modal] is on screen, the layer underneath must be inert:

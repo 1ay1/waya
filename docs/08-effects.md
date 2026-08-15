@@ -217,6 +217,7 @@ static Sub<Msg> subscribe(const Model& m) {
 | `Sub<Msg>::none()` | No subscriptions. |
 | `Sub<Msg>::every(ms, msg)` | Deliver `msg` on a repeating interval (a clock). |
 | `Sub<Msg>::on_route(fn)` | On route change, call `fn(path)` → `Msg`. |
+| `Sub<Msg>::on_viewport(fn)` | On connect / resize / scheme flip, call `fn(Viewport)` → `Msg`. |
 | `Sub<Msg>::on_topic(topic, fn)` | On a broadcast to `topic`, call `fn(payload)` → `Msg`. |
 | `Sub<Msg>::batch(subs…)` | Combine several subscriptions. |
 
@@ -234,6 +235,41 @@ static Sub<Msg> subscribe(const Model& m) {
 Because subscriptions are a function of the model, you *turn effects on and off
 by changing state*. Set `m.running = false` and the clock stops — no timer
 handle to manage.
+
+### `on_viewport` — the display reports itself
+
+A terminal app knows its (rows, cols) and gets SIGWINCH on resize. waya's
+display does the same: the client reports `Viewport{width, height, dark, tz}`
+on connect, on resize (debounced), and when the OS colour scheme flips.
+
+```cpp
+struct Env { Viewport vp; };   // a Msg carrying the report
+
+static Sub<Msg> subscribe(const Model&) {
+    return Sub<Msg>::on_viewport([](Viewport v){ return Env{v}; });
+}
+
+static std::pair<Model,Cmd<Msg>> update(Model m, Msg msg) {
+    // … [&](Env e){
+    //     m.compact = e.vp.phone();      // sidebar → drawer
+    //     m.rows    = e.vp.height / 48;  // page the table by what FITS
+    //     m.theme   = e.vp.dark ? Theme::dark() : Theme::light();
+    // }
+}
+```
+
+This is for layout **decisions** — collapse a sidebar, page a table, thin out
+chart points, pick the theme once. For pure styling, prefer the CSS-side
+responsive mods (`at(Md,…)`, `below(Md,…)`, `on_phone(…)`): they apply without
+a round-trip. `Viewport::phone()/tablet()/desktop()` use the same thresholds as
+those mods, so both views of "phone" always agree. Apps that don't subscribe
+cost nothing.
+
+Two display behaviours come with this, no code needed: while a tab is hidden
+the server **suppresses deltas** (the model stays live; one full frame resyncs
+the display on return — don't write to a screen nobody is watching), and after
+a sustained disconnect (>1.5s) the client shows a small **"reconnecting"** pill
+until the socket returns.
 
 ## Broadcast — multiplayer
 

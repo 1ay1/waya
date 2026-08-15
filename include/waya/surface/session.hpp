@@ -41,6 +41,11 @@ struct Session {
     std::deque<Deliver> queue;         // pending (msg,value) to dispatch
     std::atomic<bool> alive{true};
     std::atomic<bool> quit{false};    // true only on an explicit Cmd::quit (not a drop)
+    /// Display visibility (browser tab hidden/shown). While hidden, deltas are
+    /// pointless — nothing will be seen — so the owner loop skips sending and
+    /// resyncs with ONE full paint on return. Like a terminal on an unfocused
+    /// tty: don't write to a screen nobody is watching.
+    std::atomic<bool> visible{true};
     std::mutex wm;                     // serializes socket writes
     // Running interval subscriptions. Each carries the typed Msg to deliver on
     // tick, keyed for reconciliation by (interval_ms, Msg-token).
@@ -53,6 +58,10 @@ struct Session {
     void push_msg(std::any msg);
     /// Push a route change (value = path).
     void push_route(std::string path);
+    /// Push a display self-report (value = "w|h|dark|tz") from an @env frame.
+    void push_env(std::string report);
+    /// Push a "tab visible again" sync request (repaint if frames were skipped).
+    void push_sync();
     /// Deliver a topic broadcast: the owner loop resolves the on_topic handler.
     void push_topic(std::string topic, std::string payload);
     std::optional<Deliver> pop();

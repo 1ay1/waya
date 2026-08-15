@@ -330,6 +330,40 @@ int main() {
         ::close(sv[0]); ::close(sv[1]);
     }
 
+    // ── Viewport: the display's self-report as data ──────────────────────
+    {
+        Viewport vp{390, 844, true, "America/New_York"};
+        CHECK(vp.phone() && !vp.tablet() && !vp.desktop());
+        CHECK((Viewport{800, 600}).tablet());
+        CHECK((Viewport{1440, 900}).desktop());
+        CHECK((vp == Viewport{390, 844, true, "America/New_York"}));
+        CHECK(!(vp == Viewport{391, 844, true, "America/New_York"}));
+
+        // Sub::on_viewport is collectable (from a batch) and maps functorially
+        auto s1 = Sub<int>::batch({ Sub<int>::every(std::chrono::milliseconds(16), Tick),
+                                    Sub<int>::on_viewport([](Viewport v){ return v.width; }) });
+        auto* vh = s1.viewport();
+        CHECK(vh != nullptr);
+        CHECK(vh->on(Viewport{1024, 768}) == 1024);
+        auto mapped = s1.map([](int m){ return (long)m + 1; });
+        auto* mvh = mapped.viewport();
+        CHECK(mvh != nullptr && mvh->on(Viewport{500, 500}) == 501L);
+        CHECK(Sub<int>::every(std::chrono::milliseconds(16), Tick).viewport() == nullptr);
+    }
+
+    // ── owner-loop plumbing: Deliver env/sync flags round-trip the queue ────
+    {
+        auto s = std::make_shared<detail::Session>(); s->conn = -1;
+        s->push_env("1440|900|1|Europe/Berlin");
+        s->push_sync();
+        auto d1 = s->pop();
+        CHECK(d1 && d1->is_env && d1->value == "1440|900|1|Europe/Berlin");
+        auto d2 = s->pop();
+        CHECK(d2 && d2->is_sync && !d2->is_env);
+        CHECK(s->visible.load());        // sessions start visible
+        s->alive = false;
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;

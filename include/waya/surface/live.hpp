@@ -393,6 +393,7 @@ void run_ws_session(int conn, std::string req_str, int port,
         detail::begin_msg_capture();
         detail::memo_begin_frame();
         NodeRef prev = detail::safe_view<P>(model);
+        bool skipped_paint = false;   // a delta was withheld while the tab was hidden
 
         // First frame: a full paint. Same shape as any later frame — a
         // reconnecting client is resynced by another full paint.
@@ -475,6 +476,15 @@ void run_ws_session(int conn, std::string req_str, int port,
                     if (raw.rfind("@route|", 0) == 0) {
                         std::string path = raw.substr(7);
                         if (path.size() <= kMaxValue) s->push_route(std::move(path));
+                    } else if (raw.rfind("@env|", 0) == 0) {
+                        // Display self-report "w|h|dark|tz" — the SIGWINCH path.
+                        std::string rep = raw.substr(5);
+                        if (rep.size() <= 256) s->push_env(std::move(rep));
+                    } else if (raw == "@hide") {
+                        s->visible = false;         // stop shipping deltas
+                    } else if (raw == "@show") {
+                        s->visible = true;
+                        s->push_sync();             // repaint if we skipped any
                     } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e' || raw[0]=='f')) {
                         // i/c: input/change value; e: a generic wired event
                         // (keyboard/focus/submit/drop); f: an uploaded file
@@ -510,7 +520,33 @@ void run_ws_session(int conn, std::string req_str, int port,
             std::pair<Model, Cmd<Msg>> r;
             bool ok = true;
             bool handled = true;
-            if (d->is_route) {
+            if (d->is_sync) {
+                // Tab visible again. If any paint was suppressed while hidden,
+                // resync the display with ONE full frame — cheaper than the
+                // pile of deltas it replaces, and always correct.
+                if (skipped_paint) {
+                    s->send_binary(ws::encode_binary(encode_full(*prev)));
+                    skipped_paint = false;
+                }
+                continue;
+            }
+            if (d->is_env) {
+                // Display self-report "w|h|dark|tz" → Sub::on_viewport → Msg.
+                auto sub = detail::subs_of<P, Model, Msg>(model);
+                auto* vh = sub.viewport();
+                if (!vh) continue;                       // app doesn't care: drop
+                Viewport vp;
+                {   // parse the four '|'-separated fields (tz may be empty)
+                    const std::string& v = d->value;
+                    auto b1=v.find('|'); auto b2=(b1==std::string::npos)?b1:v.find('|',b1+1);
+                    auto b3=(b2==std::string::npos)?b2:v.find('|',b2+1);
+                    if (b1!=std::string::npos) vp.width  = std::atoi(v.substr(0,b1).c_str());
+                    if (b2!=std::string::npos) vp.height = std::atoi(v.substr(b1+1,b2-b1-1).c_str());
+                    if (b3!=std::string::npos){ vp.dark = v[b2+1]=='1'; vp.tz = v.substr(b3+1); }
+                }
+                if (vp.width <= 0 || vp.height <= 0) continue;   // malformed: drop
+                r = detail::safe_dispatch<P>(std::move(model), vh->on(vp), d->value, ok);
+            } else if (d->is_route) {
                 // Route change: on_route maps the path to a Msg; the path also
                 // rides as the update value (3-arg update).
                 auto sub = detail::subs_of<P, Model, Msg>(model);
@@ -545,8 +581,14 @@ void run_ws_session(int conn, std::string req_str, int port,
             NodeRef next = detail::safe_view<P>(model);
             Patch patch = diff(prev, next);
             prev = next;
-            if (!patch.empty())
-                s->send_binary(ws::encode_binary(encode_delta(patch)));
+            if (!patch.empty()) {
+                // Suppressed while the tab is hidden: nothing would be seen, so
+                // don't spend bytes. `prev` still advances — the model is live;
+                // only the DISPLAY is stale — and @show resyncs with one full
+                // frame. (Like not writing to an unfocused tty.)
+                if (s->visible) s->send_binary(ws::encode_binary(encode_delta(patch)));
+                else skipped_paint = true;
+            }
 
             detail::reconcile_subs<Msg>(s, detail::subs_of<P, Model, Msg>(model));
             if (!s->alive) break;   // Cmd::quit or a dead socket: stop the loop.

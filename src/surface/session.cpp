@@ -42,6 +42,14 @@ void Session::push_route(std::string path) {
     { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_route=true; d.value=std::move(path); queue.push_back(std::move(d)); }
     qcv.notify_one();
 }
+void Session::push_env(std::string report) {
+    { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_env=true; d.value=std::move(report); queue.push_back(std::move(d)); }
+    qcv.notify_one();
+}
+void Session::push_sync() {
+    { std::lock_guard<std::mutex> l(qm); Deliver d; d.is_sync=true; queue.push_back(std::move(d)); }
+    qcv.notify_one();
+}
 void Session::push_topic(std::string topic, std::string payload) {
     { std::lock_guard<std::mutex> l(qm); Deliver d; d.topic=std::move(topic); d.value=std::move(payload); queue.push_back(std::move(d)); }
     qcv.notify_one();

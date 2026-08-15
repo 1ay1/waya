@@ -438,6 +438,21 @@ int main() {
         CHECK(FileData::parse("aGk=").content == "hi"); // bare base64: content only
     }
 
+    // ── on_appear: a sentinel wires the appear event (lazy load primitive) ───
+    {
+        detail::begin_msg_capture();
+        auto sentinel = box() | h(1) | on_appear(Save);
+        auto sh = html_of(sentinel);
+        CHECK(has(sh, "data-ev-appear="));                 // the client IO arms this
+        // it registers a real resolvable token like any other event
+        int tok = sentinel->events.at(0).msg;
+        auto m = detail::resolve_msg<decltype(Save)>(tok, "");
+        CHECK(m && *m == Save);
+        // appear participates in the node hash: adding it is a diffable change
+        auto plain = box() | h(1);
+        CHECK(plain->hash != sentinel->hash);
+    }
+
     std::cout << "test_input: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

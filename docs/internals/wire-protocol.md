@@ -28,6 +28,14 @@ Special control messages travel as text frames prefixed with `@`:
 
 - `@route|<path>` — a navigation occurred; the runtime routes it through the
   app's `on_route` subscription.
+- `@env|<w>|<h>|<dark>|<tz>` — the display's self-report (the browser's
+  SIGWINCH): sent on connect, on debounced resize when something changed, and
+  on OS colour-scheme flips. Mapped through `Sub::on_viewport`; dropped
+  server-side if the app doesn't subscribe.
+- `@hide` / `@show` — tab visibility. While hidden the server suppresses
+  deltas (the model keeps running; nothing is painted to a screen nobody is
+  watching); on `@show` one full frame resyncs the display iff anything was
+  suppressed.
 
 A picked file (from `file_input` + `on_file`) rides up as a text frame
 `f<token>|<name>|<mime>|<base64>` — read client-side with `FileReader`, capped

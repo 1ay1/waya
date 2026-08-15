@@ -238,6 +238,7 @@ constexpr Len hug;    // content-sized (auto)
 | `on_file(Fn: FileData→Msg)` | Picked file, delivered as decoded bytes (`name`/`mime`/`content`, ≤8 MB). |
 | `accept(std::string)` / `multiple()` | Restrict the picker / allow several files. |
 | `anchor(std::string id)` | Stable id: `#deep-link` + `Cmd::scroll_to`/`focus` target. |
+| `on_appear(Msg)` | Fires ONCE when the node first scrolls into view (infinite scroll / lazy load). |
 | `on(std::string event, Msg, std::string arg={})` | Any DOM event → fixed message. |
 | `on_ev(std::string event, Fn, std::string arg={})` | Any DOM event → mapped message. |
 | `stop()` | Stop click propagation to an outer `tap`. |
@@ -399,6 +400,7 @@ Make `view()` O(changed) for large or high-frequency screens. See
 | `Sub<Msg>::none()` | No subscriptions. |
 | `Sub<Msg>::every(long ms, Msg)` | Repeating timer. |
 | `Sub<Msg>::on_route(std::function<Msg(std::string)>)` | Route-change → message. |
+| `Sub<Msg>::on_viewport(std::function<Msg(Viewport)>)` | Display report (size / dark / tz) → message; on connect, resize, scheme flip. |
 | `Sub<Msg>::on_topic(std::string topic, std::function<Msg(std::string)>)` | Broadcast → message. |
 | `Sub<Msg>::batch(subs… \| vector)` | Combine subscriptions. |
 
