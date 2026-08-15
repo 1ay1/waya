@@ -39,12 +39,16 @@ inline void install_theme() {
         "--on-accent:#ffffff;--code-bg:#0d1117;"
         "--hero-glow-1:rgba(9,105,218,0.10);--hero-glow-2:rgba(130,80,223,0.06);"
         "--nav-bg:rgba(255,255,255,0.82);--matrix-fade:rgba(255,255,255,0.12)}"
-        // ── base element styles (from globals.css) ──
+        // base element styles (from globals.css). NOTE: waya's shell paints an
+        // opaque html,body{background:#0d1117} in its own <style>; we set the bg
+        // on <html> only and make <body> transparent so body::before's hero glow
+        // (z-index:-1) is actually visible instead of being hidden under an
+        // opaque body background.
         "*{box-sizing:border-box}"
-        "html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav-h) + 16px)}"
-        "body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;"
+        "html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav-h) + 16px);background:var(--bg)}"
+        "body{margin:0;background:transparent;color:var(--text);font-family:var(--sans);font-size:16px;"
         "line-height:1.7;letter-spacing:-.011em;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;"
-        "overflow-x:hidden;transition:background .3s ease,color .3s ease}"
+        "overflow-x:hidden;transition:color .3s ease}"
         "body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;"
         "background:radial-gradient(1000px 560px at 84% -12%,var(--hero-glow-1),transparent 62%),"
         "radial-gradient(720px 460px at 6% -4%,var(--hero-glow-2),transparent 58%)}"
