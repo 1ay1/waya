@@ -238,8 +238,8 @@ NodeRef home(std::string install_cmd, CopyMsg copy_msg) {
         box(
             markup("<p class=\"install-kicker\">Install in one line</p>"),
             copy_row(install_cmd, copy_msg, /*typed=*/true),
-            markup("<p class=\"install-note\">Works on Linux, macOS &amp; Windows \xc2\xb7 x86_64 &amp; aarch64. "
-                   "Or grab a <code>release binary</code>.</p>")
+            markup("<p class=\"install-note\">No Node, no Python, no <code>npm install</code> \xe2\x80\x94 "
+                   "just a single 13\xc2\xa0MB static binary.</p>")
         ) | add_class("wrap install-inner")
     ) | as("section") | add_class("install-band");
 

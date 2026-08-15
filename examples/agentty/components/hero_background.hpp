@@ -75,46 +75,43 @@ inline Mod matrix_rain() {
     return client_effect("agentty-rain", js);
 }
 
-/// `agentty::hero_background(accent)` — the full four-layer backdrop, positioned
-/// absolute to fill its (positioned) parent. Matches hero-background.css exactly.
-inline NodeRef hero_background(std::uint32_t accent = 0x58a6ff) {
-    assets().keyframes("agentty-hero-glow",
-        "from{transform:translate(0,0) scale(1);opacity:.8}"
-        "to{transform:translate(120px,60px) scale(1.12);opacity:1}");
-    // .hero-bg-canvas — the source's own class (position/size/opacity)
-    assets().css(".hero-bg-canvas{position:absolute;inset:0;width:100%;height:100%;opacity:0.5}"
-                 "@media (max-width:640px){.hero-bg-canvas{opacity:0.32}}");
+/// `agentty::hero_background()` — the full four-layer backdrop, 1:1 with
+/// hero-background.css: .hero-bg wrapper masking .hero-bg-canvas (rain) +
+/// .hero-bg-grid (blueprint lattice) + .hero-bg-glow (drifting brand glow) +
+/// .hero-bg-scan (CRT scanlines).
+inline NodeRef hero_background(std::uint32_t /*accent*/ = 0x58a6ff) {
+    // The real hero-background.css, verbatim (fade extended 62%→82% so the rain
+    // edge is fully gone before the section boundary — the only deviation).
+    assets().css(
+        ".hero-bg{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none;"
+        "-webkit-mask-image:linear-gradient(180deg,#000 0%,#000 22%,transparent 82%);"
+        "mask-image:linear-gradient(180deg,#000 0%,#000 22%,transparent 82%)}"
+        ".hero-bg-canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.5}"
+        ".hero-bg-grid{position:absolute;inset:-2px;"
+        "background-image:linear-gradient(rgba(88,166,255,.045) 1px,transparent 1px),"
+        "linear-gradient(90deg,rgba(88,166,255,.045) 1px,transparent 1px);background-size:44px 44px;"
+        "-webkit-mask-image:radial-gradient(900px 520px at 78% 4%,#000,transparent 72%);"
+        "mask-image:radial-gradient(900px 520px at 78% 4%,#000,transparent 72%)}"
+        ".hero-bg-glow{position:absolute;width:720px;height:720px;top:-260px;left:8%;"
+        "background:radial-gradient(circle,rgba(88,166,255,.16),transparent 62%);filter:blur(8px);"
+        "will-change:transform,opacity;transform:translateZ(0);animation:hero-glow-drift 14s ease-in-out infinite alternate}"
+        "@keyframes hero-glow-drift{from{transform:translate(0,0) scale(1);opacity:.8}"
+        "to{transform:translate(120px,60px) scale(1.12);opacity:1}}"
+        ".hero-bg-scan{position:absolute;inset:0;background:repeating-linear-gradient(180deg,"
+        "rgba(255,255,255,.015) 0px,rgba(255,255,255,.015) 1px,transparent 1px,transparent 3px);mix-blend-mode:overlay}"
+        "@media (prefers-reduced-motion:reduce){.hero-bg-glow{animation:none}}"
+        "@media (max-width:640px){.hero-bg-canvas{opacity:.32}}");
 
-    auto grid = box() | absolute() | detail::raw_css("inset", "-2px")
-        | detail::raw_css("background-image",
-            "linear-gradient(" + detail::rgba_hex(accent, 0.045f) + " 1px, transparent 1px),"
-            "linear-gradient(90deg," + detail::rgba_hex(accent, 0.045f) + " 1px, transparent 1px)")
-        | detail::raw_css("background-size", "44px 44px")
-        | detail::raw_css("mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
-        | detail::raw_css("-webkit-mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
-
-    // rain lives on its OWN full-size layer; the client_effect appends the canvas.
-    auto rain = box() | absolute() | detail::raw_css("inset", "0") | no_pointer
-        | matrix_rain();
-
-    auto glow = box() | absolute()
-        | detail::raw_css("width", "720px") | detail::raw_css("height", "720px")
-        | detail::raw_css("top", "-260px") | detail::raw_css("left", "8%")
-        | detail::raw_css("background", "radial-gradient(circle," + detail::rgba_hex(accent, 0.16f) + ", transparent 62%)")
-        | detail::raw_css("filter", "blur(8px)")
-        | detail::raw_css("will-change", "transform, opacity")
-        | detail::raw_css("animation", "agentty-hero-glow 12s ease-in-out infinite alternate");
-
-    auto scan = box() | absolute() | detail::raw_css("inset", "0")
-        | detail::raw_css("background",
-            "repeating-linear-gradient(180deg, rgba(255,255,255,.015) 0px, rgba(255,255,255,.015) 1px, transparent 1px, transparent 3px)")
-        | detail::raw_css("mix-blend-mode", "overlay");
-
-    return box(rain, grid, glow, scan)
-        | absolute() | detail::raw_css("inset", "0") | z(0)
-        | detail::raw_css("overflow", "hidden") | no_pointer
-        | detail::raw_css("mask-image", "linear-gradient(180deg,#000 0%,#000 22%,transparent 82%)")
-        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,#000 0%,#000 22%,transparent 82%)");
+    // .hero-bg > canvas(rain, appended by the effect) + grid + glow + scan
+    auto rain = box() | add_class("hero-bg-rain-host") | matrix_rain();
+    auto grid = box() | add_class("hero-bg-grid");
+    auto glow = box() | add_class("hero-bg-glow");
+    auto scan = box() | add_class("hero-bg-scan");
+    auto bg = box(rain, grid, glow, scan);
+    bg->attrs.emplace_back("class", "hero-bg");
+    bg->attrs.emplace_back("aria-hidden", "true");
+    finalize(*bg);
+    return bg;
 }
 
 } // namespace agentty
