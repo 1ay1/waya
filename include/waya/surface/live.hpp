@@ -196,6 +196,22 @@ void perform(const std::shared_ptr<Session>& s, const Cmd<Msg>& cmd) {
             s->send_text((n.replace ? "@rep|" : "@nav|") + n.url);
         },
         [&](const typename Cmd<Msg>::PushUrl& p) { s->send_text("@url|" + p.url); },
+        [&](const typename Cmd<Msg>::SetTitle& t) { s->send_text("@title|" + t.text); },
+        [&](const typename Cmd<Msg>::ScrollTo& sc) {
+            s->send_text(std::string("@scroll|") + (sc.smooth ? "1|" : "0|") + sc.target);
+        },
+        [&](const typename Cmd<Msg>::Focus& fo) {
+            s->send_text(fo.off ? std::string("@blur|") : "@focus|" + fo.target);
+        },
+        [&](const typename Cmd<Msg>::Copy& c) { s->send_text("@copy|" + c.text); },
+        [&](const typename Cmd<Msg>::Download& d) {
+            // '|' is the frame separator for filename/mime (the payload itself is
+            // base64, which never contains '|'); neutralise it in the two names.
+            std::string fn = d.filename, mi = d.mime;
+            for (char& ch : fn) if (ch=='|') ch = '_';
+            for (char& ch : mi) if (ch=='|') ch = '_';
+            s->send_text("@dl|" + fn + "|" + mi + "|" + ws::detail::base64(d.data));
+        },
         [&](const typename Cmd<Msg>::Broadcast& b) {
             // Fan out to every session on the topic (this one included). Each
             // receiver maps the payload through its own Sub::on_topic.
@@ -459,9 +475,10 @@ void run_ws_session(int conn, std::string req_str, int port,
                     if (raw.rfind("@route|", 0) == 0) {
                         std::string path = raw.substr(7);
                         if (path.size() <= kMaxValue) s->push_route(std::move(path));
-                    } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e')) {
+                    } else if (!raw.empty() && (raw[0]=='i' || raw[0]=='c' || raw[0]=='e' || raw[0]=='f')) {
                         // i/c: input/change value; e: a generic wired event
-                        // (keyboard/focus/submit/drop) — all carry "<token>|<payload>".
+                        // (keyboard/focus/submit/drop); f: an uploaded file
+                        // ("<token>|<name>|<mime>|<base64>") — all "<token>|<payload>".
                         auto bar = raw.find('|');
                         if (bar == std::string::npos) continue;         // malformed: no separator
                         // Checked token parse: a non-numeric token is dropped,
@@ -470,7 +487,9 @@ void run_ws_session(int conn, std::string req_str, int port,
                         long tok = std::strtol(raw.c_str() + 1, &end, 10);
                         if (!end || end != raw.c_str() + bar) continue; // token wasn't all digits
                         std::string val = raw.substr(bar + 1);
-                        if (val.size() > kMaxValue) continue;           // oversized value: drop
+                        // Files legitimately exceed the keystroke cap; they're
+                        // still bounded by the WS frame limit + client-side cap.
+                        if (val.size() > (raw[0]=='f' ? ws::kMaxFrame : kMaxValue)) continue;
                         s->push_wire((int)tok, std::move(val));
                     } else if (!raw.empty()) {
                         // A bare tap is a wire token. Reject non-numeric frames.

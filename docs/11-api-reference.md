@@ -234,6 +234,10 @@ constexpr Len hug;    // content-sized (auto)
 | `on_drop(Fn: std::string→Msg)` | Drop target. |
 | `drop_arg(std::string id)` | Tag a drop target with its id. |
 | `drop_target(std::string id, Fn: std::string→Msg)` | Drop zone + id, in one mod. |
+| `file_input(mods…)` | A real file picker (`<input type=file>`). |
+| `on_file(Fn: FileData→Msg)` | Picked file, delivered as decoded bytes (`name`/`mime`/`content`, ≤8 MB). |
+| `accept(std::string)` / `multiple()` | Restrict the picker / allow several files. |
+| `anchor(std::string id)` | Stable id: `#deep-link` + `Cmd::scroll_to`/`focus` target. |
 | `on(std::string event, Msg, std::string arg={})` | Any DOM event → fixed message. |
 | `on_ev(std::string event, Fn, std::string arg={})` | Any DOM event → mapped message. |
 | `stop()` | Stop click propagation to an outer `tap`. |
@@ -381,6 +385,11 @@ Make `view()` O(changed) for large or high-frequency screens. See
 | `Cmd<Msg>::navigate(std::string url, bool replace=false)` | Change route. |
 | `Cmd<Msg>::push_url(std::string url)` | Update address bar only. |
 | `Cmd<Msg>::broadcast(std::string topic, std::string payload={})` | Publish to a topic. |
+| `Cmd<Msg>::set_title(std::string text)` | Set the live tab title. |
+| `Cmd<Msg>::scroll_to(std::string target, bool smooth=true)` | Scroll to `anchor("…")`, or `"top"`/`"bottom"`. |
+| `Cmd<Msg>::focus(std::string target)` / `blur()` | Move keyboard focus / release it. |
+| `Cmd<Msg>::copy(std::string text)` | Write to the clipboard. |
+| `Cmd<Msg>::download(std::string name, std::string data, std::string mime=…)` | Offer a file download. |
 | `Cmd<Msg>::batch(cmds… \| vector)` | Several commands. |
 
 ### `Sub<Msg>`

@@ -41,6 +41,11 @@ When you have nothing to do, return `Cmd<Msg>::none()`.
 | `Cmd<Msg>::navigate(url, replace=false)` | Change route (pushes history, re-routes). |
 | `Cmd<Msg>::push_url(url)` | Update the address bar only (deep-link sync, no route). |
 | `Cmd<Msg>::broadcast(topic, payload)` | Publish to every session on `topic`. |
+| `Cmd<Msg>::set_title(text)` | Set the live browser tab title (unread counts). |
+| `Cmd<Msg>::scroll_to(target, smooth=true)` | Scroll to an `anchor("…")` node, or `"top"`/`"bottom"`. |
+| `Cmd<Msg>::focus(target)` / `Cmd<Msg>::blur()` | Move keyboard focus to a named control / release it. |
+| `Cmd<Msg>::copy(text)` | Put `text` on the user's clipboard. |
+| `Cmd<Msg>::download(name, data, mime)` | Offer `data` as a browser file download. |
 | `Cmd<Msg>::batch(cmds…)` | Run several commands (variadic or a `vector`). |
 
 ### `after` — a one-shot timer
@@ -59,6 +64,49 @@ When you have nothing to do, return `Cmd<Msg>::none()`.
 
 `task` runs on a detached worker thread and delivers exactly one `Msg` when it
 finishes. The model loop never blocks.
+
+### Browser effects — title, scroll, focus, clipboard, download
+
+The browser is waya's display, so a handful of display-side actions are Cmds
+too — fired from `update`, executed by the fixed client, no JS written:
+
+```cpp
+// chat: append a message, then keep the log pinned to the end
+[&](Sent s){ m.log.push_back(s.text);
+             return { m, Cmd<Msg>::scroll_to("bottom") }; }
+
+// open a dialog and put the cursor in its first field
+[&](Compose){ m.dialog = true;
+              return { m, Cmd<Msg>::focus("subject") }; }   // input(…) | name("subject")
+
+// "copy link" + unread count in the tab title
+[&](CopyLink){ return { m, Cmd<Msg>::copy(m.share_url) }; }
+[&](Arrived){  m.unread++;
+               return { m, Cmd<Msg>::set_title("(" + std::to_string(m.unread) + ") Inbox") }; }
+
+// export straight from the Model — no endpoint needed
+[&](Export){ return { m, Cmd<Msg>::download("report.csv", to_csv(m.rows), "text/csv") }; }
+```
+
+`scroll_to`/`focus` name a node via `anchor("id")` (or a control's `name("…")`),
+and they run **after** the same update's repaint has applied — so scrolling to a
+row you just inserted works. Like every Cmd they are plain data: equality-
+comparable in tests, carried through `map` unchanged.
+
+### File uploads — `file_input` + `on_file`
+
+Uploads are the same shape in reverse — the picked file arrives in `update` as
+decoded bytes, no multipart endpoint:
+
+```cpp
+file_input(on_file([](FileData f){ return Import{ f.name, f.content }; }),
+           accept(".csv,.json"), multiple())
+```
+
+`FileData` carries `name`, `mime`, and `content` (the raw bytes, already
+decoded). The client caps a file at 8 MB — beyond that, serve a dedicated
+endpoint.
+
 
 ### `fetch` / `post` / `http` — real async HTTP
 

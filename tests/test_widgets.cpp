@@ -80,6 +80,17 @@ int main() {
       check(f.get("missing", "def") == "def", "FormData fallback");
       check(f.has("email") && !f.has("nope"), "FormData has()"); }
 
+    // ── file_field: a labelled, skinned, wired file picker ────────────────
+    { detail::begin_msg_capture();
+      auto h = html_of(file_field("Avatar", [](FileData f){ return (int)f.content.size(); },
+                                  "image/*", "PNG or JPG, up to 8 MB"));
+      check(has(h, "type=\"file\""), "file_field renders a file input");
+      check(has(h, "data-ev-file="), "file_field wires on_file");
+      check(has(h, "accept=\"image/*\""), "file_field forwards accept");
+      check(has(h, "<label"), "file_field is a real labelled field");
+      check(has(h, "Avatar"), "file_field shows its label");
+      check(has(h, "up to 8 MB"), "file_field shows its hint"); }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

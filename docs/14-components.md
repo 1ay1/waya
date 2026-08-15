@@ -260,6 +260,8 @@ card(
   masking).
 - `textarea_field(…)` — a resizable multiline field.
 - `select_field(label, {options}, chosen, to_msg, hint?)` — a labelled dropdown.
+- `file_field(label, to_msg, accept?, hint?)` — a labelled file picker;
+  `to_msg` maps the picked `FileData` (name/mime/decoded bytes) to a Msg.
 - `switch_field(title, desc, on, msg)` — a settings row: title + description on
   the left, a toggle on the right.
 - `checkbox_field(label, on, msg)` — a checkbox + clickable inline label.

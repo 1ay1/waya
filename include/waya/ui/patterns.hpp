@@ -257,6 +257,18 @@ NodeRef select_field(std::string label, std::vector<Opt> options, std::string ch
     return field(std::move(label), std::move(ctrl), std::move(hint));
 }
 
+/// `file_field("Avatar", to_msg, ".png,.jpg", "hint")` — a labelled file picker.
+/// `to_msg` maps the picked file to a Msg: `[](FileData f){ return SetAvatar{f.content}; }`.
+/// The file arrives in your update as decoded bytes — no endpoint, no JS.
+template <typename ToMsg>
+NodeRef file_field(std::string label, ToMsg to_msg,
+                   std::string accept_ = "", std::string hint = ""){
+    auto ctrl = file_input(on_file(to_msg)) | input_skin()
+              | detail::raw_css("cursor","pointer");
+    if (!accept_.empty()) ctrl = ctrl | accept(std::move(accept_));
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+
 /// `switch_field("Notifications", "email + push", on, Msg{})` — a settings row:
 /// title + description on the left, a toggle on the right. Tapping the row (or
 /// the toggle) fires the message.

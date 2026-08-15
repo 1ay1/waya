@@ -29,6 +29,10 @@ Special control messages travel as text frames prefixed with `@`:
 - `@route|<path>` — a navigation occurred; the runtime routes it through the
   app's `on_route` subscription.
 
+A picked file (from `file_input` + `on_file`) rides up as a text frame
+`f<token>|<name>|<mime>|<base64>` — read client-side with `FileReader`, capped
+at 8 MB raw, decoded server-side into a `FileData` before your `update` sees it.
+
 ## Server → client: paint frames
 
 After each `update`, the server renders the new surface, diffs it against the
@@ -103,7 +107,16 @@ FLIP motion (for `animated()` keyed rows) is only computed on frames that carry 
 never forces the layout read that FLIP needs, so a 60 fps animation doesn't
 thrash layout.
 
-Text frames (`@route|…`, `@url|…`) are handled as history/navigation control.
+Text frames are display-side **control**, all `@`-prefixed. Navigation:
+`@nav|<url>` (push history + re-route), `@rep|<url>` (replace), `@url|<url>`
+(address-bar sync only). Browser effects, each the client half of a `Cmd`:
+`@title|<text>` (document.title), `@scroll|<0/1>|<target>` (scroll to an
+`anchor()`/`"top"`/`"bottom"`; smooth flag), `@focus|<target>` / `@blur|`,
+`@copy|<text>` (clipboard, with an execCommand fallback for non-secure
+contexts), and `@dl|<name>|<mime>|<base64>` (Blob + object-URL download).
+`@build|<id>` is the dev hot-reload signal. Scroll and focus are deferred two
+rAFs so they run strictly **after** any paint queued in the same update —
+`scroll_to` a row you just inserted works.
 
 ## Error boundary
 

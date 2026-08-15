@@ -132,9 +132,24 @@ public:
     /// `Sub::on_topic(topic, fn)` turns the payload into ITS own Msg. This is
     /// how independent sessions share state (chat, presence, collaborative UIs).
     struct Broadcast { std::string topic; std::string payload; };
+    /// Set the document title live (`document.title = text`) — unread counts,
+    /// per-screen names — without waiting for a fresh SSR of Meta.
+    struct SetTitle { std::string text; };
+    /// Scroll the page: `target` is an `anchor("…")`/`name("…")` on a node, or
+    /// the specials "top"/"bottom" for the whole page (chat scroll-to-bottom).
+    struct ScrollTo { std::string target; bool smooth = true; };
+    /// Move keyboard focus to the named control — or, with `off`, blur whatever
+    /// currently holds it (open-dialog→focus-field, Esc→release).
+    struct Focus { std::string target; bool off = false; };
+    /// Write `text` to the user's clipboard ("Copy link" buttons).
+    struct Copy { std::string text; };
+    /// Offer `data` (raw bytes) as a browser file download named `filename`
+    /// (export CSV/JSON/reports straight from the Model).
+    struct Download { std::string filename; std::string mime; std::string data; };
 
     using Alt = std::variant<None, Quit, Batch, After, Emit, Task,
-                             Navigate, PushUrl, Fetch, Broadcast>;
+                             Navigate, PushUrl, Fetch, Broadcast,
+                             SetTitle, ScrollTo, Focus, Copy, Download>;
 
     Cmd() : alt_(std::make_shared<Alt>(None{})) {}
     explicit Cmd(Alt a) : alt_(std::make_shared<Alt>(std::move(a))) {}
@@ -190,6 +205,24 @@ public:
     static Cmd broadcast(std::string topic, std::string payload = {}) {
         return Cmd(Alt{Broadcast{std::move(topic), std::move(payload)}});
     }
+    /// `set_title("(3) Inbox")` — set the live document title.
+    static Cmd set_title(std::string text) { return Cmd(Alt{SetTitle{std::move(text)}}); }
+    /// `scroll_to("chat-end")` / `scroll_to("bottom", false)` — scroll the named
+    /// `anchor(..)`/`name(..)` node into view, or "top"/"bottom" of the page.
+    static Cmd scroll_to(std::string target, bool smooth = true) {
+        return Cmd(Alt{ScrollTo{std::move(target), smooth}});
+    }
+    /// `focus("email")` — focus the control named/anchored `email`.
+    static Cmd focus(std::string target) { return Cmd(Alt{Focus{std::move(target), false}}); }
+    /// `blur()` — drop focus from whatever currently holds it.
+    static Cmd blur() { return Cmd(Alt{Focus{{}, true}}); }
+    /// `copy(text)` — put `text` on the user's clipboard.
+    static Cmd copy(std::string text) { return Cmd(Alt{Copy{std::move(text)}}); }
+    /// `download("report.csv", bytes, "text/csv")` — offer a file download.
+    static Cmd download(std::string filename, std::string data,
+                        std::string mime = "application/octet-stream") {
+        return Cmd(Alt{Download{std::move(filename), std::move(mime), std::move(data)}});
+    }
 
     /// Combine multiple Cmds. Flattens nested batches and strips Nones — so a
     /// `batch` of one real effect is that effect, and a `batch` of nothing is
@@ -231,6 +264,11 @@ public:
             [](const Navigate& n) -> Cmd<B> { return Cmd<B>::navigate(n.url, n.replace); },
             [](const PushUrl&  p) -> Cmd<B> { return Cmd<B>::push_url(p.url); },
             [](const Broadcast& b) -> Cmd<B> { return Cmd<B>::broadcast(b.topic, b.payload); },
+            [](const SetTitle& t) -> Cmd<B> { return Cmd<B>::set_title(t.text); },
+            [](const ScrollTo& sc) -> Cmd<B> { return Cmd<B>::scroll_to(sc.target, sc.smooth); },
+            [](const Focus& fo) -> Cmd<B> { return fo.off ? Cmd<B>::blur() : Cmd<B>::focus(fo.target); },
+            [](const Copy& c) -> Cmd<B> { return Cmd<B>::copy(c.text); },
+            [](const Download& d) -> Cmd<B> { return Cmd<B>::download(d.filename, d.data, d.mime); },
             [&](const Batch& b) -> Cmd<B> {
                 std::vector<Cmd<B>> mapped; mapped.reserve(b.cmds.size());
                 for (auto& c : b.cmds) mapped.push_back(c.map(f));
@@ -277,6 +315,11 @@ public:
             else if constexpr (std::is_same_v<A, Navigate>) return a.url == b.url && a.replace == b.replace;
             else if constexpr (std::is_same_v<A, PushUrl>)  return a.url == b.url;
             else if constexpr (std::is_same_v<A, Broadcast>) return a.topic == b.topic && a.payload == b.payload;
+            else if constexpr (std::is_same_v<A, SetTitle>) return a.text == b.text;
+            else if constexpr (std::is_same_v<A, ScrollTo>) return a.target == b.target && a.smooth == b.smooth;
+            else if constexpr (std::is_same_v<A, Focus>)    return a.target == b.target && a.off == b.off;
+            else if constexpr (std::is_same_v<A, Copy>)     return a.text == b.text;
+            else if constexpr (std::is_same_v<A, Download>) return a.filename == b.filename && a.mime == b.mime && a.data == b.data;
             else if constexpr (std::is_same_v<A, Batch>) {
                 if (a.cmds.size() != b.cmds.size()) return false;
                 for (std::size_t i = 0; i < a.cmds.size(); ++i)

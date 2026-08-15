@@ -26,6 +26,32 @@ int main() {
     CHECK((Cmd<int>::emit(Tick)  == Cmd<int>::emit(Tick)));
     CHECK(!(Cmd<int>::emit(Tick) == Cmd<int>::emit(Load)));
     CHECK((Cmd<int>::after(1000ms, Tick) == Cmd<int>::after(1000ms, Tick)));
+
+    // ── browser effects are data: equality + functor map ──────────────────
+    CHECK((Cmd<int>::set_title("Inbox (3)") == Cmd<int>::set_title("Inbox (3)")));
+    CHECK(!(Cmd<int>::set_title("a") == Cmd<int>::set_title("b")));
+    CHECK((Cmd<int>::scroll_to("chat-end") == Cmd<int>::scroll_to("chat-end")));
+    CHECK(!(Cmd<int>::scroll_to("x", true) == Cmd<int>::scroll_to("x", false)));
+    CHECK((Cmd<int>::focus("email") == Cmd<int>::focus("email")));
+    CHECK(!(Cmd<int>::focus("email") == Cmd<int>::blur()));
+    CHECK((Cmd<int>::blur() == Cmd<int>::blur()));
+    CHECK((Cmd<int>::copy("https://x") == Cmd<int>::copy("https://x")));
+    CHECK((Cmd<int>::download("r.csv", "a,b\n", "text/csv")
+        == Cmd<int>::download("r.csv", "a,b\n", "text/csv")));
+    CHECK(!(Cmd<int>::download("r.csv", "a") == Cmd<int>::download("r.csv", "b")));
+    // map() carries browser effects through unchanged (they hold no Msg)
+    {
+        auto up = [](int m){ return (long)m * 2; };
+        CHECK((Cmd<int>::set_title("t").map(up) == Cmd<long>::set_title("t")));
+        CHECK((Cmd<int>::scroll_to("a", false).map(up) == Cmd<long>::scroll_to("a", false)));
+        CHECK((Cmd<int>::focus("f").map(up) == Cmd<long>::focus("f")));
+        CHECK((Cmd<int>::blur().map(up) == Cmd<long>::blur()));
+        CHECK((Cmd<int>::copy("c").map(up) == Cmd<long>::copy("c")));
+        CHECK((Cmd<int>::download("f", "d", "m").map(up) == Cmd<long>::download("f", "d", "m")));
+        // and inside a batch, alongside a Msg-carrying alternative
+        auto b = Cmd<int>::batch(Cmd<int>::set_title("t"), Cmd<int>::emit(Tick)).map(up);
+        CHECK((b == Cmd<long>::batch(Cmd<long>::set_title("t"), Cmd<long>::emit((long)Tick * 2))));
+    }
     CHECK(!(Cmd<int>::after(1000ms, Tick) == Cmd<int>::after(500ms, Tick)));
     CHECK(!(Cmd<int>::after(1000ms, Tick) == Cmd<int>::after(1000ms, Load)));
     CHECK((Cmd<int>::after(1000, Tick) == Cmd<int>::after(1000ms, Tick))); // long overload
@@ -269,6 +295,39 @@ int main() {
         auto r = detail::safe_dispatch<App>(std::move(m0), rt->route("/about"), "/about", ok);
         auto node = detail::safe_view<App>(r.first);
         CHECK(node->text == "/about");     // SSR renders the requested route's screen
+    }
+
+    // ── perform(): browser-effect Cmds emit the exact @-control frames ──────
+    {
+        int sv[2];
+        CHECK(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+        auto s = std::make_shared<detail::Session>(); s->conn = sv[0];
+        auto read_text = [&]() -> std::string {
+            char buf[4096];
+            ssize_t n = ::recv(sv[1], buf, sizeof buf, 0);
+            if (n <= 0) return {};
+            std::size_t used = 0;
+            auto fr = waya::ws::decode(std::string_view(buf, (std::size_t)n), used);
+            return (fr.ok && fr.opcode == 0x1) ? fr.payload : std::string{};
+        };
+        using C = Cmd<int>;
+        detail::perform(s, C::set_title("Inbox (3)"));
+        CHECK(read_text() == "@title|Inbox (3)");
+        detail::perform(s, C::scroll_to("bottom"));
+        CHECK(read_text() == "@scroll|1|bottom");
+        detail::perform(s, C::scroll_to("row-9", false));
+        CHECK(read_text() == "@scroll|0|row-9");
+        detail::perform(s, C::focus("email"));
+        CHECK(read_text() == "@focus|email");
+        detail::perform(s, C::blur());
+        CHECK(read_text() == "@blur|");
+        detail::perform(s, C::copy("https://x/y"));
+        CHECK(read_text() == "@copy|https://x/y");
+        // download: name/mime are '|'-sanitised, payload is base64 of the bytes
+        detail::perform(s, C::download("a|b.csv", "hi", "text|csv"));
+        CHECK(read_text() == "@dl|a_b.csv|text_csv|aGk=");
+        s->alive = false;
+        ::close(sv[0]); ::close(sv[1]);
     }
 
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");

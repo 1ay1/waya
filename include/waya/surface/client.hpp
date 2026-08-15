@@ -160,11 +160,33 @@ inline std::string client(int port) {
     // hot-reload signal — if the server's build id changed since we first
     // connected, a rebuild happened, so hard-reload to pick up new shell/JS/CSS.
     "var _build=null;"
+    // Defer an effect until AFTER the next paint has applied (paints are rAF-
+    // coalesced, so a scroll/focus ordered in the same update as a DOM change
+    // must not race it). Two rAFs = strictly after any already-scheduled paint.
+    "function afterPaint(fn){requestAnimationFrame(function(){requestAnimationFrame(fn);});}"
+    // Resolve an app-side target name: an anchor("x")/id, else a [name=x] control.
+    "function findT(v){return document.getElementById(v)||document.querySelector('[name=\"'+(window.CSS&&CSS.escape?CSS.escape(v):v)+'\"]');}"
     "function ctl(s){var b=s.indexOf('|'),k=s.slice(0,b),v=s.slice(b+1);"
     "if(k==='@build'){if(_build===null)_build=v;else if(_build!==v)location.reload();}"
     "else if(k==='@nav'){history.pushState({},'',v);route();}"
     "else if(k==='@rep'){history.replaceState({},'',v);route();}"
-    "else if(k==='@url'){history.pushState({},'',v);}}"
+    "else if(k==='@url'){history.pushState({},'',v);}"
+    "else if(k==='@title'){document.title=v;}"
+    "else if(k==='@scroll'){afterPaint(function(){var sm=v.charAt(0)==='1'?'smooth':'auto',tg=v.slice(2);"
+    "if(tg==='top'){window.scrollTo({top:0,behavior:sm});}"
+    "else if(tg==='bottom'){window.scrollTo({top:document.documentElement.scrollHeight,behavior:sm});}"
+    "else{var e=findT(tg);if(e)e.scrollIntoView({behavior:sm,block:'nearest'});}});}"
+    "else if(k==='@focus'){afterPaint(function(){var e=findT(v);if(e)e.focus();});}"
+    "else if(k==='@blur'){afterPaint(function(){if(document.activeElement)document.activeElement.blur();});}"
+    "else if(k==='@copy'){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(v).catch(function(){fbCopy(v);});}else{fbCopy(v);}}"
+    "else if(k==='@dl'){var b2=v.indexOf('|'),b3=v.indexOf('|',b2+1);var fn=v.slice(0,b2),mi=v.slice(b2+1,b3),bs=atob(v.slice(b3+1));"
+    "var u8=new Uint8Array(bs.length);for(var i=0;i<bs.length;i++)u8[i]=bs.charCodeAt(i);"
+    "var url=URL.createObjectURL(new Blob([u8],{type:mi||'application/octet-stream'}));"
+    "var a=document.createElement('a');a.href=url;a.download=fn||'download';document.body.appendChild(a);a.click();a.remove();"
+    "setTimeout(function(){URL.revokeObjectURL(url);},4000);}}"
+    // Clipboard fallback for non-secure contexts (http:// LAN dev servers).
+    "function fbCopy(v){var t=document.createElement('textarea');t.value=v;t.style.position='fixed';t.style.opacity='0';"
+    "document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(_){ }t.remove();}"
     "window.addEventListener('popstate',route);"
     "connect();"
     // ── Modal isolation ──────────────────────────────────────────────────
@@ -217,6 +239,15 @@ inline std::string client(int port) {
     "document.addEventListener('input',function(ev){var t=ev.target;"
     "if(t.dataset&&t.dataset.input!=null&&ws&&ws.readyState===1){ws.send('i'+t.dataset.input+'|'+payload(t));}});"
     "document.addEventListener('change',function(ev){var t=ev.target;"
+    // File pick: a [data-ev-file] input reads each chosen file client-side and
+    // ships it as "f<token>|<name>|<mime>|<base64>". Raw size capped at 8 MB so
+    // the base64 frame stays comfortably under the 16 MB WS limit.
+    "if(t.type==='file'&&t.dataset&&t.dataset.evFile!=null&&ws&&ws.readyState===1){var fs=t.files||[];"
+    "var tok=t.dataset.evFile.split('|')[0];"
+    "for(var i=0;i<fs.length;i++){(function(f){if(f.size>8*1024*1024)return;var rd=new FileReader();"
+    "rd.onload=function(){var s=String(rd.result),c=s.indexOf(',');if(ws&&ws.readyState===1)"
+    "ws.send('f'+tok+'|'+f.name.replace(/\\|/g,'_')+'|'+(f.type||'application/octet-stream').replace(/\\|/g,'_')+'|'+s.slice(c+1));};"
+    "rd.readAsDataURL(f);})(fs[i]);}return;}"
     "if(t.dataset&&t.dataset.change!=null&&ws&&ws.readyState===1){ws.send('c'+t.dataset.change+'|'+payload(t));}});"
     // Generic events wired via data-ev-<type>="<msg>[|<arg>]". One delegated
     // listener per type; `e<msg>|<payload>` goes up. Keyboard events carry the

@@ -1267,7 +1267,7 @@ struct FormData {
     bool checked(std::string_view key) const { auto v=get(key); return v=="on"||v=="true"||v=="1"; }
 };
 
-// ── drag & drop ─────────────────────────────────────────────────────────────
+// ── drag & drop ───────────────────────────────────────────────────────────────────────────────
 /// Mark a node draggable and give it a payload id (rides as the drag data).
 inline Mod draggable(std::string payload={}){ return {[=](Node& n){ n.draggable=true; if(!payload.empty()) n.name=payload; }}; }
 /// `on_drop(fn)` on a drop target — fn maps the dropped payload to a Msg.
@@ -1286,10 +1286,68 @@ template <typename Fn> Mod drop_target(std::string id, Fn fn){
     }};
 }
 
+// ── file upload ─────────────────────────────────────────────────────────────────────────
+/// A file the user picked, delivered to your update as decoded BYTES — no
+/// multipart, no endpoints, no JS. The client reads the file, ships it over the
+/// live socket, and `FileData::parse` gives you name/mime/content:
+///
+///   file_input(on_file([](FileData f){ return Import{f.name, f.content}; }))
+///
+/// Size: the client caps a file at 8 MB raw (the frame stays under the WS
+/// limit). For bigger uploads, serve a dedicated endpoint — this is the
+/// zero-ceremony path for avatars, CSV imports, config files.
+struct FileData {
+    std::string name;      ///< the picked file's name ("report.csv")
+    std::string mime;      ///< its MIME type ("text/csv"; may be a guess)
+    std::string content;   ///< the DECODED bytes, ready to use
+
+    /// Decode standard base64 (the client never emits whitespace or url-safe).
+    static std::string b64decode(std::string_view s){
+        auto val=[](char c)->int{ if(c>='A'&&c<='Z')return c-'A'; if(c>='a'&&c<='z')return c-'a'+26;
+            if(c>='0'&&c<='9')return c-'0'+52; if(c=='+')return 62; if(c=='/')return 63; return -1; };
+        std::string o; o.reserve(s.size()*3/4);
+        int buf=0, bits=0;
+        for(char c : s){ if(c=='=')break; int v=val(c); if(v<0)continue;
+            buf=(buf<<6)|v; bits+=6; if(bits>=8){ bits-=8; o+=(char)((buf>>bits)&0xFF); } }
+        return o;
+    }
+    /// Parse the wire payload "<name>|<mime>|<base64>" a file frame carries.
+    static FileData parse(std::string_view raw){
+        FileData f;
+        auto b1=raw.find('|'); if(b1==std::string_view::npos){ f.content=b64decode(raw); return f; }
+        auto b2=raw.find('|', b1+1); if(b2==std::string_view::npos){ f.name=std::string(raw.substr(0,b1)); f.content=b64decode(raw.substr(b1+1)); return f; }
+        f.name=std::string(raw.substr(0,b1));
+        f.mime=std::string(raw.substr(b1+1,b2-b1-1));
+        f.content=b64decode(raw.substr(b2+1));
+        return f;
+    }
+};
+/// `on_file(fn)` — on a `file_input()`: fn maps the picked FileData to a Msg.
+/// (Multiple selected files each fire fn once.)
+template <typename Fn> Mod on_file(Fn fn){
+    using Msg = std::invoke_result_t<Fn, FileData>;
+    return on_ev("file", [f=std::move(fn)](std::string raw) -> Msg {
+        return f(FileData::parse(raw));
+    });
+}
+/// `accept(".csv,.json")` / `accept("image/*")` — restrict the file picker.
+inline Mod accept(std::string a){ return {[a=std::move(a)](Node& n){ n.attrs.emplace_back("accept", a); }}; }
+/// `multiple()` — let the picker select several files (each delivers a Msg).
+inline Mod multiple(){ return {[](Node& n){ n.attrs.emplace_back("multiple", ""); }}; }
+/// `file_input(on_file(…))` — a real file picker wired to your update.
+template <typename... M> NodeRef file_input(M... mods){
+    auto n = std::make_shared<Node>(); n->kind=Kind::input; n->input_type="file";
+    (mods.apply(*n), ...); finalize(*n); return n;
+}
+
 // ── arbitrary attributes & accessibility ──────────────────────────────
 /// `attr("title","Save")` — set ANY HTML attribute. The escape hatch for the
 /// attribute channel, the way `css()` is for the style channel.
 inline Mod attr(std::string name, std::string value){ return {[=](Node& n){ n.attrs.emplace_back(name, value); }}; }
+/// `anchor("pricing")` — give a node a stable id: a `#pricing` deep-link
+/// target, and the target name for `Cmd::scroll_to("pricing")` /
+/// `Cmd::focus("pricing")`.
+inline Mod anchor(std::string id_){ return attr("id", std::move(id_)); }
 /// `optimistic()` — pair with tap: the element shows an instant busy state (dim +
 /// wait cursor + click-disabled) the MOMENT it's clicked, before the server
 /// responds, cleared on the next paint. Makes an action feel instant on a slow

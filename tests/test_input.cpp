@@ -414,6 +414,30 @@ int main() {
         CHECK(p.size() == 1 && p[0].op == Op::set_shell);
     }
 
+    // ── file upload: picker renders wired; FileData decodes the wire payload ─
+    {
+        detail::begin_msg_capture();
+        auto n = file_input(on_file([](FileData f){ return (int)f.content.size(); }),
+                            accept(".csv,.json"), multiple());
+        auto h = html_of(n);
+        CHECK(has(h, "type=\"file\""));
+        CHECK(has(h, "data-ev-file="));                 // wired to the client reader
+        CHECK(has(h, "accept=\".csv,.json\""));
+        CHECK(has(h, "multiple"));
+        // the client ships "<name>|<mime>|<base64>"; parse must decode bytes
+        auto f = FileData::parse("notes.txt|text/plain|aGVsbG8gd2F5YQ==");
+        CHECK(f.name == "notes.txt" && f.mime == "text/plain");
+        CHECK(f.content == "hello waya");
+        // and the registered mapper resolves the payload to the app Msg
+        int tok = n->events.at(0).msg;
+        auto m = detail::resolve_msg<int>(tok, "notes.txt|text/plain|aGVsbG8gd2F5YQ==");
+        CHECK(m && *m == 10);                            // strlen("hello waya")
+        // '=' padding, empty file, and no-name forms all decode safely
+        CHECK(FileData::b64decode("eg==") == "z");
+        CHECK(FileData::parse("a.bin|application/octet-stream|").content.empty());
+        CHECK(FileData::parse("aGk=").content == "hi"); // bare base64: content only
+    }
+
     std::cout << "test_input: " << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;
 }

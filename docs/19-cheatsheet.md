@@ -151,7 +151,7 @@ already a named mod — check this page first.
 | **`sidebar_shell(brand, {items}, content)`** `sidebar_item(ico, l, active, Msg)` | app shell |
 | **`stat(l, v, delta)`** `metric_card(…)` `list_row(lead, t, sub, trail)` `key_value(k, v)` | data |
 | `tag("x")` `kbd("⌘")` `banner(msg, tone)` `empty_state(t, hint)` `code_block(c, lang)` | chrome |
-| **`text_field(l, v, fn)`** `email_field` `password_field` `textarea_field` `select_field` | form fields |
+| **`text_field(l, v, fn)`** `email_field` `password_field` `textarea_field` `select_field` `file_field` | form fields |
 | `switch_field(t, desc, on, Msg)` `checkbox_field(l, on, Msg)` `form_actions(…)` | form fields |
 | `confirm_dialog(open, t, msg, "OK", Yes{}, No{})` `dialog(open, Close{}, …)` | dialogs |
 
