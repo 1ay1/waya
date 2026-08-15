@@ -43,18 +43,22 @@ inline void put_varint(std::string& o, std::uint64_t v) {
 inline void put_str(std::string& o, std::string_view s) {
     put_varint(o, s.size()); o.append(s);
 }
-/// Split a dotted path "0.3.1" into varint indices; "" → depth 0.
+/// Split a dotted path "0.3.1" into varint indices; "" → depth 0. Two passes
+/// over the string — count the segments, then emit them — so there's no per-op
+/// heap vector (this runs once per emitted op, and reorder frames emit many).
 inline void put_path(std::string& o, std::string_view path) {
-    // count segments
-    std::vector<std::uint64_t> idx;
-    std::uint64_t cur = 0; bool any = false;
+    if (path.empty()) { put_varint(o, 0); return; }
+    // pass 1: segment count = number of dots + 1 (path is non-empty here).
+    std::uint64_t depth = 1;
+    for (char c : path) if (c == '.') ++depth;
+    put_varint(o, depth);
+    // pass 2: emit each index as it's parsed, no intermediate storage.
+    std::uint64_t cur = 0;
     for (char c : path) {
-        if (c == '.') { idx.push_back(cur); cur = 0; }
-        else { cur = cur * 10 + (c - '0'); any = true; }
+        if (c == '.') { put_varint(o, cur); cur = 0; }
+        else cur = cur * 10 + (std::uint64_t)(c - '0');
     }
-    if (any) idx.push_back(cur);
-    put_varint(o, idx.size());
-    for (auto i : idx) put_varint(o, i);
+    put_varint(o, cur);   // the final segment (no trailing dot)
 }
 
 } // namespace bin

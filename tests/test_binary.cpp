@@ -91,6 +91,39 @@ int main() {
         CHECK(std::get<2>(f.ops[0]) == "y");
     }
 
+    // ── multi-DIGIT path indices survive the varint round-trip ──────────────
+    // put_path parses the dotted string index-by-index; a 2-digit segment
+    // ("...12...") is the case a naive single-char parse would corrupt.
+    {
+        // 20 sibling boxes; change the 13th (index 12) so the path is "12".
+        auto kids13 = [](const char* mark){
+            std::vector<NodeRef> ks;
+            for (int i = 0; i < 20; ++i) ks.push_back(box(text(i==12 ? mark : "x")));
+            auto b = box(); b->kind = Kind::box; b->kids = std::move(ks); finalize(*b); return b;
+        };
+        auto bin = encode_delta(diff(kids13("x"), kids13("Y")));
+        auto f = decode(bin);
+        CHECK(f.ops.size() == 1);
+        CHECK(std::get<1>(f.ops[0]) == "12.0");   // box 12, its text child 0
+        CHECK(std::get<2>(f.ops[0]) == "Y");
+    }
+
+    // ── a keyed reorder frame: many ops, each with its own path ─────────────
+    {
+        auto keyed = [](std::vector<std::string> order){
+            std::vector<NodeRef> ks;
+            for (auto& k : order) ks.push_back((text(k) | key(k)).done());
+            auto b = box(); b->kind = Kind::box; b->kids = std::move(ks); finalize(*b); return b;
+        };
+        auto a = keyed({"a","b","c","d","e"});
+        auto b = keyed({"e","d","c","b","a"});   // full reverse -> several move ops
+        auto patch = diff(a, b);
+        auto bin = encode_delta(patch);
+        auto f = decode(bin);
+        CHECK(f.ops.size() == patch.size());       // every op survives the pack
+        CHECK(!f.ops.empty());
+    }
+
     // ── binary is MUCH smaller than JSON for the same delta ─────────────────
     {
         auto patch = diff(view(1), view(2));
