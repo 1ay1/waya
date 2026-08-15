@@ -174,8 +174,13 @@ inline NodeRef site_nav(std::string version, std::vector<NavItem> items) {
     mobile->attrs.emplace_back("class", "mobile-menu");
     finalize(*mobile);
 
-    auto header = col(inner, mobile) | add_class("nav");
-    header->kind = Kind::box;
+    // Build the header as a BARE box (no col()/row() interned flow) so the
+    // .nav CSS fully owns layout: display:flex + align-items:center centers the
+    // inner row vertically in the 64px bar. (A col() would force
+    // flex-direction:column and jam the content to the top edge.) The mobile
+    // menu is position:fixed, so it's out of flow regardless.
+    auto header = box(); header->kids = { inner, mobile };
+    header->attrs.emplace_back("class", "nav");
     header->attrs.emplace_back("id", "top");
     finalize(*header);
     return header;
