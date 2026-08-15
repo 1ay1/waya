@@ -1786,6 +1786,57 @@ inline Mod tap_pop(){
     assets().css("@keyframes wa-tap-pop{0%{transform:scale(1)}40%{transform:scale(.86)}100%{transform:scale(1)}}"
         ".wa-tap-pop-go{animation:wa-tap-pop .18s cubic-bezier(.2,.7,.2,1)}");
     return {[](Node& n){ n.attrs.emplace_back("data-wa-pop", ""); }}; }
+
+// ── custom client effects ───────────────────────────────────────
+/// `client_effect(name, js)` — attach your OWN client-side JavaScript to an
+/// element, the easy way. Marks the node `data-fx="name"` and registers a script
+/// (once, by name) that finds every `[data-fx="name"]` on load and calls your
+/// `js` with the element as `el` (and the run count as `i`). This is the seam
+/// for effects the server can't/shouldn't do: a `<canvas>` animation, a chart
+/// library, an IntersectionObserver reveal, a parallax. It runs on first paint
+/// and again after each frame the runtime applies (so freshly-inserted marked
+/// nodes get wired too). Decorative + client-owned — no Model state, no ticks.
+///
+///   box() | w(400) | h(300)
+///       | client_effect("rain", "const c=el.appendChild(document.createElement('canvas'));"
+///                              "/* … requestAnimationFrame draw loop … */")
+///
+/// `el` is the marked element; write plain DOM/canvas/WebGL against it.
+inline Mod client_effect(std::string name, std::string js){
+    // one delegated bootstrap that runs every registered effect over its marked
+    // elements, on load and after each applied frame (via a MutationObserver).
+    assets().script("wa-fx-boot",
+        "window.__waFx=window.__waFx||{};"
+        "function waRunFx(root){for(const k in window.__waFx){"
+        "(root||document).querySelectorAll('[data-fx=\"'+k+'\"]').forEach(function(el){"
+        "if(el.__fx)return;el.__fx=1;try{window.__waFx[k](el,el.__fxi=(el.__fxi||0)+1);}catch(e){}});}}"
+        "new MutationObserver(function(){waRunFx();}).observe(document.documentElement,{childList:true,subtree:true});"
+        "if(document.readyState!=='loading')waRunFx();else document.addEventListener('DOMContentLoaded',function(){waRunFx();});");
+    // this effect's own handler, keyed by name.
+    std::string qname = "\"";
+    for (char c : name) { if (c=='"'||c=='\\') qname += '\\'; qname += c; }
+    qname += '"';
+    assets().script("wa-fx-" + name,
+        "window.__waFx=window.__waFx||{};window.__waFx[" + qname + "]=function(el,i){" + js + "};"
+        "if(window.waRunFx)window.waRunFx();");
+    return {[name](Node& n){ n.attrs.emplace_back("data-fx", name); }};
+}
+/// `canvas_fx(name, draw_js)` — sugar for the most common client effect: append a
+/// full-size `<canvas>` to the element and hand your JS the 2D context. `draw_js`
+/// runs with `cvs` (the canvas, auto-sized to the element + DPR) and `ctx` (its
+/// 2D context) in scope — write a `requestAnimationFrame` loop for a live effect.
+/// The canvas resizes with the element automatically.
+inline Mod canvas_fx(std::string name, std::string draw_js){
+    std::string js =
+        "const cvs=document.createElement('canvas');"
+        "cvs.style.cssText='position:absolute;inset:0;width:100%;height:100%;display:block';"
+        "el.style.position=el.style.position||'relative';el.appendChild(cvs);"
+        "const ctx=cvs.getContext('2d');"
+        "function _fit(){const r=el.getBoundingClientRect(),d=window.devicePixelRatio||1;"
+        "cvs.width=r.width*d;cvs.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);}"
+        "_fit();new ResizeObserver(_fit).observe(el);" + draw_js;
+    return client_effect(std::move(name), js);
+}
 inline Mod title(std::string t){ return attr("title", std::move(t)); }
 inline Mod alt(std::string a){ return attr("alt", std::move(a)); }
 /// `safe_url(s)` — neutralise a dangerous URL scheme. `javascript:`, `data:`,

@@ -12,6 +12,7 @@
 #include <waya/ui.hpp>
 
 #include <array>
+#include <cstdio>
 #include <vector>
 
 using namespace waya::surface;
@@ -61,44 +62,30 @@ static NodeRef pixel_logo() {
         | detail::raw_css("margin-bottom","28px");
 }
 
-// Pure-CSS "matrix rain": columns of glyphs, each translated down forever by a
-// CSS keyframe. The philosophy (same as ripple/tap_pop): decorative motion is
-// CLIENT-side — the browser paints it, the server renders the markup ONCE at
-// first paint and never again. Zero Model state, zero WebSocket traffic, zero
-// server cost per frame. A page under load pays nothing for this animation.
-static NodeRef matrix_rain(std::uint32_t accent) {
-    static const char* GLYPHS = "01<>{}[]#$/\\|=+*ABCDEF89";
-    const int cols = 26, rows = 42, n = (int)std::string(GLYPHS).size();
-    auto hash = [](std::uint32_t x){ x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; };
-    std::vector<NodeRef> columns;
-    for (int c = 0; c < cols; ++c) {
-        // each column is a tall strip (2x the viewport) of glyphs; translating it
-        // down 50% loops seamlessly because the strip repeats its own top half.
-        std::vector<NodeRef> cells;
-        for (int r = 0; r < rows; ++r) {
-            std::uint32_t h = hash((std::uint32_t)(c * 131 + r * 977));
-            char ch = GLYPHS[h % (std::uint32_t)n];
-            bool head = (h % 11) == 0;
-            float op = head ? 0.9f : (0.06f + (float)(h % 40) / 130.0f);
-            cells.push_back(text(std::string(1, ch)) | mono | text_size(13)
-                | fg(head ? 0xbfe0ff : accent)
-                | detail::raw_css("opacity", detail::numstr(op))
-                | line(1.25f));
-        }
-        auto colBox = box(); colBox->kids = std::move(cells); colBox->style.flow = Flow::col; finalize(*colBox);
-        // one API call for the fall; per-column speed + a negative (mid-cycle)
-        // start so columns don't rain in lockstep. All CLIENT-painted, no ticks.
-        float dur = 6.0f + (float)(hash((std::uint32_t)c) % 90) / 10.0f;
-        float delay = -(float)(hash((std::uint32_t)c * 7u) % 100) / 10.0f;
-        columns.push_back(colBox | items_center
-            | scroll_down(50, dur) | anim_delay(delay));
-    }
-    auto grid = box(); grid->kids = std::move(columns); grid->style.flow = Flow::row; finalize(*grid);
-    return grid | detail::raw_css("gap", "14px") | justify_center
-        | absolute() | detail::raw_css("inset", "-50% 0 0 0") | z(0) | no_pointer
-        | detail::raw_css("overflow", "hidden") | detail::raw_css("opacity", "0.5")
-        | detail::raw_css("mask-image", "linear-gradient(180deg,transparent,#000 20%,#000 60%,transparent 100%)")
-        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,transparent,#000 20%,#000 60%,transparent 100%)");
+// Matrix rain — a REAL <canvas> effect, the exact technique the Next.js site
+// uses (per-frame glyph mutation, a fading trail, variable-speed drops). With
+// waya's client-effect API it's one `canvas_fx(name, drawJS)` call: the JS runs
+// entirely in the browser (rAF loop), the server renders the markup ONCE and
+// never touches it again. Client-owned decoration — no Model state, no ticks.
+static Mod matrix_rain(std::uint32_t accent) {
+    char acc[8]; std::snprintf(acc, sizeof acc, "#%06x", accent & 0xffffff);
+    std::string draw = std::string(
+        "const G='01<>{}[]#$/\\\\|=+*ABCDEF0123456789';"
+        "const A='") + acc + "';let drops=[],cw=0,ch=0,fs=14;"
+        "function reset(){cw=cvs.clientWidth;ch=cvs.clientHeight;const cols=Math.ceil(cw/fs);"
+        "drops=[];for(let i=0;i<cols;i++)drops[i]={y:Math.random()*ch/fs,sp:0.3+Math.random()*0.9};}"
+        "reset();new ResizeObserver(reset).observe(el);"
+        "ctx.font=fs+'px ui-monospace,monospace';"
+        "function frame(){"
+        // fade the previous frame slightly -> the trailing tail
+        "ctx.fillStyle='rgba(13,17,23,0.10)';ctx.fillRect(0,0,cw,ch);"
+        "for(let i=0;i<drops.length;i++){const d=drops[i];const x=i*fs;const y=d.y*fs;"
+        "const g=G[(Math.random()*G.length)|0];"
+        // bright head glyph, then a dimmer body in the accent colour
+        "ctx.fillStyle=Math.random()<0.06?'#bfe0ff':A;ctx.globalAlpha=0.85;ctx.fillText(g,x,y);ctx.globalAlpha=1;"
+        "d.y+=d.sp;if(y>ch&&Math.random()>0.975){d.y=0;d.sp=0.3+Math.random()*0.9;}}"
+        "requestAnimationFrame(frame);}requestAnimationFrame(frame);";
+    return canvas_fx("agentty-rain", std::move(draw));
 }
 
 // The agentty-specific hero backdrop — a blueprint grid + falling digital-rain
@@ -117,7 +104,11 @@ static NodeRef agentty_backdrop(std::uint32_t accent) {
         | detail::raw_css("background-size", "44px 44px")
         | detail::raw_css("mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
         | detail::raw_css("-webkit-mask-image", "radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
-    auto rain = matrix_rain(accent);   // pure-CSS falling code — client-painted, zero server cost
+    auto rain = box() | absolute() | detail::raw_css("inset", "0") | z(0) | no_pointer
+        | detail::raw_css("opacity", "0.42")
+        | detail::raw_css("mask-image", "radial-gradient(760px 520px at 72% 0%, #000, transparent 76%)")
+        | detail::raw_css("-webkit-mask-image", "radial-gradient(760px 520px at 72% 0%, #000, transparent 76%)")
+        | matrix_rain(accent);   // a real <canvas> rAF rain — client-owned, zero server cost
     auto glow = box() | absolute()
         | detail::raw_css("width", "760px") | detail::raw_css("height", "760px")
         | detail::raw_css("top", "-220px") | detail::raw_css("left", "20%")

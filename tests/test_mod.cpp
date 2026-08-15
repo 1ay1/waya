@@ -12,6 +12,7 @@ static int pass = 0, fail = 0;
 static void check(bool c, const char* msg) { if (c) ++pass; else { ++fail; std::cerr << "FAIL: " << msg << "\n"; } }
 static bool has(const std::string& h, const std::string& n) { return h.find(n) != std::string::npos; }
 static std::string css_of(NodeRef n) { return DomBackend{}.render(*n).css; }
+static std::string html_of(NodeRef n) { return DomBackend{}.render(*n).html; }
 
 int main() {
     // ── Mod value semantics: copy, move, compose (SBO + heap) ────────────────
@@ -155,6 +156,28 @@ int main() {
     check(has(css_of(box() | scroll_left(50, 20)), "wa-scrollx 20s linear infinite"), "scroll_left() -> translateX loop");
     check(has(css_of(box() | anim_delay(-2.5f)), "animation-delay:-2.5s"), "anim_delay() (negative = mid-cycle)");
     check(has(css_of(box() | anim_speed(4)), "animation-duration:4s"), "anim_speed()");
+    // custom client-side JS effects (the easy way to do canvas/chart-lib motion)
+    {
+        assets().clear();
+        auto n = (box() | client_effect("myfx", "el.dataset.ran='1';")).done();
+        check(has(html_of(n), "data-fx=\"myfx\""), "client_effect marks the node with data-fx");
+        auto head = assets().head_html();
+        check(head.find("__waFx") != std::string::npos, "client_effect registers the boot script");
+        check(head.find("el.dataset.ran") != std::string::npos, "client_effect ships the author's JS");
+    }
+    {
+        assets().clear();
+        auto n = (box() | canvas_fx("cvsfx", "/* draw */")).done();
+        auto head = assets().head_html();
+        check(has(html_of(n), "data-fx=\"cvsfx\""), "canvas_fx marks the node");
+        check(head.find("createElement('canvas')") != std::string::npos, "canvas_fx appends a canvas + hands over ctx");
+    }
+    {
+        assets().clear();
+        assets().script("my-lib", "console.log('hi');");
+        check(assets().head_html().find("console.log('hi')") != std::string::npos, "assets().script injects client JS");
+    }
+    assets().clear();
 
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;

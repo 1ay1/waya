@@ -94,6 +94,18 @@ public:
         return *this;
     }
 
+    /// Register a client-side JS snippet by ID (deduped). It's wrapped in one
+    /// `<script>` and injected into <head>, so it runs on every page load — the
+    /// seam for a custom client effect (a canvas animation, a chart lib, an
+    /// IntersectionObserver). Pair with `on_mount(...)` / a `data-*` marker to
+    /// scope it to specific elements. NOT escaped — trusted author code.
+    Assets& script(const std::string& id, const std::string& js) {
+        std::lock_guard<std::mutex> l(m_);
+        for (auto& s : scripts_) if (s.first == id) return *this;   // deduped by id
+        scripts_.push_back({id, js});
+        return *this;
+    }
+
     /// Assemble every registered CSS asset into one <style> body (keyframes +
     /// :root vars + font-faces + global rules). Read by the shell.
     std::string style_css() const {
@@ -114,13 +126,18 @@ public:
         std::lock_guard<std::mutex> l(m_);
         std::string o;
         for (auto& h : head_) o += h;
+        // App client scripts, each in its own module <script> (deferred so the
+        // DOM exists; module scope keeps their locals from leaking).
+        for (auto& [id, js] : scripts_) {
+            o += "<script type=\"module\">/*"; o += id; o += "*/"; o += js; o += "</script>";
+        }
         return o;
     }
 
     /// Clear everything (tests / a fresh server run in-process).
     void clear() {
         std::lock_guard<std::mutex> l(m_);
-        keyframes_.clear(); root_vars_.clear(); css_.clear(); head_.clear();
+        keyframes_.clear(); root_vars_.clear(); css_.clear(); head_.clear(); scripts_.clear();
     }
 
 private:
@@ -140,6 +157,7 @@ private:
     std::vector<std::pair<std::string,std::string>> root_vars_;   // --name → value
     std::vector<std::pair<std::string,std::string>> css_;         // dedup-key → rule body
     std::vector<std::string> head_;                               // raw <head> html
+    std::vector<std::pair<std::string,std::string>> scripts_;     // id → client JS
 };
 
 /// `assets()` — the process-global asset registry. Register document-level
