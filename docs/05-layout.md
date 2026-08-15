@@ -275,6 +275,26 @@ editor + preview, a list + detail, a form + summary.
 split(editor_pane, preview_pane, 0.6f)   // 60/40, stacks on narrow screens
 ```
 
+For a RESIZABLE split — a divider the user drags — the ratio becomes model
+state. `split_pane(a, b, ratio, onResize)` (in `waya::ui`) reports the new
+fraction as a Msg when you drag the divider:
+
+```cpp
+struct Model { float ratio = 0.5f; };
+struct Resized { std::string value; };   // value = the new ratio, e.g. "0.62"
+
+[&](Resized r){ m.ratio = std::atof(r.value.c_str()); return {m, Cmd::none()}; }
+
+// view:
+split_pane(editor_pane, preview_pane, m.ratio, Resized{})
+split_pane(top, bottom, m.v, Resized{}, /*vertical=*/true)   // stacked, drag up/down
+```
+
+The client computes the fraction from the pointer position within the container
+(rAF-throttled during the drag, committed on pointer-up), so there's no
+per-frame round-trip — just the new ratio. Both panes are clamped to stay
+visible (5%–95%).
+
 ### `ratio_box` / `video_box` / `square_box` — aspect-ratio media
 
 ```cpp

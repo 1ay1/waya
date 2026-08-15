@@ -539,6 +539,62 @@ int main() {
         check(m && m->name=="shot.png", "a pasted file resolves to a typed Msg with its FileData");
     }
 
+    // ── markdown: safe Markdown -> node tree (no raw HTML) ────────────────
+    {
+        auto h = html_of(markdown("# Title\n\nSome **bold** and a [link](https://x.com).\n\n- one\n- two\n\n> quote\n\n```\nint x=1;\n```\n\n---"));
+        check(has(css_of(markdown("# Title")), "font-size:30px"), "h1 renders at heading size");
+        check(has(h, "https://x.com") && has(h, "href"), "a [link](url) becomes a real anchor");
+        check(has(h, "\xe2\x80\xa2"), "- items render with a bullet");
+        check(has(h, "int x=1"), "fenced code block preserved");
+        check(has(h, "quote") && has(css_of(markdown("> quote")), "border-left"), "blockquote has a rule");
+        // THE point: markdown is XSS-safe — a <script> renders as text, never HTML
+        auto evil = html_of(markdown("hi <script>alert(1)</script>"));
+        check(!has(evil, "<script>") && has(evil, "&lt;script&gt;"), "markdown escapes HTML (no injection)");
+    }
+
+    // ── date_field: labelled native pickers join the field family ──────────
+    {
+        struct SetD{ bool operator==(const SetD&)const=default; };
+        detail::begin_msg_capture();
+        auto df = html_of(date_field("Birthday", "2000-01-01", [](std::string){ return SetD{}; }));
+        check(has(df, "type=\"date\"") && has(df, "Birthday"), "date_field is a labelled native date input");
+        auto tf = html_of(time_field("Alarm", "07:30", [](std::string){ return SetD{}; }));
+        check(has(tf, "type=\"time\""), "time_field is a native time input");
+    }
+
+    // ── Presence: who's online / typing, over pub/sub ────────────────────
+    {
+        Presence pr;
+        pr.mark("ada", "online"); pr.mark("bob", "typing"); pr.mark("me", "online");
+        check(pr.count()==3, "three peers in the roster");
+        check(pr.typers("me").size()==1 && pr.typers("me")[0]=="bob", "typers excludes me and non-typers");
+        auto [u, s] = parse_peer("carol|typing");
+        check(u=="carol" && s=="typing", "parse_peer splits '<user>|<state>'");
+        check(parse_peer("dave").second=="online", "a bare username defaults to online");
+        // typing_line names who's typing (before we remove bob)
+        detail::begin_msg_capture();
+        check(has(html_of(typing_line(pr, "me")), "is typing"), "typing_line names who's typing");
+        pr.mark("bob", "left");
+        check(pr.count()==2, "'left' removes a peer");
+        // prune drops peers not heard from within the ttl
+        Presence stale; stale.mark_at("old", false, 0); stale.mark_at("fresh", false, 1000000);
+        stale.prune_at(std::chrono::seconds{10}, 1000000);
+        check(stale.count()==1, "prune drops the stale peer, keeps the fresh one");
+        check((Presence{} == Presence{}), "Presence has value equality");
+    }
+
+    // ── split_pane: two panes + a draggable divider, ratio as state ───────
+    {
+        struct Rz{ std::string value; bool operator==(const Rz&)const=default; };
+        detail::begin_msg_capture();
+        auto sp = html_of(split_pane(text("left"), text("right"), 0.6f, Rz{}));
+        check(has(sp, "data-wa-split-box"), "split_pane marks its measuring container");
+        check(has(sp, "data-wa-split=\"h\"") && has(sp, "data-ev-splitmove"), "the divider is a wired horizontal grip");
+        check(has(css_of(split_pane(text("l"), text("r"), 0.6f, Rz{})), "60.00%"), "the first pane takes the ratio's fraction");
+        auto vsp = html_of(split_pane(text("top"), text("bot"), 0.5f, Rz{}, /*vertical=*/true));
+        check(has(vsp, "data-wa-split=\"v\""), "vertical=true makes a stacked split");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }

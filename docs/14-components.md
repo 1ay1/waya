@@ -444,6 +444,47 @@ The caret shows only for nodes with children; clicking a branch toggles it.
 Rendering is a pure walk of `(data + open set)`, with `role="tree"`/`treeitem`
 and `aria-expanded` for free.
 
+### Markdown — `markdown(src)`
+
+Render Markdown to a **node tree**, not raw HTML — so there's no injection
+surface at all. Chat messages, comments, README previews, LLM output: safe by
+construction, because a `<script>` in the source renders as literal text.
+
+```cpp
+markdown(m.comment_body) | max_w(680)
+```
+
+Supports headings, **bold**/*italic*/`code` spans, `[links](url)` (url
+sanitised), bullet + ordered lists, blockquotes, fenced code blocks, and `---`
+rules — the 90% of real prose. Every span goes through waya's escaping, so it's
+XSS-safe even on fully untrusted input, and the result styles + diffs like any
+other subtree. (For your own trusted rich content, `markup()` injects raw HTML;
+for untrusted, always `markdown()`.)
+
+### Presence — who's online / typing
+
+Built on the multiplayer layer (`Cmd::broadcast` / `Sub::on_topic`). `Presence`
+is a live roster you fold broadcasts into and prune by heartbeat.
+
+```cpp
+struct Model { Presence room; std::string me; };
+
+// broadcast your status on join / heartbeat / keystroke:
+Cmd::broadcast("room-42", me + "|typing")     // "<user>|<state>"
+
+// update: fold each peer broadcast in; prune stale on a tick
+[&](Peer p){ auto [u,s] = parse_peer(p.payload); m.room.mark(u, s); return {m, Cmd::none()}; }
+[&](Tick) { m.room.prune(std::chrono::seconds{10});               return {m, Cmd::none()}; }
+
+// view:
+presence_bar(m.room, m.me);     // overlapped avatars of who's online (a typing ring)
+typing_line(m.room, m.me);      // "Ada and Bob are typing…" beneath the input
+```
+
+`mark(user, state)` stamps a status + fresh timestamp ("left" removes
+immediately); `prune(ttl)` drops peers whose heartbeat went silent, so a crashed
+tab vanishes on its own. `typers(me)` is the list of who's typing, excluding you.
+
 ### Forms
 
 `field(label, control, hint)` labels any control; `input_skin()` themes a raw
@@ -590,6 +631,9 @@ card(
   masking).
 - `textarea_field(…)` — a resizable multiline field.
 - `select_field(label, {options}, chosen, to_msg, hint?)` — a labelled dropdown.
+- `date_field` / `time_field` / `datetime_field` `(label, value, to_msg, hint?)`
+  — labelled NATIVE pickers (the browser's real calendar/clock, correct on
+  mobile); `to_msg` gets the ISO value (`"2024-03-15"`, `"14:30"`).
 - `file_field(label, to_msg, accept?, hint?)` — a labelled file picker;
   `to_msg` maps the picked `FileData` (name/mime/decoded bytes) to a Msg. The
   same bytes-in-your-update path serves `on_paste_file(fn)` — paste a screenshot

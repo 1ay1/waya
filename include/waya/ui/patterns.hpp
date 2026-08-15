@@ -22,6 +22,7 @@
 #include "components.hpp"
 #include "icons.hpp"
 #include "../surface/sugar.hpp"
+#include "../surface/forms.hpp"
 
 namespace waya::ui {
 
@@ -259,6 +260,25 @@ template <typename ToMsg>
 NodeRef select_field(std::string label, std::vector<Opt> options, std::string chosen,
                      ToMsg to_msg, std::string hint = ""){
     auto ctrl = select(std::move(options), std::move(chosen)) | input_skin() | on_change(to_msg);
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+
+/// `date_field`/`time_field`/`datetime_field` — labelled NATIVE pickers (the
+/// browser's real calendar / clock, correct on mobile). `to_msg` maps the
+/// chosen value (ISO: "2024-03-15", "14:30", "2024-03-15T14:30") to a Msg.
+template <typename ToMsg>
+NodeRef date_field(std::string label, std::string value, ToMsg to_msg, std::string hint = ""){
+    auto ctrl = date_input(std::move(value)) | input_skin() | on_change(to_msg);
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+template <typename ToMsg>
+NodeRef time_field(std::string label, std::string value, ToMsg to_msg, std::string hint = ""){
+    auto ctrl = time_input(std::move(value)) | input_skin() | on_change(to_msg);
+    return field(std::move(label), std::move(ctrl), std::move(hint));
+}
+template <typename ToMsg>
+NodeRef datetime_field(std::string label, std::string value, ToMsg to_msg, std::string hint = ""){
+    auto ctrl = datetime_input(std::move(value)) | input_skin() | on_change(to_msg);
     return field(std::move(label), std::move(ctrl), std::move(hint));
 }
 

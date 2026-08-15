@@ -344,6 +344,19 @@ inline std::string client(int port) {
     "(function(file){var rd=new FileReader();rd.onload=function(){var d=String(rd.result),c=d.indexOf(',');"
     "sendev(s,(file.name||'pasted').replace(/\\|/g,'_')+'|'+(file.type||'application/octet-stream').replace(/\\|/g,'_')+'|'+d.slice(c+1));};rd.readAsDataURL(file);})(f);}}"
     "if(any)ev.preventDefault();return;}el=el.parentElement;}},true);"
+    // split-pane divider: dragging a [data-wa-split] grip computes the first
+    // pane's fraction from the pointer position within its [data-wa-split-box]
+    // container and fires the grip's data-ev-splitmove token with that ratio,
+    // rAF-throttled so an editor|preview resize stays smooth.
+    "var _split=null;"
+    "document.addEventListener('pointerdown',function(ev){var g=ev.target.closest&&ev.target.closest('[data-wa-split]');"
+    "if(!g)return;var sbox=g.closest('[data-wa-split-box]');if(!sbox)return;ev.preventDefault();"
+    "_split={box:sbox,v:g.getAttribute('data-wa-split')==='v',tok:g.dataset.evSplitmove,f:null,raf:0};"
+    "try{g.setPointerCapture(ev.pointerId);}catch(_){}});"
+    "document.addEventListener('pointermove',function(ev){if(!_split)return;var b=_split.box.getBoundingClientRect();"
+    "var f=_split.v?((ev.clientY-b.top)/b.height):((ev.clientX-b.left)/b.width);f=Math.max(.05,Math.min(.95,f));_split.f=f;"
+    "if(_split.raf)return;_split.raf=requestAnimationFrame(function(){_split.raf=0;if(_split&&_split.tok!=null)sendev(_split.tok,_split.f.toFixed(4));});});"
+    "document.addEventListener('pointerup',function(){if(_split&&_split.tok!=null&&_split.f!=null)sendev(_split.tok,_split.f.toFixed(4));_split=null;});"
     // scroll: a [data-ev-scroll] container reports its scrollTop (px), rAF-
     // throttled so a fast scroll sends at most one frame's worth. This is the
     // virtual-list hook — the server windows its rows to the reported offset.
@@ -357,7 +370,7 @@ inline std::string client(int port) {
     // appear) we scan the tree for data-ev-* attributes and add ONE capture-
     // phase listener per never-seen type. Handled types above are skipped so we
     // don't double-fire. Value-bearing controls send their value as payload.
-    "var wired={click:1,keydown:1,input:1,change:1,submit:1,focus:1,blur:1,drop:1,dragstart:1,dragover:1,pointerdown:1,pointerenter:1,pointerleave:1,dblclick:1,shortcut:1,scroll:1,pastefile:1};"
+    "var wired={click:1,keydown:1,input:1,change:1,submit:1,focus:1,blur:1,drop:1,dragstart:1,dragover:1,pointerdown:1,pointerenter:1,pointerleave:1,dblclick:1,shortcut:1,scroll:1,pastefile:1,splitmove:1};"
     "function camel(s){return s.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});}"
     "function bindGeneric(){var els=document.querySelectorAll('*'),seen={};"
     "for(var i=0;i<els.length;i++){var ds=els[i].dataset;if(!ds)continue;for(var k in ds){if(k.indexOf('ev')!==0||k.length<3)continue;"
