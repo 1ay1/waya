@@ -32,13 +32,14 @@ inline void install_theme() {
         "--sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;"
         "--font-mono:'JetBrains Mono',ui-monospace,monospace;--font-sans:'Inter',system-ui,sans-serif}"
         "html[data-theme=light]{"
-        "--bg:#ffffff;--bg-soft:#f6f8fa;--bg-elev:#eaeef2;--bg-card:#ffffff;"
-        "--border:#d0d7de;--border-soft:#e4e8ec;"
-        "--text:#1f2328;--text-dim:#59636e;--text-faint:#6e7781;"
-        "--accent:#0969da;--accent-hover:#0550ae;--accent-2:#8250df;--accent-warm:#9a6700;"
+        "--bg:#fbfcfe;--bg-soft:#f4f7fb;--bg-elev:#ffffff;--bg-card:#ffffff;"
+        "--border:#dbe1ea;--border-soft:#e9edf3;"
+        "--text:#111826;--text-dim:#4a5568;--text-faint:#6b7688;"
+        "--accent:#2563eb;--accent-hover:#1d4ed8;--accent-2:#8b5cf6;--accent-warm:#b45309;"
+        "--green:#15803d;--red:#dc2626;--yellow:#b45309;"
         "--on-accent:#ffffff;--code-bg:#0d1117;"
-        "--hero-glow-1:rgba(9,105,218,0.10);--hero-glow-2:rgba(130,80,223,0.06);"
-        "--nav-bg:rgba(255,255,255,0.82);--matrix-fade:rgba(255,255,255,0.12)}"
+        "--hero-glow-1:rgba(37,99,235,0.10);--hero-glow-2:rgba(139,92,246,0.09);"
+        "--nav-bg:rgba(251,252,254,0.78);--matrix-fade:rgba(251,252,254,0.14)}"
         // base element styles (from globals.css). NOTE: waya's shell paints an
         // opaque html,body{background:#0d1117} in its own <style>; we set the bg
         // on <html> only and make <body> transparent so body::before's hero glow
@@ -56,7 +57,29 @@ inline void install_theme() {
         "h1,h2,h3,h4{line-height:1.15;font-weight:700;letter-spacing:-.025em}"
         "code,pre,kbd{font-family:var(--mono)}"
         ".wrap{width:100%;max-width:var(--maxw);margin:0 auto;padding:0 28px}"
-        "@keyframes blink{to{opacity:.3}}");
+        "@keyframes blink{to{opacity:.3}}"
+        // ── light-mode polish: softer real shadows (dark-mode shadows read as
+        // muddy smudges on white), a gentle tinted page wash, crisper cards.
+        "html[data-theme=light]{color-scheme:light}"
+        "html[data-theme=light] body::before{background:"
+        "radial-gradient(1100px 620px at 84% -14%,rgba(37,99,235,.10),transparent 60%),"
+        "radial-gradient(820px 520px at 4% -6%,rgba(139,92,246,.09),transparent 58%),"
+        "radial-gradient(700px 500px at 50% 120%,rgba(37,99,235,.05),transparent 60%)}"
+        "html[data-theme=light] .card{box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.03)}"
+        "html[data-theme=light] .card:hover{box-shadow:0 12px 28px -12px rgba(37,99,235,.28),0 2px 8px rgba(16,24,40,.06)}"
+        "html[data-theme=light] .bigbox{box-shadow:0 1px 2px rgba(16,24,40,.04)}"
+        "html[data-theme=light] .bigbox:hover{box-shadow:0 14px 32px -14px rgba(37,99,235,.26)}"
+        "html[data-theme=light] .stats{box-shadow:0 1px 2px rgba(16,24,40,.05)}"
+        "html[data-theme=light] .tablewrap{box-shadow:0 1px 2px rgba(16,24,40,.04)}"
+        "html[data-theme=light] thead th{background:#f4f7fb}"
+        "html[data-theme=light] tbody tr:hover{background:rgba(37,99,235,.04)}"
+        "html[data-theme=light] .nav{border-bottom-color:var(--border)}"
+        "html[data-theme=light] .btn-primary{box-shadow:0 8px 22px -8px rgba(37,99,235,.45)}"
+        "html[data-theme=light] .btn-primary:hover{box-shadow:0 12px 30px -8px rgba(37,99,235,.55)}"
+        "html[data-theme=light] .install-band .copyrow{box-shadow:0 0 0 1px rgba(37,99,235,.12),0 14px 40px -24px rgba(37,99,235,.35)}"
+        "html[data-theme=light] section.block:nth-of-type(even){background:linear-gradient(180deg,#f4f7fb,transparent 42%)}"
+        "html[data-theme=light] .feat-cards .card.lead{background:linear-gradient(158deg,#f4f7fb,#ffffff)}"
+        "html[data-theme=light] .feat-head .fg-ico{background:linear-gradient(150deg,rgba(37,99,235,.10),rgba(139,92,246,.08));border-color:rgba(37,99,235,.22)}");
 }
 
 } // namespace agentty
