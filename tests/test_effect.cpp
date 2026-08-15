@@ -322,9 +322,16 @@ int main() {
             char buf[4096];
             ssize_t n = ::recv(sv[1], buf, sizeof buf, 0);
             if (n <= 0) return {};
-            std::size_t used = 0;
-            auto fr = waya::ws::decode(std::string_view(buf, (std::size_t)n), used);
-            return (fr.ok && fr.opcode == 0x1) ? fr.payload : std::string{};
+            // These are SERVER->client frames, which are unmasked per RFC 6455
+            // (only client->server frames are masked). ws::decode() intentionally
+            // rejects unmasked frames (it's the inbound/server-side decoder), so
+            // parse the short server frame directly for inspection.
+            auto u = [&](std::size_t i){ return (unsigned char)buf[i]; };
+            if (n < 2 || (u(0) & 0x0F) != 0x1) return {};      // want a text frame
+            std::size_t len = u(1) & 0x7F, pos = 2;
+            if (len == 126){ if(n<4) return {}; len = (u(2)<<8)|u(3); pos = 4; }
+            if ((std::size_t)n < pos + len) return {};
+            return std::string(buf + pos, len);
         };
         using C = Cmd<int>;
         detail::perform(s, C::set_title("Inbox (3)"));
