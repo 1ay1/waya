@@ -113,8 +113,8 @@ inline NodeRef hero_background(std::uint32_t accent = 0x58a6ff) {
     return box(rain, grid, glow, scan)
         | absolute() | detail::raw_css("inset", "0") | z(0)
         | detail::raw_css("overflow", "hidden") | no_pointer
-        | detail::raw_css("mask-image", "linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)")
-        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)");
+        | detail::raw_css("mask-image", "linear-gradient(180deg,#000 0%,#000 30%,transparent 96%)")
+        | detail::raw_css("-webkit-mask-image", "linear-gradient(180deg,#000 0%,#000 30%,transparent 96%)");
 }
 
 } // namespace agentty
