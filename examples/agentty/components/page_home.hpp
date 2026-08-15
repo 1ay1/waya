@@ -36,8 +36,8 @@ inline const char* HOME_CSS =
 ".btn{display:inline-flex;align-items:center;gap:8px;justify-content:center;padding:12px 24px;border-radius:11px;"
 "font-weight:600;font-size:15px;border:1px solid transparent;cursor:pointer;transition:transform .18s cubic-bezier(.2,.9,.2,1),background .15s,border-color .15s,box-shadow .2s;text-decoration:none}"
 ".btn:hover{text-decoration:none;transform:translateY(-2px)}.btn:active{transform:translateY(0)}"
-".btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:0 10px 34px -8px rgba(88,166,255,.55)}"
-".btn-primary:hover{background:var(--accent-hover);color:var(--on-accent);box-shadow:0 14px 40px -8px rgba(88,166,255,.7)}"
+".btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:0 1px 2px rgba(0,0,0,.2),0 6px 16px -8px rgba(88,166,255,.5)}"
+".btn-primary:hover{background:var(--accent-hover);color:var(--on-accent);box-shadow:0 1px 2px rgba(0,0,0,.2),0 10px 24px -8px rgba(88,166,255,.6)}"
 ".btn-ghost{background:var(--bg-elev);border-color:var(--border);color:var(--text)}"
 ".btn-ghost:hover{border-color:var(--accent);background:var(--bg-soft)}"
 // hero
@@ -86,16 +86,14 @@ inline const char* HOME_CSS =
 ".section-sub{color:var(--text-dim);font-size:17px;max-width:600px;margin:0 0 40px;line-height:1.6}"
 // cards
 ".card{position:relative;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:26px;overflow:hidden;"
-"transition:border-color .25s ease,transform .25s cubic-bezier(.2,.8,.2,1),background .25s ease,box-shadow .25s ease}"
-".card::after{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(420px 180px at 50% -40%,rgba(88,166,255,.10),transparent 70%);opacity:0;transition:opacity .25s ease;pointer-events:none}"
-".card:hover{border-color:rgba(88,166,255,.4);transform:translateY(-4px);background:var(--bg-soft);box-shadow:0 22px 48px -28px rgba(88,166,255,.45)}"
-".card:hover::after{opacity:1}"
+"transition:border-color .2s ease,transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s ease}"
+".card:hover{border-color:var(--border);transform:translateY(-3px);box-shadow:0 12px 28px -14px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.03) inset}"
 ".card h3{font-size:17px;margin:0 0 8px;letter-spacing:-.02em}.card p{color:var(--text-dim);margin:0;font-size:14.5px;line-height:1.6}"
 // feature groups
 ".feat-groups{display:flex;flex-direction:column;gap:48px;margin-top:24px}"
 ".feat-head{display:flex;align-items:center;gap:13px;margin:0 0 20px;padding-bottom:15px;border-bottom:1px solid var(--border-soft)}"
-".feat-head .fg-ico{font-size:17px;line-height:1;width:40px;height:40px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;"
-"background:linear-gradient(150deg,rgba(88,166,255,.14),rgba(210,168,255,.08));border:1px solid rgba(88,166,255,.28);border-radius:11px}"
+".feat-head .fg-ico{width:38px;height:38px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;"
+"color:var(--accent);background:var(--bg-elev);border:1px solid var(--border);border-radius:10px}"
 ".feat-head h3{font-size:15px;font-weight:700;letter-spacing:.02em;margin:0;color:var(--text);text-transform:uppercase}"
 ".feat-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;grid-auto-rows:1fr}"
 ".feat-cards .card{padding:22px}"
@@ -131,9 +129,8 @@ inline const char* HOME_CSS =
 ".bigbox:hover{border-color:rgba(88,166,255,.4);transform:translateY(-3px);box-shadow:0 22px 48px -28px rgba(88,166,255,.4)}"
 ".bigbox h3{margin:0 0 8px;font-size:19px}.bigbox p{color:var(--text-dim);margin:0 0 16px;font-size:14.5px}"
 // tilt
-".card.tilt,.bigbox.tilt{transition:border-color .25s ease,background .25s ease,box-shadow .3s ease,transform .3s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}"
-".card.tilt:hover,.bigbox.tilt:hover{transform:perspective(900px) rotateX(4deg) rotateY(-4deg) translateY(-6px) scale(1.015)}"
-"@media (prefers-reduced-motion:reduce){.card.tilt:hover,.bigbox.tilt:hover{transform:translateY(-3px)}}"
+".card.tilt,.bigbox.tilt{transition:border-color .2s ease,box-shadow .2s ease,transform .2s cubic-bezier(.2,.8,.2,1)}"
+".card.tilt:hover,.bigbox.tilt:hover{transform:translateY(-4px)}"
 // cta
 ".cta{text-align:center;padding:80px 0;position:relative;overflow:hidden}"
 ".cta h2{font-size:clamp(28px,4vw,42px);margin:0 0 12px}.cta p{color:var(--text-dim);font-size:18px;margin:0 0 28px}"
@@ -189,9 +186,13 @@ inline NodeRef feat_card(std::string title, std::string body_html, bool lead = f
         "<h4>" + title + "</h4><p>" + body_html + "</p>") | reveal();
 }
 
-// a feature group: icon + UPPERCASE heading, then the 3-up card grid
-inline NodeRef feat_group(std::string icon, std::string heading, std::vector<NodeRef> cards) {
-    auto head = html("feat-head", "<span class=\"fg-ico\">" + icon + "</span><h3>" + heading + "</h3>");
+// a feature group: monochrome line-icon + UPPERCASE heading, then the card grid.
+// `icon_svg` is the inner <path>/<line> markup for a 24x24 stroke icon.
+inline NodeRef feat_group(std::string icon_svg, std::string heading, std::vector<NodeRef> cards) {
+    std::string ico = "<span class=\"fg-ico\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" "
+        "stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\">"
+        + icon_svg + "</svg></span>";
+    auto head = html("feat-head", ico + "<h3>" + heading + "</h3>");
     auto grid = box(); grid->kids = std::move(cards); grid->attrs.emplace_back("class", "feat-cards"); finalize(*grid);
     return box(head, grid) | add_class("feat-group") | reveal();
 }
@@ -296,24 +297,24 @@ NodeRef home(std::string install_cmd, CopyMsg copy_msg) {
                "<h2 class=\"section-title\">Everything the official client does &mdash; and the things it doesn't.</h2>"
                "<p class=\"section-sub\">A full coding agent, not a thin wrapper. Grouped by what you came for.</p>"),
         box(
-            feat_group("\xe2\x9a\xa1", "Performance &amp; footprint", {
+            feat_group("<path d='M13 2 3 14h7l-1 8 10-12h-7l1-8Z'/>", "Performance &amp; footprint", {
                 feat_card("Native speed", "C++26, statically linked, <code>posix_spawn</code> everywhere. Spawns in microseconds, no GC pauses mid-stream, no warmup.", true),
                 feat_card("One static binary", "13 MB. <code>curl | chmod +x | run</code>. No Node runtime, no <code>npm install</code>, no version drift."),
                 feat_card("Inline render", "Lives at the bottom of your terminal, preserves scrollback, never takes over the screen.") }),
-            feat_group("\xf0\x9f\x94\x8c", "Models &amp; auth", {
+            feat_group("<path d='M11 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7'/><path d='M13 11 22 2'/><path d='M15 2h7v7'/>", "Models &amp; auth", {
                 feat_card("Any model", "Claude by default via your Pro/Max subscription &mdash; or GPT, Groq, OpenRouter, Together, Cerebras, and local Ollama. Switch live with <code>^P</code>. <a href=\"/docs/providers\">Providers &rarr;</a>", true),
                 feat_card("Adjustable reasoning", "Dial thinking effort per model &mdash; fast for small edits, deep for hard refactors."),
                 feat_card("Paste images", "Drop a PNG/JPEG/GIF/WebP path or <code>^V</code> from the clipboard &mdash; inline to the model.") }),
-            feat_group("\xf0\x9f\x9b\xa1\xef\xb8\x8f", "Safety &amp; isolation", {
+            feat_group("<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z'/><path d='m9 12 2 2 4-4'/>", "Safety &amp; isolation", {
                 feat_card("Sandbox by default", "Every shell and build call runs inside <code>bwrap</code> (Linux) / <code>sandbox-exec</code> (macOS). An approved bash call still can't <code>cat ~/.ssh/id_rsa</code>.", true),
                 feat_card("Permission profiles", "Start in <strong>Ask</strong>; <code>S-Tab</code> cycles to <strong>Write</strong> or <strong>Minimal</strong>. <a href=\"/docs/profiles\">Profiles &rarr;</a>"),
                 feat_card("Workspace boundary", "Filesystem tools refuse paths outside the launch directory. Opt out with <code>--workspace /</code>.") }),
-            feat_group("\xf0\x9f\xa7\xa0", "Workflow &amp; memory", {
+            feat_group("<path d='M12 3a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3Z'/><path d='M12 8v8M8.5 10.5 12 12l3.5-1.5'/>", "Workflow &amp; memory", {
                 feat_card("Learns your codebase", "Agent Skills teach it your conventions; <code>remember</code>/<code>forget</code> give durable memory; <code>search_docs</code> runs a local <a href=\"/docs/retrieval\">retrieval engine</a> &mdash; hybrid BM25 + dense, HNSW, GraphRAG. <a href=\"/docs/skills\">Skills &rarr;</a>", true),
                 feat_card("Threads that persist", "Every conversation is a saved thread you reopen with <code>^J</code>. Long threads compact automatically."),
                 feat_card("Isolated subagents", "The <code>task</code> tool spawns a subagent with its own context window, returns one condensed report."),
                 feat_card("Rewind to any checkpoint", "Every user turn in a git repo pins a worktree snapshot. <code>Enter</code> rewinds files <em>and</em> transcript.") }),
-            feat_group("\xf0\x9f\xa7\xa9", "Reach &amp; extensibility", {
+            feat_group("<path d='M4 7h6V4a2 2 0 0 1 4 0v3h6v6h-3a2 2 0 0 0 0 4h3v3H4v-6H1a2 2 0 0 1 0-4h3V7Z'/>", "Reach &amp; extensibility", {
                 feat_card("One-command SSH air-gap", "<code>agentty airgap user@host</code> runs the agent on a box with no direct internet &mdash; SOCKS5-over-SSH, TLS pinned end-to-end.", true),
                 feat_card("Runs inside Zed (ACP)", "<code>agentty acp</code> speaks the Agent Client Protocol &mdash; a first-class agent panel in Zed. <a href=\"/docs/acp\">Set it up &rarr;</a>"),
                 feat_card("MCP, both ways", "Serve agentty's tools with <code>mcp-serve</code>, or consume other MCP servers from <code>.agentty/mcp.json</code>. <a href=\"/docs/mcp\">MCP &rarr;</a>") })
