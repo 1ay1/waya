@@ -146,6 +146,60 @@ std::pair<Model, Cmd<Msg>> safe_dispatch(Model m, Msg msg, const std::string& va
     catch (...) { ok = false; return { std::move(m), Cmd<Msg>::none() }; }
 }
 
+/// The configured WebSocket Origin allowlist, or empty = allow all. Sources, in
+/// order: a static `P::allowed_origins()` (returns a container of strings), else
+/// the `WAYA_ALLOWED_ORIGINS` env (comma-separated). Cached after first read.
+template <typename P>
+const std::vector<std::string>& allowed_origins_list(){
+    static const std::vector<std::string> list = []{
+        std::vector<std::string> out;
+        if constexpr (requires { P::allowed_origins(); }) {
+            for (auto& o : P::allowed_origins()) out.emplace_back(o);
+        } else if (const char* env = std::getenv("WAYA_ALLOWED_ORIGINS")) {
+            std::string s = env, cur;
+            for (char c : s){ if (c==','){ if(!cur.empty()) out.push_back(cur); cur.clear(); }
+                              else if (c!=' ') cur += c; }
+            if (!cur.empty()) out.push_back(cur);
+        }
+        return out;
+    }();
+    return list;
+}
+
+/// True if this handshake's Origin is permitted. Empty allowlist = allow all
+/// (dev default). A missing Origin header is allowed (native/non-browser client);
+/// browsers always send one, and a cross-site page can't forge it.
+template <typename P>
+bool origin_allowed(std::string_view raw){
+    const auto& list = allowed_origins_list<P>();
+    if (list.empty()) return true;
+    // extract the Origin header value (case-insensitive header name).
+    std::string origin;
+    std::size_t pos = 0;
+    while (pos < raw.size()){
+        std::size_t eol = raw.find("\r\n", pos);
+        if (eol == std::string_view::npos) eol = raw.size();
+        std::string_view line = raw.substr(pos, eol - pos);
+        if (line.size() > 7){
+            std::string name; for (std::size_t i=0;i<6 && i<line.size();++i){ char c=line[i]; name += (c>='A'&&c<='Z')?char(c+32):c; }
+            if (name == "origin"){
+                std::size_t c = line.find(':');
+                if (c != std::string_view::npos){
+                    std::string_view v = line.substr(c+1);
+                    while (!v.empty() && v.front()==' ') v.remove_prefix(1);
+                    origin = std::string(v);
+                }
+                break;
+            }
+        }
+        if (eol == raw.size()) break;
+        pos = eol + 2;
+    }
+    if (origin.empty()) return true;   // non-browser client (no Origin) — not a CSRF vector
+    for (auto& a : list) if (origin == a) return true;
+    return false;
+}
+
 /// The terminal is the browser client (surface/client.hpp) — it holds no app
 /// state or logic, just decodes binary frames and paints them. Kept in its own
 /// file so the transport/runtime here stays free of the ~6 KB JS blob.
@@ -339,6 +393,20 @@ RuntimeDisposition handle(int conn, std::string& carry, int port,
     // free this pool worker (the session is long-lived + stateful and must not
     // occupy a bounded pool slot).
     if (ws::try_handshake(rq.raw)) {
+        // Cross-site WebSocket hijacking defense: a browser lets ANY origin open
+        // a ws:// to us and drive the app as the logged-in user (WS is exempt
+        // from CORS). If an allowlist is configured — P::allowed_origins() or the
+        // WAYA_ALLOWED_ORIGINS env (comma-separated) — reject a handshake whose
+        // Origin isn't on it. Unset = allow all (dev default); a same-origin app
+        // behind a proxy should set it in production.
+        if (!detail::origin_allowed<P>(std::string_view{rq.raw})) {
+            std::string body = "403 Forbidden: origin not allowed\n";
+            std::string r = "HTTP/1.1 403 Forbidden\r\n" + detail::sec_headers() +
+                "Content-Type: text/plain; charset=utf-8\r\nConnection: close\r\nContent-Length: " +
+                std::to_string(body.size()) + "\r\n\r\n" + body;
+            detail::send_all(conn, r.data(), r.size());
+            return RuntimeDisposition::Close;
+        }
         std::string req_copy = rq.raw;
         std::thread(run_ws_session<P>, conn, std::move(req_copy), port, page_bg, page_title).detach();
         return RuntimeDisposition::Owned;

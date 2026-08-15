@@ -220,6 +220,21 @@ int main() {
               "build_request honours explicit Content-Length");
     }
 
+    // ── WebSocket Origin allowlist — cross-site WS hijack defense ───────────
+    {
+        using namespace waya::surface;
+        struct Allow { static std::vector<std::string> allowed_origins(){ return {"https://acme.dev"}; } };
+        struct Open {};
+        auto req = [](const char* origin){ std::string s =
+            "GET /?s=x HTTP/1.1\r\nHost: acme.dev\r\nUpgrade: websocket\r\n";
+            if (origin){ s += "Origin: "; s += origin; s += "\r\n"; } s += "\r\n"; return s; };
+        check(detail::origin_allowed<Allow>(req("https://acme.dev")), "origin: exact match allowed");
+        check(!detail::origin_allowed<Allow>(req("https://evil.com")), "origin: cross-site rejected");
+        check(!detail::origin_allowed<Allow>(req("https://acme.dev.evil.com")), "origin: lookalike rejected");
+        check(detail::origin_allowed<Allow>(req(nullptr)), "origin: no Origin header (native client) allowed");
+        check(detail::origin_allowed<Open>(req("https://evil.com")), "origin: no allowlist => allow all (dev)");
+    }
+
     std::cout << "test_net: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
