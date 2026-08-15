@@ -192,6 +192,22 @@ get/run/set boilerplate, and no widget internals leaking into the app's types. A
 widget library ships a widget as `{ view, update, subscribe, Msg }`; a consumer
 wires it in with a single mapper.
 
+**Testing a widget in isolation.** Because a widget is pure, you can unit-test it
+without a Program, a server, or a socket — `test::widget_harness` drives it by its
+own rendered labels:
+
+```cpp
+auto w = test::widget_harness(Dropdown::State{}, &Dropdown::view, &Dropdown::update);
+w.click("Open");                 // find + tap by rendered label (real token->Msg path)
+assert(w.state().open);         // its own state changed
+assert(w.text_contains("...")); // its own view reflects it
+assert(w.last_cmd() == ...);    // its own commands are captured
+```
+
+`State`/`Msg` are deduced from the widget's `update` signature; `click`/`fill`
+resolve through the *same* token→Msg wiring the live runtime uses, so a test
+exercises the real widget, not a shortcut.
+
 ## Putting it together
 
 The [`living` example](13-examples.md) is a todo list where rows are memoised

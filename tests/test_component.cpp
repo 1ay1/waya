@@ -2,6 +2,7 @@
 // (memo + keyed diff produce minimal, aliasing-free deltas).
 #include <waya/surface/live.hpp>
 #include <waya/surface/component.hpp>
+#include <waya/surface/test.hpp>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -239,6 +240,20 @@ int main() {
         check(m3.clock.n == 0, "embed_update: Reset zeroed the child state");
         check(c3 == Cmd<AppMsg>::emit(AppMsg{TickerEvent{Ticker::Msg{Ticker::Tick{}}}}),
               "embed_update: the child's returned Cmd is lifted into the parent's Cmd");
+
+        // 5) TESTABLE in isolation: widget_harness drives the widget by its OWN
+        //    rendered labels, no Program wrapper. This is how a widget-library
+        //    author unit-tests their widget.
+        auto w = test::widget_harness(Ticker::State{3}, &Ticker::view, &Ticker::update);
+        check(w.text_contains("3"), "widget_harness: renders the widget's own view");
+        w.click("reset");                                  // drive by the rendered label
+        check(w.state().n == 0, "widget_harness: click('reset') ran the widget's update");
+        check(w.text_contains("0"), "widget_harness: the re-rendered view reflects the new state");
+        // the widget's Reset returns a Cmd (emit Tick) — recorded + assertable.
+        check(w.last_cmd() == Cmd<Ticker::Msg>::emit(Ticker::Msg{Ticker::Tick{}}),
+              "widget_harness: the widget's returned Cmd is captured in last_cmd()");
+        w.send(Ticker::Msg{Ticker::Tick{}});
+        check(w.state().n == 1, "widget_harness: send() dispatches a raw Msg too");
     }
 
     std::cout << "test_component: " << pass << " passed, " << fail << " failed\n";

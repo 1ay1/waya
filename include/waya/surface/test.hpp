@@ -265,4 +265,112 @@ private:
 template <typename P>
 Harness<P> harness() { return Harness<P>{}; }
 
+// ── testing a self-contained WIDGET (not a full Program) ─────────────────
+/// A widget is `{ State, Msg, view(State)->NodeRef, update(State,Msg)->(State,
+/// Cmd) }` — not a whole Program — so `Harness<P>` (which needs static
+/// init/update/view) can't drive it without a wrapper. `WidgetHarness` holds the
+/// widget's pieces as VALUES and gives the same by-label driving
+/// (click/fill/send) + rendered-output queries, so a widget author unit-tests a
+/// widget in isolation with zero Program boilerplate:
+///
+///   auto w = test::widget_harness(Ticker::State{},
+///               &Ticker::view, &Ticker::update);
+///   w.click("reset");                 // drive by its OWN rendered label
+///   assert(w.state().n == 0);         // its own state updated
+///   assert(w.text_contains("0"));     // its own view reflects it
+///
+/// The update must return `pair<State, Cmd<Msg>>` (the standard shape). Cmds are
+/// recorded in `last_cmd()` so a widget's effects are assertable too.
+template <typename State, typename Msg, typename ViewFn, typename UpdateFn>
+class WidgetHarness {
+public:
+    WidgetHarness(State s, ViewFn v, UpdateFn u)
+        : state_(std::move(s)), view_fn_(std::move(v)), update_fn_(std::move(u)) {}
+
+    /// Dispatch a Msg (optionally with an input value) through the widget's
+    /// real update; records the returned Cmd.
+    WidgetHarness& send(Msg msg, std::string /*value*/ = {}) {
+        auto [s, cmd] = update_fn_(std::move(state_), std::move(msg));
+        state_ = std::move(s); last_cmd_ = std::move(cmd);
+        return *this;
+    }
+    WidgetHarness& send_all(std::vector<Msg> msgs){ for (auto& m : msgs) send(std::move(m)); return *this; }
+
+    /// Click the widget's node whose rendered label contains `label` — resolved
+    /// through the SAME token→Msg path the live runtime uses.
+    WidgetHarness& click(std::string_view label) {
+        auto [msg, ok] = resolve_tap(label);
+        if (!ok) throw std::runtime_error("widget_harness.click: no wired tap for label '" + std::string(label) + "'");
+        return send(std::move(msg));
+    }
+    /// Type into the widget's (first matching) text field.
+    WidgetHarness& fill(std::string value, std::string_view near = {}) {
+        auto [msg, ok] = resolve_input(value, near);
+        if (!ok) throw std::runtime_error("widget_harness.fill: no wired text input found");
+        return send(std::move(msg), std::move(value));
+    }
+
+    const State& state() const { return state_; }
+    State& state() { return state_; }
+    const Cmd<Msg>& last_cmd() const { return last_cmd_; }
+    NodeRef view() const { detail::begin_msg_capture(); return view_fn_(state_); }
+    std::string text() const { return text_of(view()); }
+    bool text_contains(std::string_view needle) const { return text().find(needle) != std::string::npos; }
+    int count(Kind k) const { return count_kind(view(), k); }
+    bool valid() const { return verify(view()); }
+    std::string validate() const { return explain(view()); }
+
+private:
+    std::pair<Msg,bool> resolve_tap(std::string_view label) {
+        detail::begin_msg_capture();
+        NodeRef t = view_fn_(state_);
+        NodeRef lbl = find_text(t, label);
+        const Node* target = lbl ? lbl.get() : nullptr;
+        int tok = -1;
+        std::function<void(const NodeRef&)> go = [&](const NodeRef& cur){
+            if (!cur) return;
+            if (cur->on_tap >= 0 && ((target && (cur.get()==target || subtree_contains(cur, target)))
+                                     || (!target && cur->text.find(label)!=std::string::npos)))
+                tok = cur->on_tap;
+            for (auto& k : cur->kids) go(k);
+        };
+        go(t);
+        if (tok < 0) return { Msg{}, false };
+        auto m = detail::resolve_msg<Msg>(tok, std::string{});
+        return m ? std::pair<Msg,bool>{ std::move(*m), true } : std::pair<Msg,bool>{ Msg{}, false };
+    }
+    std::pair<Msg,bool> resolve_input(const std::string& value, std::string_view near) {
+        detail::begin_msg_capture();
+        NodeRef t = view_fn_(state_);
+        int tok = -1;
+        std::function<void(const NodeRef&)> go = [&](const NodeRef& cur){
+            if (tok >= 0 || !cur) return;
+            bool is_text_input = (cur->kind==Kind::input || cur->kind==Kind::textarea);
+            bool matches = near.empty() || cur->placeholder.find(near)!=std::string::npos
+                        || cur->text.find(near)!=std::string::npos;
+            if (is_text_input && cur->on_input>=0 && matches) { tok = cur->on_input; return; }
+            for (auto& k : cur->kids) go(k);
+        };
+        go(t);
+        if (tok < 0) return { Msg{}, false };
+        auto m = detail::resolve_msg<Msg>(tok, value);
+        return m ? std::pair<Msg,bool>{ std::move(*m), true } : std::pair<Msg,bool>{ Msg{}, false };
+    }
+
+    State state_;
+    ViewFn view_fn_;
+    UpdateFn update_fn_;
+    Cmd<Msg> last_cmd_ = Cmd<Msg>::none();
+};
+
+/// `widget_harness(state, view_fn, update_fn)` — drive a self-contained widget
+/// by its rendered labels, no Program needed. `State` and `Msg` are deduced from
+/// the widget's `update` signature (`pair<State,Cmd<Msg>>(State, Msg)`); pass the
+/// widget's own `&Widget::view` and `&Widget::update`.
+template <typename State, typename Msg, typename ViewFn>
+auto widget_harness(State s, ViewFn v, std::pair<State,Cmd<Msg>>(*u)(State, Msg)) {
+    return WidgetHarness<State, Msg, ViewFn, std::pair<State,Cmd<Msg>>(*)(State, Msg)>(
+        std::move(s), std::move(v), u);
+}
+
 } // namespace waya::surface::test
