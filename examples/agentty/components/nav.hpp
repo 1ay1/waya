@@ -129,21 +129,25 @@ inline NodeRef site_nav(std::string version, std::vector<NavItem> items) {
     brand->attrs.emplace_back("aria-label", "agentty home");
     auto brand_link = brand;
 
-    // ── nav links ──
+    // ── nav links ── (bare box: the @media display:none must win, so no
+    // interned flex from row(); .nav-links CSS sets display:flex itself)
     std::vector<NodeRef> link_nodes;
     for (auto& it : items) link_nodes.push_back(link_to(it.title, it.href));
-    auto links = row(); links->kids = std::move(link_nodes); finalize(*links);
-    links = links | add_class("nav-links");
+    auto links = box(); links->kids = std::move(link_nodes);
+    links->attrs.emplace_back("class", "nav-links");
     links->attrs.emplace_back("aria-label", "Primary");
+    finalize(*links);
 
-    // ── ⌘K trigger ──
-    auto cmdk = row(
+    // ── ⌘K trigger ── (bare box: hidden at ≤720px via @media display:none;
+    // its own .cmdk-trigger CSS provides display:inline-flex on desktop)
+    auto cmdk = box(
         text("\xe2\x8c\x98") | add_class("cmdk-trigger-ico"),
         text("Jump to\xe2\x80\xa6") | add_class("cmdk-trigger-label"),
-        text("\xe2\x8c\x98K") | as("kbd") | add_class("cmdk-trigger-kbd"))
-        | add_class("cmdk-trigger");
+        text("\xe2\x8c\x98K") | as("kbd") | add_class("cmdk-trigger-kbd"));
+    cmdk->attrs.emplace_back("class", "cmdk-trigger");
     cmdk->attrs.emplace_back("role", "button");
     cmdk->attrs.emplace_back("aria-label", "Open command palette");
+    finalize(*cmdk);
 
     // ── discord + github ──
     auto discord = ghbtn("discordbtn", DISCORD_PATH, "Discord",
@@ -184,6 +188,42 @@ inline NodeRef site_nav(std::string version, std::vector<NavItem> items) {
     header->attrs.emplace_back("id", "top");
     finalize(*header);
     return header;
+}
+
+/// `agentty::site_footer()` — the multi-column footer (SiteFooter.tsx).
+inline NodeRef site_footer() {
+    install_theme();
+    assets().css(
+        "footer.foot{border-top:1px solid var(--border-soft);padding:48px 0 40px;margin-top:40px}"
+        ".foot-grid{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px}"
+        ".foot-grid .foot-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin:0 0 14px;font-weight:700;line-height:1.15}"
+        ".foot-grid a{display:block;color:var(--text-dim);font-size:14px;padding:4px 0}"
+        ".foot-grid a:hover{color:var(--text);text-decoration:none}"
+        ".foot-blurb{color:var(--text-dim);font-size:14px;max-width:280px}"
+        ".foot-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:36px;padding-top:24px;border-top:1px solid var(--border-soft);color:var(--text-faint);font-size:13px}"
+        "@media (max-width:720px){.foot-grid{grid-template-columns:1fr 1fr}}");
+    auto footer = markup(
+        "<div class=\"wrap\"><div class=\"foot-grid\">"
+        "<div><a class=\"brand\" href=\"/\" aria-label=\"agentty home\">"
+        "<span class=\"brand-mark\" aria-hidden=\"true\">\xe2\x96\x8c</span><span class=\"brand-name\">agentty</span></a>"
+        "<p class=\"foot-blurb\">Blazing-fast Claude in your terminal. A native C++26 coding agent \xe2\x80\x94 "
+        "one static binary, sandboxed by default.</p></div>"
+        "<div><h2 class=\"foot-h\">Docs</h2>"
+        "<a href=\"/docs\">Introduction</a><a href=\"/docs/installation\">Installation</a>"
+        "<a href=\"/docs/quick-start\">Quick Start</a><a href=\"/docs/keybindings\">Keybindings</a>"
+        "<a href=\"/docs/airgap\">SSH Air-gap</a></div>"
+        "<div><h2 class=\"foot-h\">Project</h2>"
+        "<a href=\"https://github.com/1ay1/agentty\">GitHub</a><a href=\"https://github.com/1ay1/agentty/releases/latest\">Releases</a>"
+        "<a href=\"/contributing\">Contributing</a><a href=\"/security\">Security</a></div>"
+        "<div><h2 class=\"foot-h\">Community</h2>"
+        "<a href=\"https://discord.gg/qhb9AZ8f3c\">Discord</a><a href=\"/community\">Get Involved</a>"
+        "<a href=\"https://github.com/1ay1/agentty/issues\">Report a Bug</a><a href=\"/acknowledgements\">Acknowledgements</a>"
+        "<a href=\"/code-of-conduct\">Code of Conduct</a><a href=\"/license\">License</a></div>"
+        "</div><div class=\"foot-bottom\">"
+        "<span>\xc2\xa9 2025 agentty contributors \xc2\xb7 MIT Licensed</span>"
+        "<span>Built with C++26 \xc2\xb7 Powered by Claude</span></div></div>")
+        | as("footer") | add_class("foot");
+    return footer;
 }
 
 } // namespace agentty
