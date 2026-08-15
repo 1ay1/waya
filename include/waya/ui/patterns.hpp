@@ -220,23 +220,28 @@ inline NodeRef feature_card(std::string ico, std::string title, std::string body
 
 /// `text_field("Email", value, to_msg, "placeholder", "hint")` — a labelled text
 /// input. `to_msg` maps the typed text to a Msg: `[](std::string v){ return SetEmail{v}; }`.
+/// Pass a non-empty `error` (last arg) to render the field's INVALID state — a
+/// red ring + an aria alert line. A validation error is just Model state:
+/// `text_field("Email", m.email, SetEmail{}, "", "", "text", m.email_error)`.
 template <typename ToMsg>
 NodeRef text_field(std::string label, std::string value, ToMsg to_msg,
-                   std::string placeholder_ = "", std::string hint = "", std::string kind = "text"){
+                   std::string placeholder_ = "", std::string hint = "", std::string kind = "text",
+                   std::string error = ""){
     auto ctrl = input(std::move(value)) | type(std::move(kind)) | input_skin() | on_input(to_msg);
     if (!placeholder_.empty()) ctrl = ctrl | placeholder(std::move(placeholder_));
+    if (!error.empty()) return field_invalid(std::move(label), std::move(ctrl), std::move(error));
     return field(std::move(label), std::move(ctrl), std::move(hint));
 }
 
 /// `email_field` / `password_field` — text_field with the right input type
-/// (correct mobile keyboard, masking, autofill).
+/// (correct mobile keyboard, masking, autofill). `error` shows the invalid state.
 template <typename ToMsg>
-NodeRef email_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = ""){
-    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "email");
+NodeRef email_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = "", std::string error = ""){
+    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "email", std::move(error));
 }
 template <typename ToMsg>
-NodeRef password_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = ""){
-    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "password");
+NodeRef password_field(std::string label, std::string value, ToMsg to_msg, std::string ph = "", std::string hint = "", std::string error = ""){
+    return text_field(std::move(label), std::move(value), to_msg, std::move(ph), std::move(hint), "password", std::move(error));
 }
 
 /// `textarea_field("Bio", value, to_msg)` — a labelled multi-line field.

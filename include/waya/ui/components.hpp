@@ -117,7 +117,7 @@ NodeRef icon_button(std::string glyph, Msg msg, Variant v = Variant::ghost){
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// `field("Email", control)` — a labelled control: a small muted label stacked
-/// above any input node. `hint` shows a helper/error line below when non-empty.
+/// above any input node. `hint` shows a helper line below when non-empty.
 inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
     auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
              | detail::raw_css("letter-spacing",".02em");
@@ -129,6 +129,25 @@ inline NodeRef field(std::string label, NodeRef control, std::string hint = ""){
     if (!hint.empty())
         col_ = col(std::move(col_), text(std::move(hint)) | fg_muted | detail::raw_css("font-size","12px")) | gap(6);
     return col_;
+}
+
+/// `field_invalid("Email", control, "That email is taken")` — the ERROR state of
+/// a field: the same labelled control, but the message renders in the danger
+/// colour with an alert role (announced by screen readers), and the control is
+/// wrapped so it reads as invalid. Drive it from your Model — a validation error
+/// is just state — so `f.error.empty() ? field(…) : field_invalid(…, f.error)`.
+inline NodeRef field_invalid(std::string label, NodeRef control, std::string error){
+    auto lab = text(std::move(label)) | fg_muted | detail::raw_css("font-size","12.5px") | semibold
+             | detail::raw_css("letter-spacing",".02em");
+    // a red focus ring / border on the control so the invalid field stands out.
+    control = std::move(control)
+        | detail::raw_css("border-color", "#ef4444")
+        | detail::raw_css("box-shadow", "0 0 0 3px rgba(239,68,68,.18)")
+        | attr("aria-invalid", "true");
+    auto msg = text(std::move(error)) | detail::raw_css("color","#ef4444")
+             | detail::raw_css("font-size","12px") | role("alert");
+    return col(std::move(lab), std::move(control), std::move(msg)) | gap(6) | as("label")
+         | detail::raw_css("display","flex") | detail::raw_css("cursor","pointer");
 }
 
 /// `styled_input(input_node)` — apply the library's input chrome to a raw core

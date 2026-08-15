@@ -86,6 +86,31 @@ surface), `ghost` (text-only until hover), `danger` (destructive).
   through the [asset registry](15-assets.md) — works anywhere, no setup.
 - `skeleton(w, h)` — a shimmering placeholder block for loading content.
 
+### Async data — `RemoteData<T>`
+
+Every screen that loads over the network has the same four states: not-asked,
+loading, failed, loaded. Hand-rolled that's a fragile ladder of bools that can
+reach illegal combinations (loading *and* failed?). `RemoteData<T>` makes it one
+sum type — you store ONE in your model, so illegal states are unrepresentable:
+
+```cpp
+struct Model { RemoteData<std::vector<User>> users; };
+
+// update: transition it with loading() / loaded() / failed()
+[&](Load)     { return { {loading(m.users)}, fetchUsers() }; }
+[&](Got r)    { m.users = r.ok() ? loaded(parse(r.body)) : failed<Users>(r.status_text(), m.users); }
+
+// view: ONE line covers spinner + error-card-with-Retry + content
+remote(m.users, [](const Users& us){ return user_list(us); }, Retry{})
+```
+
+Or take all four branches yourself with the exhaustive form
+`remote(rd, onLoading, onSuccess, onFailure)`. Two niceties are free:
+`loading(previous)` and `failed(err, previous)` **retain the last-loaded value**,
+so a re-poll shows stale-then-fresh instead of flashing a spinner over content
+the user was reading (stale-while-revalidate). `rd.value()` reads the retained
+value in any state; `rd.error()` the message.
+
 ### Navigation
 
 - `tabs(active, {{id, "Label"}…}, to_msg)` — a themed tab bar. `to_msg` maps a
@@ -156,7 +181,17 @@ bars({4, 9, 2, 7}) | fg(0x8b5cf6)
 ### Forms
 
 `field(label, control, hint)` labels any control; `input_skin()` themes a raw
-input. On submit, `FormData` (core) turns the gathered `"a=1&b=2"` string into a
+input. A validation error is just Model state — `field_invalid(label, control,
+error)` (or the `error` last-arg on `text_field`/`email_field`/`password_field`)
+renders the field's invalid state: a red ring, `aria-invalid`, and an
+`role="alert"` message screen readers announce.
+
+```cpp
+text_field("Email", m.email, SetEmail{}, "you@example.com", /*hint*/"",
+           /*type*/"email", /*error*/ m.email_error)   // empty error = valid
+```
+
+On submit, `FormData` (core) turns the gathered `"a=1&b=2"` string into a
 keyed lookup so you read fields by name:
 
 ```cpp

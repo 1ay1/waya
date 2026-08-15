@@ -19,4 +19,5 @@
 #include "ui/widgets.hpp"
 #include "ui/charts.hpp"
 #include "ui/scene.hpp"
+#include "ui/async.hpp"
 #include "ui/patterns.hpp"

@@ -120,6 +120,48 @@ int main() {
       check(has(h, "<svg") && has(h, "<rect"), "bars() renders via scene");
       check(!has(h, "<rect x='"), "bars() no longer hand-concatenates svg"); }
 
+    // ── RemoteData: the four async states as ONE value ─────────────────────
+    {
+        struct Retry { bool operator==(const Retry&) const = default; };
+        using Users = std::vector<std::string>;
+        RemoteData<Users> u;                               // NotAsked
+        check(u.is_not_asked() && !u.value(), "RemoteData starts NotAsked");
+        u = loading(u);
+        check(u.is_loading(), "loading() -> Loading");
+        u = loaded(Users{"ada", "grace"});
+        check(u.is_success() && u.value() && u.value()->size()==2, "loaded() -> Success with value");
+        // stale-while-revalidate: loading from a Success RETAINS the value
+        auto refreshing = loading(u);
+        check(refreshing.is_loading() && refreshing.value(), "loading(prev) keeps the stale value");
+        // failure also retains the last-good value behind the error
+        auto broke = failed<Users>("500", u);
+        check(broke.is_failure() && broke.error()=="500" && broke.value(), "failed() keeps stale value + error");
+
+        // the batteries view: spinner while loading, error card on failure
+        auto onOk = [](const Users& us){ return list_row(nullptr, us[0], "", nullptr); };
+        check(html_of(remote(loading<Users>(), onOk, Retry{})).size() > 0
+              && !has(html_of(remote(loading<Users>(), onOk, Retry{})), "ada"),
+              "remote() loading -> chrome, not content");
+        check(has(html_of(remote(broke, onOk, Retry{})), "Retry"), "remote() failure -> Retry button");
+        check(has(html_of(remote(u, onOk, Retry{})), "ada"), "remote() success -> content");
+        // the exhaustive 3-branch form compiles + dispatches by state
+        auto custom = remote(u, []{ return text("L"); },
+                                [](const Users&){ return text("S"); },
+                                [](const std::string&){ return text("F"); });
+        check(has(html_of(custom), ">S<"), "remote(3-branch) picks the Success branch");
+    }
+
+    // ── field validation: an error is Model state, not hand-rolled layout ───
+    {
+        auto ok = html_of(text_field("Email", "a@b.com", [](std::string){ return 0; }));
+        check(!has(ok, "aria-invalid"), "valid field has no invalid marker");
+        auto bad = text_field("Email", "nope", [](std::string){ return 0; }, "", "", "email", "Email is taken");
+        auto bad_html = html_of(bad);
+        check(has(bad_html, "aria-invalid=\"true\""), "invalid field marks the control aria-invalid");
+        check(has(bad_html, "role=\"alert\"") && has(bad_html, "Email is taken"), "invalid field shows an aria alert message");
+        check(has(css_of(bad), "ef4444"), "invalid field is coloured danger");
+    }
+
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;
 }
