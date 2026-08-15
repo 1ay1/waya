@@ -1041,6 +1041,43 @@ inline Mod custom_animation(std::string name, std::string spec, int ms=600,
     return sty([=](Style& s){ s.extra.emplace_back("animation",
         name + " " + std::to_string(ms) + "ms " + ease + " " + iter + " " + fill); });
 }
+/// `loop(name, spec, secs)` — define AND apply an INFINITELY-looping keyframe in
+/// one call. THE way to add a decorative, non-interactive animation: the browser
+/// paints it forever, the server renders it once, and — unlike a `Sub::every`
+/// tick — it costs nothing per frame and touches no Model state. Reach for this
+/// (or a named loop below) whenever an effect has no application state; save
+/// `Sub::every` for AUTHORITATIVE state (a live counter, shared/multiplayer data)
+/// where the server is the source of truth.
+///   box(...) | loop("drift", "to{transform:translateX(40px)}", 8)
+inline Mod loop(std::string name, std::string spec, float secs=1.0f,
+                std::string ease="linear"){
+    assets().keyframes(name, spec);
+    return sty([=](Style& s){ s.extra.emplace_back("animation",
+        name + " " + detail::numstr(secs) + "s " + ease + " infinite"); });
+}
+/// `loop_alt(name, spec, secs)` — same, but the animation reverses each cycle
+/// (`alternate`), for a back-and-forth breathe/drift with no visible jump.
+inline Mod loop_alt(std::string name, std::string spec, float secs=1.0f,
+                    std::string ease="ease-in-out"){
+    assets().keyframes(name, spec);
+    return sty([=](Style& s){ s.extra.emplace_back("animation",
+        name + " " + detail::numstr(secs) + "s " + ease + " infinite alternate"); });
+}
+/// `anim_delay(secs)` / `anim_speed(secs)` — tune a loop per element (stagger a
+/// grid of items, vary column speeds) WITHOUT redefining the keyframe. A negative
+/// delay starts the animation mid-cycle (so a grid doesn't all begin in sync).
+inline Mod anim_delay(float secs){ return sty([=](Style& s){ s.extra.emplace_back("animation-delay", detail::numstr(secs)+"s"); }); }
+inline Mod anim_speed(float secs){ return sty([=](Style& s){ s.extra.emplace_back("animation-duration", detail::numstr(secs)+"s"); }); }
+/// `scroll_y(distance, secs)` / `scroll_x(...)` — the falling/marquee primitive:
+/// translate a (tall/wide) strip forever, so a column of glyphs "rains" or a row
+/// of logos "marquees". Pair a strip that repeats its own first half with a 50%
+/// translate for a seamless loop. Client-painted; zero server cost.
+inline Mod scroll_down(float pct=50, float secs=8){
+    return loop("wa-scrolly", "to{transform:translateY("+detail::numstr(pct)+"%)}", secs);
+}
+inline Mod scroll_left(float pct=50, float secs=20){
+    return loop("wa-scrollx", "to{transform:translateX(-"+detail::numstr(pct)+"%)}", secs);
+}
 // Entrances (play once): the polish that makes new content feel alive.
 inline Mod fade_in(int ms=300){ return animate("wa-fade", ms); }
 inline Mod fade_up(int ms=400){ return animate("wa-fade-up", ms); }

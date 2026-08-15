@@ -146,6 +146,15 @@ int main() {
     check(has(css_of(box() | bg_transparent()), "background:transparent"), "bg_transparent()");
     check(has(css_of(box() | grab), "cursor:grab"), "grab cursor");
     check(has(css_of(box() | grabbing), "cursor:grabbing"), "grabbing cursor");
+    // client-side loop animations (the way to do decorative motion — no Sub::every)
+    check(has(css_of(box() | loop("drift", "to{transform:translateX(40px)}", 8)), "drift 8s linear infinite"),
+          "loop() -> infinite keyframe animation");
+    check(has(css_of(box() | loop_alt("bob", "to{transform:translateY(6px)}", 3)), "infinite alternate"),
+          "loop_alt() -> alternating loop");
+    check(has(css_of(box() | scroll_down(50, 8)), "wa-scrolly 8s linear infinite"), "scroll_down() -> translateY loop");
+    check(has(css_of(box() | scroll_left(50, 20)), "wa-scrollx 20s linear infinite"), "scroll_left() -> translateX loop");
+    check(has(css_of(box() | anim_delay(-2.5f)), "animation-delay:-2.5s"), "anim_delay() (negative = mid-cycle)");
+    check(has(css_of(box() | anim_speed(4)), "animation-duration:4s"), "anim_speed()");
 
     std::cout << "test_mod: " << pass << " passed, " << fail << " failed\n";
     return fail ? 1 : 0;

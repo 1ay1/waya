@@ -67,10 +67,6 @@ static NodeRef pixel_logo() {
 // first paint and never again. Zero Model state, zero WebSocket traffic, zero
 // server cost per frame. A page under load pays nothing for this animation.
 static NodeRef matrix_rain(std::uint32_t accent) {
-    // register the fall keyframes ONCE in the shared stylesheet (client-cached).
-    assets().css(
-        "@keyframes agentty-fall{to{transform:translateY(50%)}}"
-        ".agentty-col{will-change:transform;animation:agentty-fall linear infinite}");
     static const char* GLYPHS = "01<>{}[]#$/\\|=+*ABCDEF89";
     const int cols = 26, rows = 42, n = (int)std::string(GLYPHS).size();
     auto hash = [](std::uint32_t x){ x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; };
@@ -87,15 +83,15 @@ static NodeRef matrix_rain(std::uint32_t accent) {
             cells.push_back(text(std::string(1, ch)) | mono | text_size(13)
                 | fg(head ? 0xbfe0ff : accent)
                 | detail::raw_css("opacity", detail::numstr(op))
-                | detail::raw_css("line-height", "1.25"));
+                | line(1.25f));
         }
         auto colBox = box(); colBox->kids = std::move(cells); colBox->style.flow = Flow::col; finalize(*colBox);
-        // per-column speed + start offset so they don't fall in lockstep.
-        float dur = 6.0f + (float)(hash((std::uint32_t)c) % 90) / 10.0f;   // 6..15s
-        float delay = -(float)(hash((std::uint32_t)c * 7u) % 100) / 10.0f; // negative = mid-cycle start
-        columns.push_back(colBox | items_center | attr("class", "agentty-col")
-            | detail::raw_css("animation-duration", detail::numstr(dur) + "s")
-            | detail::raw_css("animation-delay", detail::numstr(delay) + "s"));
+        // one API call for the fall; per-column speed + a negative (mid-cycle)
+        // start so columns don't rain in lockstep. All CLIENT-painted, no ticks.
+        float dur = 6.0f + (float)(hash((std::uint32_t)c) % 90) / 10.0f;
+        float delay = -(float)(hash((std::uint32_t)c * 7u) % 100) / 10.0f;
+        columns.push_back(colBox | items_center
+            | scroll_down(50, dur) | anim_delay(delay));
     }
     auto grid = box(); grid->kids = std::move(columns); grid->style.flow = Flow::row; finalize(*grid);
     return grid | detail::raw_css("gap", "14px") | justify_center
