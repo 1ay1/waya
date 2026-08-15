@@ -44,13 +44,27 @@ struct App {
                 nav_cta("GitHub", "https://github.com/1ay1/agentty", false),
                 nav_cta("Get started", "/docs/quick-start")),
 
-            // ── HERO ──────────────────────────────────────────────────────
-            site_hero_span(
+            // ── HERO ───────────────────────────────────────────────────
+            site_hero_split(
                 "Blazing-fast", "coding agent", "in your terminal.",
                 "A drop-in alternative to claude-code, written in C++26. 13 MB binary, "
                 "millisecond cold start, sandboxed by default, SSH air-gap in one command, "
                 "and runs inside Zed over ACP. Signs in with your existing Claude Pro/Max "
                 "\xe2\x80\x94 or point it at OpenAI, Groq, OpenRouter, Cerebras, or a local Ollama.",
+                // the demo box on the right — a replica agentty session
+                tui_window("agentty \xe2\x80\x94 ~/auth-service",
+                    tui_line({ {0xd97cd9, "\xe2\x96\x8e "}, {0xe6edf3, "fix the token cache fallback"} }),
+                    tui_line({ {0x656d76, ""} }),
+                    tui_line({ {0xd97cd9, "\xe2\x96\x8e "}, {0x7ee787, "agentty"}, {0x656d76, "  \xc2\xb7 sonnet \xc2\xb7 4/4"} }),
+                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0x56d4e0, "Read"}, {0x656d76, "    src/auth/token_cache.cpp"}, {0x7ee787, "     \xe2\x9c\x93 0.2s"} }),
+                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0xc586c0, "Edit"}, {0x656d76, "    resolve() \xe2\x86\x92 TokenCache::lookup"}, {0x7ee787, "  \xe2\x9c\x93 0.1s"} }),
+                    tui_line({ {0x656d76, "  \xe2\x94\x82 "}, {0x56b6c2, "Bash"}, {0x656d76, "    cmake --build build -j"}, {0xe5c07b, "      \xe2\x9c\x93 3.6s"} }),
+                    tui_line({ {0x656d76, ""} }),
+                    tui_line({ {0xe6edf3, "Auth handler now resolves through "}, {0x56d4e0, "TokenCache::lookup"}, {0xe6edf3, ","} }),
+                    tui_line({ {0xe6edf3, "falling back to a network refresh only on a miss. Build is green."} }),
+                    tui_line({ {0x656d76, ""} }),
+                    tui_line({ {0x656d76, "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80"} }),
+                    tui_line({ {0x7ee787, "\xe2\x97\x8f Ready"}, {0x656d76, "   \xe2\x8c\x83 3 edits \xc2\xb7 2.1k tokens \xc2\xb7 esc to interrupt"} })),
                 cta_row(
                     cta_primary("Quick start", "/docs/quick-start"),
                     cta_ghost("Star on GitHub", "https://github.com/1ay1/agentty"),

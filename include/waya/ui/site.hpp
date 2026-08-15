@@ -215,6 +215,80 @@ inline NodeRef site_hero(std::string title, std::string title_accent, std::strin
 /// title has a gradient-highlighted word IN THE MIDDLE of the phrase (e.g.
 /// "Blazing-fast [coding agent] in your terminal"), which the two-line
 /// `site_hero` can't express. The three parts render as one wrapping headline.
+
+// ── animated hero backdrop ──────────────────────────────────────
+/// `hero_backdrop(accent)` — the decorative, non-interactive layer that sits
+/// behind hero content: a faint blueprint grid lattice, a slowly-drifting brand
+/// glow, and CRT scanlines, all masked to fade out toward the bottom so the
+/// content below stays clean. Pure CSS (one keyframe) — no canvas, no JS.
+/// Absolutely positioned; place it as the FIRST child of a `position:relative`
+/// hero. `site_hero`/`site_hero_span` include it automatically.
+inline NodeRef hero_backdrop(std::uint32_t accent){
+    assets().keyframes("wa-hero-glow",
+        "from{transform:translate(0,0) scale(1);opacity:.8}"
+        "to{transform:translate(120px,60px) scale(1.12);opacity:1}");
+    std::string a = detail::hexstr(accent);
+    auto grid = box() | absolute()
+        | detail::raw_css("inset","-2px")
+        | detail::raw_css("background-image",
+            "linear-gradient(" + detail::rgba_hex(accent,0.045f) + " 1px, transparent 1px),"
+            "linear-gradient(90deg," + detail::rgba_hex(accent,0.045f) + " 1px, transparent 1px)")
+        | detail::raw_css("background-size","44px 44px")
+        | detail::raw_css("-webkit-mask-image","radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)")
+        | detail::raw_css("mask-image","radial-gradient(900px 520px at 78% 4%, #000, transparent 72%)");
+    auto glow = box() | absolute()
+        | detail::raw_css("width","720px") | detail::raw_css("height","720px")
+        | detail::raw_css("top","-260px") | detail::raw_css("left","8%")
+        | detail::raw_css("background","radial-gradient(circle," + detail::rgba_hex(accent,0.16f) + ", transparent 62%)")
+        | detail::raw_css("filter","blur(8px)")
+        | detail::raw_css("animation","wa-hero-glow 14s ease-in-out infinite alternate");
+    auto scan = box() | absolute() | detail::raw_css("inset","0")
+        | detail::raw_css("background",
+            "repeating-linear-gradient(180deg, rgba(255,255,255,.015) 0px, rgba(255,255,255,.015) 1px, transparent 1px, transparent 3px)")
+        | detail::raw_css("mix-blend-mode","overlay");
+    return box(grid, glow, scan)
+        | absolute() | detail::raw_css("inset","0")
+        | detail::raw_css("overflow","hidden") | z(0)
+        | no_pointer
+        | detail::raw_css("-webkit-mask-image","linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)")
+        | detail::raw_css("mask-image","linear-gradient(180deg,#000 0%,#000 62%,transparent 100%)");
+}
+
+// ── terminal / TUI demo window ───────────────────────────────────
+/// One mono line inside a `tui_window`. `parts` are (css-color-hex, text) spans
+/// rendered on one pre-wrapped row — the ANSI-coloured terminal look.
+using TuiSpan = std::pair<std::uint32_t, std::string>;
+inline NodeRef tui_line(std::vector<TuiSpan> parts){
+    std::vector<NodeRef> spans;
+    for (auto& [c, s] : parts) spans.push_back(text(s) | fg(c));
+    auto r = box(); r->kids = std::move(spans); r->style.flow = Flow::row; finalize(*r);
+    return r | mono | detail::raw_css("white-space","pre-wrap") | detail::raw_css("font-size","13px") | line(1.55f);
+}
+/// `tui_window(title, lines…)` — a macOS-style terminal window: traffic-light
+/// dots + a title in the title bar, then the mono body. Use `tui_line(...)` for
+/// each ANSI-coloured row. The demo box you drop beside a hero.
+template <typename... Lines>
+inline NodeRef tui_window(std::string title, Lines... lines){
+    using namespace site_detail;
+    auto dot = [](std::uint32_t c){ return box() | w(11) | h(11) | round(999) | bg(c); };
+    auto bar = row(dot(0xff5f56), dot(0xffbd2e), dot(0x27c93f),
+                   text(std::move(title)) | fg(0x656d76) | mono | text_size(12)
+                       | detail::raw_css("margin-left","8px"))
+        | items_center | gap(8)
+        | pad_x(14) | pad_y(11)
+        | detail::raw_css("border-bottom","1px solid " + detail::hexstr(T().border))
+        | bg(0x0b1017);
+    auto body = col(std::move(lines)...)
+        | pad_x(18) | pad_y(16) | gap(2)
+        | detail::raw_css("overflow-x","auto") | fg(0xe6edf3);
+    return col(bar, body) | round(12) | clip
+        | bg(T().code_bg)
+        | border(1, rgba(T().border, 1.0f))
+        | detail::raw_css("box-shadow","0 30px 80px -20px rgba(0,0,0,.6)")
+        | w_full;
+}
+
+/// `site_hero` can't express. The three parts render as one wrapping headline.
 template <typename... Actions>
 inline NodeRef site_hero_span(std::string lead, std::string gradient_word, std::string tail,
                              std::string lede, Actions... actions){
@@ -241,9 +315,49 @@ inline NodeRef site_hero_span(std::string lead, std::string gradient_word, std::
     auto inner = box(); inner->kids = std::move(head); inner->style.flow = Flow::col;
     finalize(*inner);
     inner = inner | items_center | gap(0);
-    return box(wrap(inner)) | as_section | w_full
+    return box(hero_backdrop(T().accent), wrap(inner)) | as_section | w_full | relative
+        | detail::raw_css("overflow","hidden")
         | detail::raw_css("padding","96px 0 80px")
         | radial(T().accent, 50, -10, T().bg, 90);
+}
+
+/// `site_hero_split(lead, gradient_word, tail, lede, aside, actions…)` — the
+/// two-column hero: headline + lede + actions on the LEFT, `aside` (usually a
+/// `tui_window(…)` demo) on the RIGHT, over the animated backdrop. Collapses to
+/// one column on narrow screens. This is the agentty.org above-the-fold shape.
+template <typename... Actions>
+inline NodeRef site_hero_split(std::string lead, std::string gradient_word, std::string tail,
+                              std::string lede, NodeRef aside, Actions... actions){
+    using namespace site_detail;
+    auto piece = [](std::string s){
+        return text(std::move(s)) | detail::raw_css("font-size","clamp(38px, 6vw, 66px)")
+            | detail::raw_css("font-weight","800") | tracking_em(-0.04f) | leading(1.04f); };
+    auto title = row(
+        piece(std::move(lead)),
+        piece(std::move(gradient_word)) | gradient_text(T().accent, T().accent2, 110),
+        piece(std::move(tail)))
+        | items_baseline | surface::wrap | detail::raw_css("gap","0 14px");
+
+    std::vector<NodeRef> head;
+    head.push_back(std::move(title));
+    if (!lede.empty())
+        head.push_back(text(std::move(lede)) | fg(T().dim)
+            | detail::raw_css("font-size","clamp(15px, 1.6vw, 18px)") | leading(1.65f)
+            | max_w(560) | detail::raw_css("margin-top","22px"));
+    (head.push_back(std::move(actions)), ...);
+    auto left = box(); left->kids = std::move(head); left->style.flow = Flow::col;
+    finalize(*left);
+    left = left | gap(0) | detail::raw_css("min-width","320px");
+
+    auto grid = row(left, std::move(aside))
+        | detail::raw_css("display","grid")
+        | detail::raw_css("grid-template-columns","minmax(340px, 1fr) minmax(0, 1.05fr)")
+        | detail::raw_css("gap","56px") | items_center
+        | relative | z(1);
+
+    return box(hero_backdrop(T().accent), wrap(grid)) | as_section | w_full | relative
+        | detail::raw_css("overflow","hidden")
+        | detail::raw_css("padding","72px 0 64px");
 }
 
 // ── section (the content workhorse) ──────────────────────────────────────────

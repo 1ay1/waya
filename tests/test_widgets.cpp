@@ -978,6 +978,21 @@ int main() {
         check(has(h, "150 ms") && has(hc, "3fb950"), "site: compare_table renders + highlights the winner");
         check(has(h, "One") && has(h, "Two"), "site: feature cards render");
         check(has(h, "href=\"/docs\""), "site: nav links are real anchors");
+
+        // hero backdrop (animated) + tui demo window
+        detail::begin_msg_capture();
+        auto heroNode = site_hero_split("Fast", "agent", "here.", "lede.",
+            tui_window("demo ~/x",
+                tui_line({ {0xe6edf3, "$ agentty"} }),
+                tui_line({ {0x7ee787, "Ready"} })),
+            box());
+        auto hh = html_of(heroNode);
+        auto hhc = css_of(heroNode);
+        check(has(hhc, "44px 44px"), "hero_backdrop: blueprint grid lattice");
+        check(has(hhc, "mix-blend-mode:overlay"), "hero_backdrop: CRT scanlines");
+        check(has(hhc, "wa-hero-glow") || has(hh, "wa-hero-glow"), "hero_backdrop: drift glow animation");
+        check(has(hh, "$ agentty") && has(hh, "Ready"), "tui_window: renders the session lines");
+        check(has(hhc, "ff5f56") && has(hhc, "27c93f"), "tui_window: mac traffic-light dots");
     }
 
     std::cout << "test_widgets: " << pass << " passed, " << fail << " failed\n";
