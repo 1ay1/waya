@@ -154,12 +154,13 @@ inline NodeRef html(std::string cls, std::string inner) {
     return n;
 }
 
-// CopyRow.tsx: `$ <cmd>` + copy button. `typed` types the command out on
-// scroll-in via the framework typewriter(); clicking dispatches copy_msg.
+// CopyRow.tsx: `$ <cmd>` + copy button. `typed` types the command out via the
+// framework typewriter(); `immediate` starts it on load (above-the-fold) instead
+// of waiting for scroll. Clicking dispatches copy_msg.
 template <typename CopyMsg>
-inline NodeRef copy_row(std::string cmd, CopyMsg copy_msg, bool typed) {
+inline NodeRef copy_row(std::string cmd, CopyMsg copy_msg, bool typed, bool immediate = false) {
     auto code = text(cmd);
-    if (typed) code = code | typewriter();
+    if (typed) code = code | typewriter(true, immediate);
     auto btn = text("copy") | add_class("copybtn") | as("button") | tap(copy_msg);
     return row(
         text("$") | add_class("prompt"),
@@ -237,7 +238,7 @@ NodeRef home(std::string install_cmd, CopyMsg copy_msg) {
     auto install = box(
         box(
             markup("<p class=\"install-kicker\">Install in one line</p>"),
-            copy_row(install_cmd, copy_msg, /*typed=*/true),
+            copy_row(install_cmd, copy_msg, /*typed=*/true, /*immediate=*/true),
             markup("<p class=\"install-note\">No Node, no Python, no <code>npm install</code> \xe2\x80\x94 "
                    "just a single 13\xc2\xa0MB static binary.</p>")
         ) | add_class("wrap install-inner")

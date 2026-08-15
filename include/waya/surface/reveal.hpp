@@ -82,7 +82,10 @@ inline void ensure_reveal_boot() {
         "for(var i=0;i<es.length;i++){if(!es[i].isIntersecting)continue;"
         "var el=es[i].target;io.unobserve(el);run(el);}},{rootMargin:'0px 0px -8% 0px',threshold:.15}):null;"
         "function arm(root){(root||document).querySelectorAll('[data-wa-reveal]:not(.wa-seen)').forEach(function(el){"
-        "if(el.__waArm)return;el.__waArm=1;if(RM||!io){run(el);return;}io.observe(el);});}"
+        "if(el.__waArm)return;el.__waArm=1;"
+        // data-wa-now: above-the-fold elements run immediately, no scroll wait.
+        "if(el.hasAttribute('data-wa-now')){run(el);return;}"
+        "if(RM||!io){run(el);return;}io.observe(el);});}"
         "new MutationObserver(function(){arm();}).observe(document.documentElement,{childList:true,subtree:true});"
         "if(document.readyState!=='loading')arm();else document.addEventListener('DOMContentLoaded',function(){arm();});"
         "})();");
@@ -114,18 +117,20 @@ inline Mod reveal_stagger(int ms = 80) {
 /// character, when it scrolls into view. If `caret` is true a blinking block
 /// caret trails the text until it finishes. The text is captured from the node
 /// at build time, so it's still fully present for crawlers/no-JS (SSR-safe).
-inline Mod typewriter(bool caret = true) {
+inline Mod typewriter(bool caret = true, bool immediate = false) {
     detail::ensure_reveal_boot();
     if (caret) assets().css(
         ".wa-caret::after{content:'';display:inline-block;width:.6ch;height:1.05em;"
         "margin-left:1px;vertical-align:-.15em;background:currentColor;"
         "animation:wa-caret-blink 1s steps(1) infinite}"
         "@keyframes wa-caret-blink{50%{opacity:0}}");
-    return {[caret](Node& n){
+    return {[caret, immediate](Node& n){
         // Snapshot the settled text so the boot script can retype it.
         std::string full = n.text;
         n.attrs.emplace_back("data-wa-reveal", "type");
         n.attrs.emplace_back("data-wa-type", full);
+        // `immediate` (above-the-fold): type out on load, don't wait for scroll.
+        if (immediate) n.attrs.emplace_back("data-wa-now", "");
         // The caret is a CLASS the boot script toggles at runtime (add on start,
         // remove when done) rather than a server-emitted `class` attr — the
         // node already carries an interned styling class, and two `class`
