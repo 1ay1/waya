@@ -1072,11 +1072,6 @@ inline Mod glow(std::uint32_t color, int spread=24){
     return sty([=](Style& s){ s.extra.emplace_back("box-shadow",
         "0 0 "+std::to_string(spread)+"px "+h+"66, 0 0 "+std::to_string(spread/2)+"px "+h+"44"); });
 }
-/// `ring(color, width)` — a focus/selection ring (outline that doesn't shift layout).
-inline Mod ring(std::uint32_t color, int width=2){
-    return sty([=](Style& s){ s.extra.emplace_back("box-shadow",
-        "0 0 0 "+std::to_string(width)+"px "+detail::hexstr(color)); });
-}
 /// `glass(blur, tint)` — frosted-glass panel: translucent tint + backdrop blur.
 /// The modern "floating panel over content" look, in one word.
 inline Mod glass(int blur_px=14, std::uint32_t tint=0xffffff, float alpha=0.08f){

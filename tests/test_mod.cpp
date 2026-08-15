@@ -102,6 +102,15 @@ int main() {
       check(decls == 1, "three shadow layers compose into ONE box-shadow");
       check(has(css, "0 0 0 2px") && has(css, "inset 0 1px 0") && has(css, "0 6px 16px"),
             "all three layers present"); }
+    // ring() with a BARE colour (default width) must compile — this used to be an
+    // ambiguous overload (a duplicate int-width ring clobbered the composing
+    // one), which was a hard compile error for a widget author writing ring(c).
+    check(has(css_of(box() | ring(0x6366f1)), "box-shadow:0 0 0 2px"), "ring(color) default width compiles + composes");
+    // ring composes WITH an elevation into one box-shadow (never clobbers it).
+    { auto css = css_of(box() | elevation(2) | ring(0x6366f1));
+      int decls = 0; std::size_t p = 0;
+      while ((p = css.find("box-shadow:", p)) != std::string::npos) { ++decls; p += 11; }
+      check(decls == 1 && has(css, "6366f1"), "elevation | ring compose into ONE box-shadow (no clobber)"); }
     check(has(css_of(box() | inset_ring(0xffffff, 1)), "inset 0 0 0 1px"), "inset_ring");
     check(has(css_of(box() | inset_glow(0x00ff41, 24)), "inset 0 0 24px"), "inset_glow");
     // backgrounds
