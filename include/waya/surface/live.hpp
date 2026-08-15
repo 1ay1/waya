@@ -233,6 +233,22 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
         if constexpr (requires { e.msg.index(); }) alt = e.msg.index();
         return (std::uint64_t)e.interval.count() * 1099511628211ull ^ (alt + 1);
     };
+
+    // Fast path: fingerprint the declared subs (timer keys + topic names). If it
+    // matches last frame's, the subscription set is unchanged and there is
+    // nothing to reconcile — skip the timer diff AND the Hub's global-lock
+    // set_topics entirely. A keystroke almost never changes what you subscribe
+    // to, so this removes a mutex + N allocations from the steady-state loop.
+    std::uint64_t fp = 1469598103934665603ull;
+    auto mixfp = [&](std::uint64_t v){ fp ^= v; fp *= 1099511628211ull; };
+    for (auto& e : wanted) mixfp(keyof(e));
+    mixfp(0x9E3779B97F4A7C15ull);   // separator between timers and topics
+    auto topic_ptrs = sub.topics();
+    for (auto* t : topic_ptrs) for (char c : t->topic) mixfp((std::uint8_t)c);
+    if (fp == 0) fp = 1;            // reserve 0 for "never reconciled"
+    if (fp == s->sub_fingerprint) return;   // unchanged: nothing to do
+    s->sub_fingerprint = fp;
+
     std::vector<Session::Timer> next;
     std::vector<bool> matched(wanted.size(), false);
     for (auto& t : s->timers) {
@@ -268,7 +284,7 @@ void reconcile_subs(const std::shared_ptr<Session>& s, const Sub<Msg>& sub) {
     // subscription currently declares (idempotent — joining/leaving a room is
     // just a model change that adds/removes an on_topic).
     std::vector<std::string> topics;
-    for (auto* t : sub.topics()) topics.push_back(t->topic);
+    for (auto* t : topic_ptrs) topics.push_back(t->topic);
     Hub::instance().set_topics(s, topics);
 }
 

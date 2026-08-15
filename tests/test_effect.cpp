@@ -364,6 +364,34 @@ int main() {
         s->alive = false;
     }
 
+    // ── reconcile_subs fast path: unchanged subs skip the reconcile ─────────
+    {
+        auto s = std::make_shared<detail::Session>(); s->conn = -1;
+        // a timer + a topic. First reconcile applies them and stamps the fp.
+        auto sub = Sub<int>::batch(Sub<int>::every(100, Tick),
+                                   Sub<int>::on_topic("room", [](std::string){ return Tick; }));
+        CHECK(s->sub_fingerprint == 0);              // never reconciled
+        detail::reconcile_subs<int>(s, sub);
+        std::uint64_t fp1 = s->sub_fingerprint;
+        CHECK(fp1 != 0);                             // fingerprint stamped
+        CHECK(s->timers.size() == 1);                // the timer thread started
+        // Reconciling the SAME sub again is a no-op: fp unchanged, timer kept.
+        auto* run_before = s->timers[0].run.get();
+        detail::reconcile_subs<int>(s, sub);
+        CHECK(s->sub_fingerprint == fp1);            // same fingerprint
+        CHECK(s->timers.size() == 1 && s->timers[0].run.get() == run_before);  // untouched
+        // Changing the sub (drop the topic) DOES re-reconcile: fp changes.
+        detail::reconcile_subs<int>(s, Sub<int>::every(100, Tick));
+        CHECK(s->sub_fingerprint != fp1);            // fingerprint moved
+        CHECK(s->timers.size() == 1);                // timer survives (same key)
+        // Empty subs clear everything and change the fp again.
+        detail::reconcile_subs<int>(s, Sub<int>::none());
+        CHECK(s->timers.empty());
+        detail::Hub::instance().remove(s.get());
+        s->alive = false;
+        for (auto& t : s->timers) *t.run = false;
+    }
+
     std::cerr << (g_fail ? "SOME TESTS FAILED\n" : "all effect tests passed\n");
     std::cerr << g_pass << " passed, " << g_fail << " failed\n";
     return g_fail ? 1 : 0;

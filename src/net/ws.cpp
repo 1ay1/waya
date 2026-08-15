@@ -48,7 +48,8 @@ std::optional<std::string> try_handshake(std::string_view req){
 }
 
 std::string encode_text(std::string_view payload){
-    std::string f; f.push_back((char)0x81);
+    std::string f; f.reserve(payload.size() + 10);   // header (≤10B) + payload, no realloc
+    f.push_back((char)0x81);
     std::size_t n = payload.size();
     if(n<126){ f.push_back((char)n); }
     else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }
@@ -58,7 +59,8 @@ std::string encode_text(std::string_view payload){
 }
 
 std::string encode_binary(std::string_view payload){
-    std::string f; f.push_back((char)0x82);
+    std::string f; f.reserve(payload.size() + 10);   // header (≤10B) + payload, no realloc
+    f.push_back((char)0x82);
     std::size_t n = payload.size();
     if(n<126){ f.push_back((char)n); }
     else if(n<65536){ f.push_back((char)126); f.push_back((char)((n>>8)&0xFF)); f.push_back((char)(n&0xFF)); }

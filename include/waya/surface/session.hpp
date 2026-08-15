@@ -51,6 +51,12 @@ struct Session {
     // tick, keyed for reconciliation by (interval_ms, Msg-token).
     struct Timer { long ms; std::uint64_t key; std::any msg; std::shared_ptr<std::atomic<bool>> run; };
     std::vector<Timer> timers;
+    // Fingerprint of the subscriptions applied last frame. reconcile_subs is a
+    // global-lock + allocation cost every message; when the model's declared
+    // subs are byte-for-byte the same as last frame (the overwhelmingly common
+    // case — a keystroke rarely changes what you subscribe to), we skip the
+    // whole reconcile. 0 = "never reconciled", so the first frame always runs.
+    std::uint64_t sub_fingerprint = 0;
 
     /// Push a WIRE message: a token (looked up in the msg registry) + value.
     void push_wire(int token, std::string value = {});
